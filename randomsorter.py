@@ -1,3 +1,4 @@
+#Randomize filenames and distribute in subfolders
 """
 RANDOM IMAGE SORTER
 -------------------

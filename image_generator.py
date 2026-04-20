@@ -1,3 +1,4 @@
+# Timestamped, color-coded image generator.
 """
 IMAGE GENERATOR SCRIPT
 ----------------------

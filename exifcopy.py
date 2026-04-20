@@ -1,4 +1,4 @@
-# This script was generated with Gemini 3
+# Clone exif data from images
 """
 EXIF Data Cloner
 ================
@@ -11,6 +11,8 @@ Usage:
 Requirements:
     - piexif library (pip install piexif)
     - Source and target files must be in a supported format (e.g., JPEG, WebP).
+
+Disclaimer: This script was generated with Gemini 3
 """
 
 import sys
