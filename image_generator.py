@@ -13,6 +13,9 @@ USAGE:
 4. Set a naming prefix for the files.
 5. Enter a date in YYYY-MM-DD format.
 
+REQUIREMENTS:
+- Pillow library (PIL) (pip install pillow)
+
 DISCLAIMER:
 This script was generated with Gemini 3.
 """
