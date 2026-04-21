@@ -17,8 +17,6 @@ Use at your own peril.
 
 - **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
 
-- **`pdfconvert`**: Converts PDF documents to RTF (Rich Text Format) files compatible with Wordpad. Preserves layout, formatting, and images. *Requires: aspose-words*
-
 - **`randomsorter`**: Renames and distributes images in the current directory to anonymize them. Generates random 6-digit identifiers for each image and organizes them into numbered subfolders (reeks1, reeks2, etc.) based on user-specified quantities. Supports filtering by file extension. *Supported: .jpg, .jpeg, .png, .webp, .gif, .bmp, .tiff*
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. May require sudo/admin privileges on Unix systems.
