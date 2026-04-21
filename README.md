@@ -2,6 +2,37 @@
 Collection of personal scripts for whatevers.
 Use at your own peril.
 
+## Scripts Overview
+
+- **`exifcopy`**:
+
+- **`image_generator`**:
+
+- **`image_resizer`**:
+
+- **`installdeps`**:
+
+- **`list`**:
+
+- **`pdfconvert`**:
+
+- **`randomsorter`**:
+
+- **`shutdown`**:
+
+- **`timecopy`**:
+
+
+
+## Usage
+
+Once installed, you can run any Python script within the `Catro-Scripts` directory using the `catro-scripts` command, followed by the script name (without the `.py` extension) and any arguments it requires.
+
+```bash
+catro-scripts [script_name] [arguments]
+```
+
+
 ## Installation
 
 To use the `catro-scripts` wrapper conveniently from any directory, you need to add its location to your system's PATH environment variable.
@@ -30,13 +61,6 @@ To use the `catro-scripts` wrapper conveniently from any directory, you need to 
     *   Click "OK" on all windows to save the changes.
 
 ## Usage
-
-Once installed, you can run any Python script within the `Catro-Scripts` directory using the `catro-scripts` command, followed by the script name (without the `.py` extension) and any arguments it requires.
-
-```bash
-catro-scripts [script_name] [arguments]
-```
-
 ### Examples
 
 *   **Run `randomsorter.py`:**
