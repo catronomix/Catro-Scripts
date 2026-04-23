@@ -1,75 +1,37 @@
 # Catro-Scripts
-Collection of personal scripts for whatevers.
+
+Collection of personal scripts for whatevers.  
 Use at your own peril.
 
 ## Scripts Overview
 
-- **`exifcopy`**:
+- **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
 
-- **`image_generator`**:
+- **`help`**: Displays help information and usage details for available scripts. A utility for exploring script functionality.
 
-- **`image_resizer`**:
+- **`image_generator`**: Generates a batch of timestamped images with solid background colors and noise patterns. Organizes files into timestamped directories and artificially distributes modification times across a specified window (10:00 - 17:00). *Requires: Pillow (PIL)*
 
-- **`installdeps`**:
+- **`image_resizer`**: Batch resizes all images in a working folder with configurable fitting options (resize, crop, pad, limit) and interpolation methods. Outputs resized images to a timestamped subfolder with a colorful progress bar. *Requires: Pillow (PIL)*
 
-- **`list`**:
+- **`installdeps`**: Automatically scans all Python files in the directory, identifies required third-party libraries, and installs missing dependencies via pip. Supports custom working directories via `-workdir` argument. Includes manual mapping for common import name discrepancies.
 
-- **`pdfconvert`**:
+- **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
 
-- **`randomsorter`**:
+- **`randomsorter`**: Renames and distributes images in the current directory to anonymize them. Generates random 6-digit identifiers for each image and organizes them into numbered subfolders (reeks1, reeks2, etc.) based on user-specified quantities. Supports filtering by file extension. *Supported: .jpg, .jpeg, .png, .webp, .gif, .bmp, .tiff*
 
-- **`shutdown`**:
+- **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. May require sudo/admin privileges on Unix systems.
 
-- **`timecopy`**:
+- **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems support modification and access times.
 
+## Language Composition
 
+- **Python**: 88.4%
+- **Shell**: 6.4%
+- **Batchfile**: 5.2%
 
 ## Usage
 
-Once installed, you can run any Python script within the `Catro-Scripts` directory using the `catro-scripts` command, followed by the script name (without the `.py` extension) and any arguments it requires.
+Once installed, you can run any Python script within the `Catro-Scripts` directory using the `catro-scripts` command, followed by the script name (without the `.py` extension) and any arguments it needs:
 
 ```bash
 catro-scripts [script_name] [arguments]
-```
-
-
-## Installation
-
-To use the `catro-scripts` wrapper conveniently from any directory, you need to add its location to your system's PATH environment variable.
-
-### Unix/macOS Installation
-
-1.  **Add to PATH:** Add the directory containing `catro-scripts.sh` to your system's PATH environment variable.
-    *   Open your shell configuration file (e.g., `~/.zshrc` or `~/.bash_profile`).
-    *   Add the following line, replacing `/path/to/Catro-Scripts` with the actual path to this directory (e.g., `~/GITHUB/Catro-Scripts`):
-        ```bash
-        export PATH="$PATH:/path/to/Catro-Scripts"
-        ```
-    *   Save the file and reload your shell configuration (e.g., `source ~/.zshrc` or `source ~/.bash_profile`).
-2.  **Make Executable:** Ensure the main script is executable.
-    ```bash
-    chmod +x /path/to/Catro-Scripts/catro-scripts.sh
-    ```
-
-### Windows Installation
-
-1.  **Add to PATH:** Add the directory containing `catro-scripts.bat` to your Windows PATH environment variable.
-    *   Search for "Environment Variables" in the Windows search bar and select "Edit the system environment variables".
-    *   Click "Environment Variables...".
-    *   Under "System variables" or "User variables for <YourUser>", find the `Path` variable and click "Edit...".
-    *   Click "New" and add the full path to the `Catro-Scripts` directory (e.g., `C:\GITHUB\Catro-Scripts`).
-    *   Click "OK" on all windows to save the changes.
-
-## Usage
-### Examples
-
-*   **Run `randomsorter.py`:**
-    ```bash
-    catro-scripts randomsorter 10 5 --ext .png
-    ```
-*   **List available scripts:**
-    ```bash
-    catro-scripts list
-    ```
-No Copyright Innocent Coppieters
-☕Buy me a coffee if you find out how.☕
