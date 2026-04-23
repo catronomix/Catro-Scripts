@@ -17,11 +17,16 @@ Use at your own peril.
 
 - **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
 
-- **`randomsorter`**: Renames and distributes images in the current directory to anonymize them. Generates random 6-digit identifiers for each image and organizes them into numbered subfolders (reeks1, reeks2, etc.) based on user-specified quantities. Supports filtering by file extension. *Supported: .jpg, .jpeg, .png, .webp, .gif, .bmp, .tiff*
+- **`randomsorter`**: Renames and distributes files in the current directory to anonymize them. It generates unique random identifiers (numeric or alphanumeric, with configurable length) and organizes them into numbered subfolders (e.g., `batch01`, `batch02`) based on user-specified quantities. Supports filtering by file type (image, video, audio) or specific extension, and can copy files instead of moving them. *Supports common image, video, and audio formats.*
+
+- **`renamer`**: This script renames files in the current directory sequentially. It supports custom prefixes, suffixes, and sorting methods while retaining the media filters and safety features of the random sorter.
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. May require sudo/admin privileges on Unix systems.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems support modification and access times.
+
+
+
 
 ## Language Composition
 
