@@ -5,6 +5,8 @@ Use at your own peril.
 
 ## Scripts Overview
 
+- **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience.
+
 - **`count`**: Display file counts and total size per file type found in a directory, with options to search for directory counts, set starting subdirectory and search depth. Has nice rainbow colors.
 
 - **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
