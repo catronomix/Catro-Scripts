@@ -1,23 +1,29 @@
 # List all catro-scripts
 """
-SCRIPT LISTER
--------------
-This utility scans the directory where this specific file is located and lists 
-all Python (.py) scripts found. It features a purple table layout and 
-alternating green text colors.
+			CATRO-SCRIPTS LISTER
+			====================
+This utility scans its directory for all Python (.py) scripts and displays them 
+in a formatted ASCII box-drawing table.
 
-DISCLAIMER:
-This script was generated with Gemini 3.
+Features:
+	- Automatically extracts descriptions from scripts.
+	- Human-readable file sizes.
+	- Alternating row backgrounds (Black/Dark Grey) with Light Blue text.
+	- Full box-drawing border.
+
+Usage:
+	python list.py
 """
 
 import os
 import sys
 
-# ANSI Color Codes (TrueColor support for hex equivalents)
+# ANSI Color Codes (TrueColor support)
 class Colors:
 	PURPLE = '\033[38;2;170;0;255m'
-	GREEN_1 = '\033[38;2;0;255;0m'    # 00FF00
-	GREEN_2 = '\033[38;2;34;255;34m'  # 22FF22
+	LIGHT_BLUE = '\033[38;2;173;216;230m' # Light Blue foreground
+	BG_BLACK = '\033[48;2;0;0;0m'         # Black background
+	BG_GREY = '\033[48;2;45;45;45m'       # Dark Grey background
 	BOLD = '\033[1m'
 	END = '\033[0m'
 
@@ -36,7 +42,7 @@ def get_description(filepath):
 			for line in f:
 				line = line.strip()
 				if line:
-					# Clean up common script starters like """, ''', or #
+					# Clean up common script starters
 					clean = line.lstrip('"/#\'').strip()
 					return (clean[:47] + '..') if len(clean) > 50 else clean
 	except Exception:
@@ -62,24 +68,54 @@ def list_scripts():
 			print(f"{Colors.PURPLE}No other Python scripts found in this directory.{Colors.END}")
 			return
 
-		# Table Header
-		header = f"{Colors.PURPLE}{Colors.BOLD}{'ID':<4} | {'Filename':<25} | {'Size':<10} | {'Description'}{Colors.END}"
-		divider = f"{Colors.PURPLE}{'-' * 4}-+-{'-' * 25}-+-{'-' * 10}-+-{'-' * 50}{Colors.END}"
-		
+		# Column widths
+		w_id = 4
+		w_name = 25
+		w_size = 10
+		w_desc = 50
+
+		# Box Drawing Characters
+		tl, tr, bl, br = '┌', '┐', '└', '┘'
+		h, v = '─', '│'
+		t_join, b_join, l_join, r_join, cross = '┬', '┴', '├', '┤', '┼'
+
+		# Helper to build rows
+		def make_divider(left, mid, right, cross_char):
+			return (f"{Colors.PURPLE}{left}{h*(w_id+2)}{cross_char}{h*(w_name+2)}{cross_char}"
+					f"{h*(w_size+2)}{cross_char}{h*(w_desc+2)}{right}{Colors.END}")
+
+		# Borders
+		top_border = make_divider(tl, t_join, tr, t_join)
+		mid_border = make_divider(l_join, cross, r_join, cross)
+		bot_border = make_divider(bl, b_join, br, b_join)
+
+		# Print Header
+		print(top_border)
+		header = (f"{Colors.PURPLE}{v}{Colors.BOLD} {'ID':<{w_id}} {v} {'Script Name':<{w_name}} {v} "
+				  f"{'Size':<{w_size}} {v} {'Description':<{w_desc}} {v}{Colors.END}")
 		print(header)
-		print(divider)
+		print(mid_border)
 
 		for i, script in enumerate(scripts, 1):
 			file_path = os.path.join(script_dir, script)
 			size = format_bytes(os.path.getsize(file_path))
 			desc = get_description(file_path)
 			
-			# Alternate colors: 00FF00 and 22FF22
-			row_color = Colors.GREEN_1 if i % 2 != 0 else Colors.GREEN_2
+			script_name = script[:-3] if script.endswith('.py') else script
 			
-			print(f"{row_color}{i:<4} | {script:<25} | {size:<10} | {desc}{Colors.END}")
+			# Set background and foreground colors for the row
+			bg = Colors.BG_BLACK if i % 2 != 0 else Colors.BG_GREY
+			row_style = Colors.LIGHT_BLUE + bg
+			
+			# Constructing the row. 
+			# We reset the color (Colors.END) before printing the final vertical border 
+			# to ensure the background color doesn't bleed into it.
+			row = (f"{Colors.PURPLE}{v}{row_style} {i:<{w_id}} {Colors.PURPLE}{v}{row_style} {script_name:<{w_name}} "
+				   f"{Colors.PURPLE}{v}{row_style} {size:<{w_size}} {Colors.PURPLE}{v}{row_style} {desc:<{w_desc}} "
+				   f"{Colors.END}{Colors.PURPLE}{v}{Colors.END}")
+			print(row)
 
-		print(divider)
+		print(bot_border)
 		print(f"{Colors.PURPLE}{Colors.BOLD}Total scripts found:{Colors.END} {len(scripts)}\n")
 		
 	except Exception as e:
