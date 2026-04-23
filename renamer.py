@@ -8,10 +8,12 @@ retaining the media filters and safety features of the random sorter.
 
 USAGE:
     python renamer.py -p "holiday_" -s "_draft"
+    python renamer.py -f --type image
     python renamer.py --type image --sort date_asc
 
 OPTIONS:
     -p, --prefix STR   Text to put before the number
+    -f, --folder       Use the parent folder's name as the prefix
     -s, --suffix STR   Text to put after the number (before extension)
     -d, --digits N     Number of digits for padding (default: auto-calculated)
     --sort METHOD      Sorting: 'name_asc' (default), 'name_desc', 'date_asc', 'date_desc'
@@ -25,7 +27,6 @@ import os
 import argparse
 import sys
 import shutil
-import math
 
 # Predefined extension groups
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.svg', '.heic', '.jfif')
@@ -109,6 +110,9 @@ if __name__ == "__main__":
     
     parser.add_argument("-p", "--prefix", type=str, default="",
                         help="Prefix for the new filename.")
+
+    parser.add_argument("-f", "--folder", action="store_true",
+                        help="Use the current folder name as the prefix.")
     
     parser.add_argument("-s", "--suffix", type=str, default="",
                         help="Suffix for the new filename (before extension).")
@@ -140,6 +144,13 @@ if __name__ == "__main__":
             print("Operation cancelled.")
             sys.exit()
 
+    # Determine prefix
+    current_folder = os.getcwd()
+    final_prefix = args.prefix
+    if args.folder:
+        # Get base name of the current directory
+        final_prefix = os.path.basename(current_folder)
+
     # Determine extension filter
     allowed = None
     if args.ext:
@@ -151,14 +162,12 @@ if __name__ == "__main__":
         allowed = VIDEO_EXTENSIONS
     elif args.type == 'audio':
         allowed = AUDIO_EXTENSIONS
-
-    current_folder = os.getcwd()
     
     # Get and sort target files
     target_files = get_target_files(current_folder, allowed, args.all)
     sorted_files = sort_files(current_folder, target_files, args.sort)
     
     # Execute renaming
-    rename_files(current_folder, args.prefix, args.suffix, args.digits, args.keep, sorted_files)
+    rename_files(current_folder, final_prefix, args.suffix, args.digits, args.keep, sorted_files)
     
     print("\nProcessing complete.")
