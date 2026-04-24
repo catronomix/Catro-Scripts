@@ -11,14 +11,6 @@ Features:
 	- Automatic dependency check for FFmpeg/LibAV.
 	- Saves output as [filename]_frame_[id].png.
 
-Usage:
-	python extractframe.py <filename> <frame_id> [options]
-
-Examples:
-	- python extractframe.py movie.mp4 500
-	- python extractframe.py clip.mkv last
-	- python extractframe.py video.mp4 1200 -k
-
 Requirements:
 	- decord
 	- pillow (PIL)
@@ -33,7 +25,6 @@ import platform
 from PIL import Image
 
 def init_ansi():
-	"""Enables ANSI escape sequences on Windows consoles."""
 	if platform.system().lower() == "windows":
 		os.system('color')
 
@@ -46,26 +37,31 @@ except ImportError:
 	print("Please install it using: pip install decord")
 	sys.exit(1)
 
+def get_bin_path(name):
+	"""Returns the path to a binary, prioritizing the script's directory."""
+	script_dir = os.path.dirname(os.path.abspath(__file__))
+	local_path = os.path.join(script_dir, name)
+	if platform.system().lower() == "windows" and not local_path.lower().endswith(".exe"):
+		local_path += ".exe"
+	if os.path.exists(local_path) and os.access(local_path, os.X_OK):
+		return local_path
+	return name
+
+FFMPEG_BIN = get_bin_path("ffmpeg")
+
 def check_ffmpeg():
-	"""Checks if ffmpeg is available in the system path."""
+	"""Checks if ffmpeg is available in the system path or program dir."""
 	try:
-		subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+		subprocess.run([FFMPEG_BIN, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		return True
 	except FileNotFoundError:
 		return False
 
 def get_ffmpeg_instructions():
-	"""Provides download links and instructions for FFmpeg."""
-	instructions = (
-		"\n\033[0;33mFFmpeg is missing or not found in your PATH.\033[0m\n"
-		"Decord requires FFmpeg/LibAV to decode video files.\n\n"
-		"Manual Download Links:\n"
-		" - Windows: https://www.gyan.dev/ffmpeg/builds/\n"
-		" - macOS (Homebrew): brew install ffmpeg\n"
-		" - Linux: sudo apt install ffmpeg\n\n"
-		"Once downloaded, ensure the 'bin' folder is added to your System Environment Variables (PATH)."
+	return (
+		"\n\033[0;33mFFmpeg is missing or not found.\033[0m\n"
+		"Decord requires FFmpeg/LibAV. Place ffmpeg in the script folder or add it to PATH.\n"
 	)
-	return instructions
 
 def extract_frame(video_path, frame_id, use_keyframe=False):
 	if not os.path.exists(video_path):
@@ -77,11 +73,9 @@ def extract_frame(video_path, frame_id, use_keyframe=False):
 		return
 
 	try:
-		# Initialize VideoReader
 		vr = VideoReader(video_path, ctx=cpu(0))
 		total_frames = len(vr)
 
-		# Resolve frame_id
 		target_idx = 0
 		if isinstance(frame_id, str):
 			if frame_id.lower() == 'first':
@@ -92,35 +86,21 @@ def extract_frame(video_path, frame_id, use_keyframe=False):
 				try:
 					target_idx = int(frame_id)
 				except ValueError:
-					print(f"\033[0;31mError: Invalid frame ID '{frame_id}'. Use a number, 'first', or 'last'.\033[0m")
+					print(f"\033[0;31mError: Invalid frame ID '{frame_id}'.\033[0m")
 					return
 		else:
 			target_idx = frame_id
 
-		# Bounds check
 		if target_idx < 0 or target_idx >= total_frames:
-			print(f"\033[0;31mError: Frame index {target_idx} is out of range (0-{total_frames-1}).\033[0m")
+			print(f"\033[0;31mError: Frame index {target_idx} out of range.\033[0m")
 			return
 
 		print(f"Extracting frame {target_idx} from {os.path.basename(video_path)}...")
-
-		# Decord handles seeking. If keyframe is requested, we can't strictly "snap" 
-		# in the VideoReader indexed access easily, but Decord's seeking is often
-		# optimized. For specific keyframe snapping, we use internal seek logic if available.
-		if use_keyframe:
-			# Note: decord doesn't expose a simple 'snap-to-keyframe' for single index access 
-			# via [], but it uses keyframes internally for seeking.
-			print("Note: Keyframe snapping is managed by Decord's internal seek optimizer.")
-
-		# Get the frame as a numpy array (RGB)
 		frame = vr[target_idx].asnumpy()
-
-		# Convert to Image and save
 		img = Image.fromarray(frame)
 		base_name = os.path.splitext(os.path.basename(video_path))[0]
 		output_name = f"{base_name}_frame_{target_idx}.png"
 		img.save(output_name)
-
 		print(f"\033[0;32m[Success] Frame saved as: {output_name}\033[0m")
 
 	except Exception as e:
@@ -128,13 +108,11 @@ def extract_frame(video_path, frame_id, use_keyframe=False):
 
 def main():
 	init_ansi()
-	parser = argparse.ArgumentParser(description="Extract a single frame from a video using Decord.")
+	parser = argparse.ArgumentParser(description="Extract a single frame using Decord.")
 	parser.add_argument("filename", help="Path to the video file")
 	parser.add_argument("frame_id", help="Frame index (number, 'first', or 'last')")
-	parser.add_argument("-k", "--keyframe", action="store_true", help="Utilize keyframe seeking optimization")
-
+	parser.add_argument("-k", "--keyframe", action="store_true", help="Seek optimization note")
 	args = parser.parse_args()
-
 	extract_frame(args.filename, args.frame_id, args.keyframe)
 
 if __name__ == "__main__":

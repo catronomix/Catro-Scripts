@@ -34,6 +34,7 @@ import sys
 import argparse
 import platform
 import subprocess
+import re
 
 def init_ansi():
 	if platform.system().lower() == "windows":
@@ -57,9 +58,22 @@ RED = '\033[0;31m'
 BOLD = '\033[1m'
 RESET = '\033[0m'
 
+def get_bin_path(name):
+	"""Returns the path to a binary, prioritizing the script's directory."""
+	script_dir = os.path.dirname(os.path.abspath(__file__))
+	local_path = os.path.join(script_dir, name)
+	if platform.system().lower() == "windows" and not local_path.lower().endswith(".exe"):
+		local_path += ".exe"
+	if os.path.exists(local_path) and os.access(local_path, os.X_OK):
+		return local_path
+	return name
+
+FFMPEG_BIN = get_bin_path("ffmpeg")
+FFPROBE_BIN = get_bin_path("ffprobe")
+
 def check_ffmpeg():
 	try:
-		subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+		subprocess.run([FFMPEG_BIN, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		return True
 	except FileNotFoundError:
 		return False
@@ -67,7 +81,7 @@ def check_ffmpeg():
 def has_audio(filename):
 	"""Checks if a file has an audio stream using ffprobe."""
 	cmd = [
-		"ffprobe", "-v", "error", "-select_streams", "a", 
+		FFPROBE_BIN, "-v", "error", "-select_streams", "a", 
 		"-show_entries", "stream=index", "-of", "csv=p=0", filename
 	]
 	try:
@@ -128,7 +142,7 @@ def get_resize_config():
 
 def run_ffmpeg_join(files, skip_frame, codec, resize, output_name):
 	if not check_ffmpeg():
-		print(f"{RED}Error: FFmpeg not found in PATH.{RESET}")
+		print(f"{RED}Error: FFmpeg not found in PATH or program directory.{RESET}")
 		return
 
 	input_args = []
@@ -207,7 +221,7 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name):
 			filter_complex += "[outa]"
 
 		cmd = [
-			"ffmpeg", "-y",
+			FFMPEG_BIN, "-y",
 			*input_args,
 			"-filter_complex", filter_complex,
 			"-map", "[outv]"
@@ -215,11 +229,17 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name):
 		
 		if any_audio:
 			cmd.extend(["-map", "[outa]", "-c:a", "aac"])
+		else:
+			cmd.append("-an")
 		
 		cmd.extend(["-c:v", codec, "-preset", "medium", output_name])
 
 		print(f"\n{YELLOW}Executing FFmpeg...{RESET}")
-		subprocess.run(cmd, check=True)
+		result = subprocess.run(cmd, capture_output=True, text=True)
+		if result.returncode != 0:
+			print(f"{RED}FFmpeg Error Output:{RESET}\n{result.stderr}")
+			raise subprocess.CalledProcessError(result.returncode, cmd)
+			
 		print(f"\n{GREEN}{BOLD}[Success] Joined video saved as {output_name}{RESET}")
 
 	except Exception as e:
