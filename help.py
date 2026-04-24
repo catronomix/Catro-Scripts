@@ -12,6 +12,7 @@ Features:
 	- Automatic ANSI initialization for Windows.
 	- Displays help in a formatted purple ASCII box.
 	- Specialized header detection and styling.
+	- Smart command aliasing when catro-scripts wrapper is present.
 
 Usage:
 	python help.py <script_name>
@@ -24,6 +25,7 @@ import os
 import sys
 import ast
 import platform
+import re
 
 def init_ansi():
 	# Enables ANSI escape sequences on Windows 10+ consoles.
@@ -73,6 +75,15 @@ def print_colored_docstring(docstring):
 		print(f"{PURPLE}└──────────────────────────────────────────────────┘{RESET}")
 		return
 
+	# Check for catro-scripts wrapper to allow command aliasing in help text
+	script_dir = get_script_directory()
+	has_wrapper = os.path.exists(os.path.join(script_dir, "catro-scripts.bat")) or \
+				  os.path.exists(os.path.join(script_dir, "catro-scripts.sh"))
+
+	if has_wrapper:
+		# Replace "python {scriptname}.py" with "catro-scripts {scriptname}"
+		docstring = re.sub(r'python (\S+)\.py', r'catro-scripts \1', docstring)
+
 	raw_lines = docstring.splitlines()
 	
 	# Robust detection of first two content lines
@@ -119,7 +130,6 @@ def print_colored_docstring(docstring):
 
 	if has_header:
 		# Header Row: Centered Yellow on Dark Purple
-		# The text is centered across the full internal width of the box
 		centered_header = header_text.center(box_width)
 		print(f"{PURPLE}{v}{HEADER_BG}{HEADER_FG}{centered_header}{RESET}{PURPLE}{v}{RESET}")
 		# Divider Row replacing the equal signs
