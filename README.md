@@ -31,14 +31,18 @@ Use at your own peril.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems support modification and access times.
 
+- **`videofade`**: Adds smooth fade-in and fade-out effects to video clips. Supports customizable durations, various interpolation curves (like Ease-In-Out), and a special "Append Mode" that freezes the edges of the video for the duration of the fade. _Requires: decord, ffmpeg_
+
 - **`videojoin`**: This utility concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. It provides advanced features such as interactive codec selection, various resizing methods (crop, fit, stretch, limit), and options to skip the last frame or join all videos in a directory.
+
+- **`videolooper`**: Creates a seamless, crossfaded loop from a single video file by fading the end of the clip into the beginning. Features a "Timeline Shift" option to specify the starting position of the final loop and handles silent videos gracefully. _Requires: decord, ffmpeg_
 
 
 ## Language Composition
 
-- **Python**: 88.4%
-- **Shell**: 6.4%
-- **Batchfile**: 5.2%
+- **Python**: 89.2%
+- **Shell**: 5.9%
+- **Batchfile**: 4.9%
 
 ## Usage
 

@@ -1,7 +1,7 @@
 # Install script dependencies
 """
 			DEPENDENCY INSTALLER
-			-------------------
+			====================
 This script automatically scans all Python files in its directory, 
 identifies required third-party libraries, and installs them via pip 
 if they are missing. It fetches a public mapping from pipreqs to resolve
@@ -9,8 +9,8 @@ import names to actual PyPI package names. Optionally, it can scan a
 different working directory using the `-workdir` command-line argument.
 
 Usage:
-    python installdeps.py
-    python installdeps.py -workdir /path/to/your/project
+	python installdeps.py
+	python installdeps.py -workdir /path/to/your/project
 """
 
 import os
@@ -28,8 +28,8 @@ MAPPING_URL = "https://raw.githubusercontent.com/bndr/pipreqs/master/pipreqs/map
 # Manual mapping for common import name -> package name discrepancies
 # This will take precedence over the fetched online mapping.
 MANUAL_MAPPING = {
-    "PIL": "Pillow",
-    "aspose.words": "aspose-words",
+	"PIL": "Pillow",
+	"aspose.words": "aspose-words",
 	"aspose": "aspose-words",
 }
 
