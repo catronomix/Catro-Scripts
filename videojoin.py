@@ -122,9 +122,21 @@ def get_resize_config():
 	print(f"\n{PURPLE}{BOLD}--- Resize Configuration ---{RESET}")
 	try:
 		w = int(input(f"{CYAN}Target Width (px):{RESET} ").strip())
-		h = int(input(f"{CYAN}Target Height (px):{RESET} ").strip())
+		if w % 2 != 0: w += 1 # Force divisible by 2
+		
+		h_in = input(f"{CYAN}Target Height (px) [Enter for Auto]:{RESET} ").strip()
+		if not h_in:
+			h = -2
+		else:
+			h = int(h_in)
+			if h != -2 and h % 2 != 0: h += 1 # Force divisible by 2
 	except ValueError:
 		return None
+
+	# If height is auto, we only need basic scaling
+	if h == -2:
+		return {"width": w, "height": h, "method": "stretch"}
+
 	methods = [
 		("fit", "Letterbox (Keep ratio, add black bars)"),
 		("crop", "Fill (Keep ratio, crop edges)"),
@@ -232,7 +244,7 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name):
 		else:
 			cmd.append("-an")
 		
-		cmd.extend(["-c:v", codec, "-preset", "medium", output_name])
+		cmd.extend(["-c:v", codec, "-preset", "medium", "-pix_fmt", "yuv420p", output_name])
 
 		print(f"\n{YELLOW}Executing FFmpeg...{RESET}")
 		result = subprocess.run(cmd, capture_output=True, text=True)
