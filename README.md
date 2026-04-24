@@ -1,7 +1,8 @@
 # Catro-Scripts
 
-Collection of personal scripts for whatevers.  
-Use at your own peril.
+Collection of personal Python scripts for whatevers.  
+Use at your own peril. I am using python 3.11.9
+run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 
 ## Scripts Overview
 
