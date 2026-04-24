@@ -2,26 +2,27 @@
 """
 			VIDEO LOOPER
 			==================
-This utility creates a seamless, crossfaded loop from a single video file. 
-Instead of a simple repetition, it fades the end of the clip into the 
-beginning, creating a smooth transition.
+This utility creates a seamless, crossfaded loop from a single video file or 
+an entire directory. Instead of a simple repetition, it fades the end of 
+the clip into the beginning, creating a smooth transition.
 
 Features:
 	- Seamless crossfade looping.
 	- Timeline Shift: Set the starting position of the final loop (0.0 - 1.0).
 	- Interactive codec and fade curve selection.
+	- Batch processing for folders.
 	- Automatic handling of silent or audio-heavy files.
 	- Fallback logic for older FFmpeg versions.
 
 Usage:
-	python videolooper.py <filename> [options]
+	python videolooper.py [path] [options]
 
 Options:
 	-f, --fade           Crossfade duration in seconds (default: 1.0).
 	-s, --shift          Start position offset (0.0 to 1.0, default: 0.0).
 	-c, --codec          Choose output codec interactively.
 	-n, --interpolation  Choose fade curve interactively (FFmpeg 4.3+).
-	-o, --output         Set custom output filename.
+	-x, --suffix         Suffix for output files (default: _seamless).
 
 Requirements:
 	- decord (for duration/metadata)
@@ -131,10 +132,13 @@ def get_curve_choice():
 			return curves[int(choice)-1][0]
 		print(f"{RED}Invalid choice.{RESET}")
 
-def process_loop(file_path, fade_dur, shift_offset, codec, curve, output_name, supports_curve):
+def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve):
 	if not check_ffmpeg():
 		print(f"{RED}Error: FFmpeg not found.{RESET}")
 		return
+
+	base, ext = os.path.splitext(file_path)
+	output_name = f"{base}{suffix}{ext}"
 
 	try:
 		vr = VideoReader(file_path)
@@ -144,17 +148,14 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, output_name, s
 		audio_present = has_audio(file_path)
 
 		if fade_dur >= duration / 2:
-			print(f"{YELLOW}Warning: Fade duration is very long. Reducing to {duration/4:.2f}s.{RESET}")
+			print(f"{YELLOW}Warning: Fade duration is very long for {os.path.basename(file_path)}. Reducing overlap.{RESET}")
 			fade_dur = duration / 4
 
-		# Loop duration is original minus fade overlap
 		loop_duration = duration - fade_dur
-		# Calculate actual shift in seconds
 		shift_time = (shift_offset % 1.0) * loop_duration
 
-		print(f"{GREEN}Analyzing: {os.path.basename(file_path)} ({duration:.2f}s)...{RESET}")
+		print(f"{YELLOW}Processing: {os.path.basename(file_path)}...{RESET}")
 		
-		# Build Filter Chain
 		v_curve = f":curve={curve}" if (supports_curve and curve != "tri") else ""
 		
 		v_filter = (
@@ -201,46 +202,47 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, output_name, s
 		cmd = [FFMPEG_BIN, "-y", "-i", file_path]
 		
 		if audio_present:
-			cmd.extend([
-				"-filter_complex", f"{v_filter};{a_filter}",
-				"-map", "[outv]", "-map", "[outa]", "-c:a", "aac"
-			])
+			cmd.extend(["-filter_complex", f"{v_filter};{a_filter}", "-map", "[outv]", "-map", "[outa]", "-c:a", "aac"])
 		else:
-			cmd.extend([
-				"-filter_complex", v_filter,
-				"-map", "[outv]", "-an"
-			])
+			cmd.extend(["-filter_complex", v_filter, "-map", "[outv]", "-an"])
 
 		cmd.extend(["-c:v", codec, "-preset", "medium", output_name])
 
-		print(f"{YELLOW}Creating seamless loop...{RESET}")
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		
 		if result.returncode != 0:
 			if "Option 'curve' not found" in result.stderr or "Error applying option 'curve'" in result.stderr:
-				print(f"{YELLOW}Curve '{curve}' not supported by this FFmpeg build. Retrying with linear fade...{RESET}")
-				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", output_name, False)
+				print(f"{YELLOW}Curve '{curve}' not supported. Retrying with linear...{RESET}")
+				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False)
 			print(f"{RED}FFmpeg Error Output:{RESET}\n{result.stderr}")
 		else:
 			print(f"{GREEN}[Success] Loop saved as {output_name}{RESET}")
 
 	except Exception as e:
-		print(f"{RED}Error: {e}{RESET}")
+		print(f"{RED}Error processing {file_path}: {e}{RESET}")
 
 def main():
 	init_ansi()
 	parser = argparse.ArgumentParser(description="Create a seamless crossfade loop.")
-	parser.add_argument("filename", help="Video file to loop")
+	parser.add_argument("path", nargs="?", help="Video file or directory")
 	parser.add_argument("-f", "--fade", type=float, default=1.0, help="Crossfade duration (sec)")
 	parser.add_argument("-s", "--shift", type=float, default=0.0, help="Timeline offset (0.0-1.0)")
 	parser.add_argument("-c", "--codec", action="store_true", help="Choose codec interactively")
 	parser.add_argument("-n", "--interpolation", action="store_true", help="Choose curve interactively")
-	parser.add_argument("-o", "--output", help="Output filename")
+	parser.add_argument("-x", "--suffix", default="_seamless", help="Suffix for output files")
 
 	args = parser.parse_args()
 	
-	if not os.path.exists(args.filename):
-		print(f"{RED}Error: File not found.{RESET}")
+	target = args.path if args.path else "."
+	files = []
+	if os.path.isfile(target):
+		files = [target]
+	elif os.path.isdir(target):
+		video_exts = ('.mp4', '.mkv', '.mov', '.webm', '.avi')
+		files = [os.path.join(target, f) for f in os.listdir(target) if f.lower().endswith(video_exts)]
+	
+	if not files:
+		print(f"{RED}No video files found.{RESET}")
 		return
 
 	v_major, v_minor = get_ffmpeg_version()
@@ -249,14 +251,13 @@ def main():
 	selected_codec = get_codec_choice() if args.codec else "libx264"
 	selected_curve = get_curve_choice() if args.interpolation else "esin"
 
-	output = args.output or f"{os.path.splitext(args.filename)[0]}_seamless.mp4"
-
 	print(f"\n{PURPLE}{BOLD}--- LOOP SETTINGS ---{RESET}")
 	print(f"Fade Time: {args.fade}s")
 	print(f"Shift:     {args.shift*100:.0f}%")
 	print(f"Curve:     {selected_curve}\n")
 
-	process_loop(args.filename, args.fade, args.shift, selected_codec, selected_curve, output, supports_curve)
+	for f in sorted(files):
+		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve)
 
 if __name__ == "__main__":
 	main()
