@@ -11,6 +11,8 @@ Use at your own peril.
 
 - **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
 
+- **`extractframe`**: This utility extracts a single frame from a video file, saving it as a PNG image. It leverages the Decord library for efficient seeking, allowing extraction by frame index, 'first', or 'last', with an option for keyframe snapping.
+
 - **`help`**: Displays help information and usage details for available scripts. A utility for exploring script functionality.
 
 - **`image_generator`**: Generates a batch of timestamped images with solid background colors and noise patterns. Organizes files into timestamped directories and artificially distributes modification times across a specified window (10:00 - 17:00). *Requires: Pillow (PIL)*
@@ -29,7 +31,7 @@ Use at your own peril.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems support modification and access times.
 
-
+- **`videojoin`**: This utility concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. It provides advanced features such as interactive codec selection, various resizing methods (crop, fit, stretch, limit), and options to skip the last frame or join all videos in a directory.
 
 
 ## Language Composition
