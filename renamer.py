@@ -9,7 +9,7 @@ retaining the media filters and safety features of the random sorter.
 USAGE:
 	python renamer.py -p "holiday_" -s "_draft"
 	python renamer.py -f --type image
-	python renamer.py --type image --sort date_asc
+	python renamer.py --wildcard "vacation_*.jpg"
 	python renamer.py -d 0 -p "PRE_"      # Keeps original names, adds prefix
 	python renamer.py -o -p "IMG_"       # Keeps original names, adds prefix AND numbers at start
 
@@ -17,6 +17,7 @@ OPTIONS:
 	-p, --prefix STR   Text to put before the content
 	-f, --folder       Use the parent folder's name as the prefix
 	-s, --suffix STR   Text to put after the content (before extension)
+	-w, --wildcard STR Filter files using wildcards (e.g., 'IMG_*.jpg')
 	-d, --digits N     Number of digits for padding. 
 	                   0: Disable numbering (keep original filename)
 	                   Default: auto-calculated based on file count
@@ -33,6 +34,7 @@ import os
 import argparse
 import sys
 import shutil
+import fnmatch
 
 # Initialize environment for ANSI colors on Windows
 if os.name == 'nt':
@@ -66,7 +68,7 @@ class ColoredArgumentParser(argparse.ArgumentParser):
 		self.print_usage(sys.stderr)
 		sys.exit(2)
 
-def get_target_files(folder_path, allowed_extensions, include_all):
+def get_target_files(folder_path, allowed_extensions, include_all, wildcard_pattern=None):
 	"""Returns a list of files to process using scandir for efficiency."""
 	script_name = os.path.basename(sys.argv[0])
 	files = []
@@ -76,14 +78,20 @@ def get_target_files(folder_path, allowed_extensions, include_all):
 			for entry in entries:
 				if entry.is_file() and entry.name != script_name:
 					filename = entry.name
+					
+					# 1. Wildcard Filter
+					if wildcard_pattern and not fnmatch.fnmatch(filename, wildcard_pattern):
+						continue
+
+					# 2. Extension Filters
 					if allowed_extensions:
-						if filename.lower().endswith(allowed_extensions):
-							files.append(filename)
+						if not filename.lower().endswith(allowed_extensions):
+							continue
 					elif not include_all:
-						if not filename.lower().endswith(FORBIDDEN_EXTENSIONS):
-							files.append(filename)
-					else:
-						files.append(filename)
+						if filename.lower().endswith(FORBIDDEN_EXTENSIONS):
+							continue
+					
+					files.append(filename)
 	except OSError as e:
 		sys.stderr.write(f"{CLR_RED}Error accessing directory: {e}{CLR_RESET}\n")
 		sys.exit(1)
@@ -175,6 +183,9 @@ if __name__ == "__main__":
 	parser.add_argument("-s", "--suffix", type=str, default="",
 						help="Suffix for the new filename (before extension).")
 	
+	parser.add_argument("-w", "--wildcard", type=str,
+						help="Filter files using wildcards (e.g. 'holiday*.jpg').")
+	
 	parser.add_argument("-d", "--digits", type=int,
 						help="Number of digits for numbering (e.g. 3 for 001). Set to 0 to keep original filenames.")
 	
@@ -234,7 +245,7 @@ if __name__ == "__main__":
 		allowed = AUDIO_EXTENSIONS
 	
 	# Get and sort target files
-	target_files = get_target_files(current_folder, allowed, args.all)
+	target_files = get_target_files(current_folder, allowed, args.all, args.wildcard)
 	sorted_files = sort_files(current_folder, target_files, args.sort)
 	
 	# Execute renaming

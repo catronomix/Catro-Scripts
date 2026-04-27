@@ -22,6 +22,10 @@ run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 
 - **`installdeps`**: Automatically scans all Python files in the directory, identifies required third-party libraries, and installs missing dependencies via pip. Supports custom working directories via `-workdir` argument. Includes manual mapping for common import name discrepancies.
 
+- **`networktool`**:
+Cross-platform network interface manager. Seamlessly toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter restarts. Requires administrative/root privileges.
+
+
 - **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
 
 - **`randomsorter`**: Renames and distributes files in the current directory to anonymize them. It generates unique random identifiers (numeric or alphanumeric, with configurable length) and organizes them into numbered subfolders (e.g., `batch01`, `batch02`) based on user-specified quantities. Supports filtering by file type (image, video, audio) or specific extension, and can copy files instead of moving them. *Supports common image, video, and audio formats.*
