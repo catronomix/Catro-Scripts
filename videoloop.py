@@ -15,7 +15,7 @@ Features:
 	- Fallback logic for older FFmpeg versions.
 
 Usage:
-	python videolooper.py [path] [options]
+	python videoloop.py [path] [options]
 
 Options:
 	-f, --fade           Crossfade duration in seconds (default: 1.0).
