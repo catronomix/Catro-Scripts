@@ -18,6 +18,7 @@ USAGE:
 
 INTERMEDIATE OPTIONS:
 	- Switch Mode: Toggle between dynamic and manual addressing.
+	- Set DNS: Configure DNS servers (Auto/Manual).
 	- Restart: Cycles the adapter (Disable -> Enable).
 	- Show Info: Displays Verbose IP, MAC, MTU, and Power info.
 """
@@ -206,59 +207,58 @@ def get_manual_input(iface, current_configs):
 	mask = input(f"{CLR_CYAN}Subnet Mask/Prefix{CLR_RESET} [{prev.get('mask', '255.255.255.0')}]: ") or prev.get('mask', '255.255.255.0')
 	gw = input(f"{CLR_CYAN}Gateway{CLR_RESET} [{prev.get('gw', '')}]: ") or prev.get('gw')
 	
-	dns_choice = input(f"{CLR_ORANGE}Set custom DNS? (y/n): {CLR_RESET}").lower()
-	dns = []
-	if dns_choice == 'y':
-		dns_input = input(f"{CLR_CYAN}Enter DNS servers (comma separated): {CLR_RESET}")
-		dns = [d.strip() for d in dns_input.split(',')]
-	else:
-		dns = prev.get('dns', [])
-		
-	config = {"ip": ip, "mask": mask, "gw": gw, "dns": dns}
+	# DNS logic removed from IP setup and moved to dedicated menu
+	config = {"ip": ip, "mask": mask, "gw": gw, "dns": prev.get('dns', [])}
 	return config
 
-def apply_config(iface, mode, config=None, keep_dns=False):
+def apply_dns(iface, mode, dns_list=None):
+	"""Applies DNS configuration separately."""
 	system = get_platform()
-	print(f"{CLR_ORANGE}Applying configuration...{CLR_RESET}")
+	print(f"{CLR_ORANGE}Updating DNS settings...{CLR_RESET}")
+	
+	if mode == "auto":
+		if system == "windows":
+			run_cmd(f'netsh interface ipv4 set dnsservers name="{iface}" source=dhcp')
+		else:
+			run_cmd(f"nmcli device modify {iface} ipv4.ignore-auto-dns no")
+			run_cmd(f"nmcli device reapply {iface}")
+		print(f"{CLR_GREEN}DNS set to Automatic (DHCP).{CLR_RESET}")
+	
+	elif mode == "manual" and dns_list:
+		if system == "windows":
+			for i, dns_ip in enumerate(dns_list):
+				if i == 0:
+					cmd = f'netsh interface ipv4 set dnsservers name="{iface}" static address={dns_ip} validate=no'
+				else:
+					cmd = f'netsh interface ipv4 add dnsservers name="{iface}" address={dns_ip} index={i+1} validate=no'
+				run_cmd(cmd)
+		else:
+			dns_str = ' '.join(dns_list)
+			run_cmd(f"nmcli device modify {iface} ipv4.dns '{dns_str}' ipv4.ignore-auto-dns yes")
+			run_cmd(f"nmcli device reapply {iface}")
+		print(f"{CLR_GREEN}DNS set to Manual: {', '.join(dns_list)}{CLR_RESET}")
+	
+	time.sleep(1)
+
+def apply_config(iface, mode, config=None):
+	"""Applies IP addressing configuration."""
+	system = get_platform()
+	print(f"{CLR_ORANGE}Applying IP configuration...{CLR_RESET}")
 	
 	if mode == "dhcp":
 		if system == "windows":
 			run_cmd(f'netsh interface ipv4 set address name="{iface}" source=dhcp')
-			if not keep_dns:
-				run_cmd(f'netsh interface ipv4 set dnsservers name="{iface}" source=dhcp')
 		else:
-			if keep_dns:
-				run_cmd(f"nmcli device modify {iface} ipv4.method auto ipv4.ignore-auto-dns yes")
-			else:
-				run_cmd(f"nmcli device modify {iface} ipv4.method auto ipv4.ignore-auto-dns no")
+			run_cmd(f"nmcli device modify {iface} ipv4.method auto")
 			run_cmd(f"nmcli device reapply {iface}")
-		
-		dns_status = "kept" if keep_dns else "reset to automatic"
-		print(f"{CLR_GREEN}Interface {iface} set to DHCP (DNS {dns_status}).{CLR_RESET}")
+		print(f"{CLR_GREEN}Interface {iface} set to DHCP.{CLR_RESET}")
 		
 	elif mode == "static" and config:
 		if system == "windows":
-			# Set IP Configuration
 			run_cmd(f'netsh interface ipv4 set address name="{iface}" static {config["ip"]} {config["mask"]} {config["gw"]}')
-			# Set DNS Configuration
-			if config["dns"]:
-				for i, dns_ip in enumerate(config["dns"]):
-					if i == 0:
-						# Primary DNS
-						cmd = f'netsh interface ipv4 set dnsservers name="{iface}" static address={dns_ip} validate=no'
-					else:
-						# Secondary DNS
-						cmd = f'netsh interface ipv4 add dnsservers name="{iface}" address={dns_ip} index={i+1} validate=no'
-					run_cmd(cmd)
-			else:
-				# If no DNS provided in static config, fall back to DHCP for DNS only
-				run_cmd(f'netsh interface ipv4 set dnsservers name="{iface}" source=dhcp')
 		else:
 			prefix = config["mask"]
 			run_cmd(f"nmcli device modify {iface} ipv4.addresses {config['ip']}/{prefix} ipv4.gateway {config['gw']} ipv4.method manual")
-			if config["dns"]:
-				dns_str = ' '.join(config["dns"])
-				run_cmd(f"nmcli device modify {iface} ipv4.dns '{dns_str}'")
 			run_cmd(f"nmcli device reapply {iface}")
 		print(f"{CLR_GREEN}Interface {iface} set to Static IP: {config['ip']}{CLR_RESET}")
 	
@@ -269,12 +269,15 @@ def interface_menu(selected_iface):
 	while True:
 		configs = load_configs()
 		print(f"\n{CLR_PURPLE}{CLR_BOLD}--- Managing: {selected_iface} ---{CLR_RESET}")
-		print(f"{CLR_CYAN}1.{CLR_RESET} Switch Network Mode (DHCP/Static)")
-		print(f"{CLR_CYAN}2.{CLR_RESET} Restart Network Adapter")
-		print(f"{CLR_CYAN}3.{CLR_RESET} Show Network Info")
-		print(f"{CLR_RED}4.{CLR_RESET} Exit (Back to Interface Selection)")
+		print(f"{CLR_CYAN}1.{CLR_RESET} Switch IP Mode (DHCP/Static)")
+		print(f"{CLR_CYAN}2.{CLR_RESET} Set DNS (Auto/Manual)")
+		print(f"{CLR_CYAN}3.{CLR_RESET} Restart Network Adapter")
+		print(f"{CLR_CYAN}4.{CLR_RESET} Show Network Info")
+		print(f"{CLR_RED}5.{CLR_RESET} Exit (Back to Interface Selection)")
 		
-		choice = input(f"\n{CLR_BOLD}Select option: {CLR_RESET}")
+		choice = input(f"\n{CLR_BOLD}Select option (or Enter to go back): {CLR_RESET}")
+		if not choice.strip():
+			break
 		
 		if choice == "1":
 			print(f"\n{CLR_CYAN}1.{CLR_RESET} Switch to {CLR_GREEN}DHCP{CLR_RESET}")
@@ -282,8 +285,7 @@ def interface_menu(selected_iface):
 			mode_choice = input(f"{CLR_BOLD}Select mode: {CLR_RESET}")
 			
 			if mode_choice == "1":
-				keep = input(f"{CLR_ORANGE}Keep current manual DNS settings? (y/n): {CLR_RESET}").lower() == 'y'
-				apply_config(selected_iface, "dhcp", keep_dns=keep)
+				apply_config(selected_iface, "dhcp")
 			elif mode_choice == "2":
 				if selected_iface not in configs or input(f"{CLR_ORANGE}Edit saved config? (y/n): {CLR_RESET}").lower() == 'y':
 					configs[selected_iface] = get_manual_input(selected_iface, configs)
@@ -291,12 +293,37 @@ def interface_menu(selected_iface):
 				apply_config(selected_iface, "static", configs[selected_iface])
 			else:
 				print(f"{CLR_RED}Invalid mode.{CLR_RESET}")
-				
+
 		elif choice == "2":
-			restart_adapter(selected_iface)
+			print(f"\n{CLR_CYAN}1.{CLR_RESET} Set DNS to {CLR_GREEN}Auto (DHCP){CLR_RESET}")
+			print(f"{CLR_CYAN}2.{CLR_RESET} Set DNS to {CLR_ORANGE}Manual{CLR_RESET}")
+			dns_choice = input(f"{CLR_BOLD}Select DNS mode: {CLR_RESET}")
+			
+			if dns_choice == "1":
+				apply_dns(selected_iface, "auto")
+			elif dns_choice == "2":
+				prev_dns = configs.get(selected_iface, {}).get('dns', [])
+				dns_input = input(f"{CLR_CYAN}Enter DNS servers (comma separated) {CLR_RESET}[{', '.join(prev_dns)}]: ")
+				if dns_input:
+					dns_list = [d.strip() for d in dns_input.split(',')]
+					if selected_iface not in configs: configs[selected_iface] = {}
+					configs[selected_iface]['dns'] = dns_list
+					save_configs(configs)
+				else:
+					dns_list = prev_dns
+				
+				if dns_list:
+					apply_dns(selected_iface, "manual", dns_list)
+				else:
+					print(f"{CLR_RED}No DNS servers provided.{CLR_RESET}")
+			else:
+				print(f"{CLR_RED}Invalid choice.{CLR_RESET}")
+				
 		elif choice == "3":
-			show_network_info(selected_iface)
+			restart_adapter(selected_iface)
 		elif choice == "4":
+			show_network_info(selected_iface)
+		elif choice == "5":
 			break
 		else:
 			print(f"{CLR_RED}Invalid choice.{CLR_RESET}")
@@ -325,8 +352,9 @@ def main():
 		print(f"{CLR_RED}{len(interfaces) + 1}. Quit{CLR_RESET}")
 
 		try:
-			choice_str = input(f"\n{CLR_BOLD}Select interface (number): {CLR_RESET}")
-			if not choice_str.strip(): continue
+			choice_str = input(f"\n{CLR_BOLD}Select interface (or Enter to quit): {CLR_RESET}")
+			if not choice_str.strip():
+				break
 			
 			choice = int(choice_str) - 1
 			if choice == len(interfaces):
