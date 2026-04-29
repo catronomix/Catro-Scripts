@@ -8,6 +8,7 @@ retaining the media filters and safety features of the random sorter.
 
 USAGE:
 	python renamer.py -p "holiday_" -s "_draft"
+	python renamer.py --undo
 	python renamer.py -f --type image
 	python renamer.py --wildcard "vacation_*.jpg"
 	python renamer.py -d 0 -p "PRE_"      # Keeps original names, adds prefix
@@ -28,6 +29,7 @@ OPTIONS:
 	-t, --type TYPE    Filter by 'image', 'video', or 'audio'
 	-e, --ext EXT      Filter for a specific extension only
 	-a, --all          Include all files, ignoring safety filters (requires confirmation)
+	-u, --undo         Undo the last rename operation
 """
 
 import os
@@ -43,8 +45,12 @@ if os.name == 'nt':
 # Color Constants
 CLR_ORANGE = "\033[93m"
 CLR_GREEN  = "\033[92m"
+CLR_BLUE   = "\033[94m"
 CLR_RED    = "\033[91m"
 CLR_RESET  = "\033[0m"
+
+# Path for the undo file in the script's directory
+UNDO_FILE = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "renamer.undo")
 
 # Predefined extension groups
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.svg', '.heic', '.jfif')
@@ -67,6 +73,58 @@ class ColoredArgumentParser(argparse.ArgumentParser):
 		sys.stderr.write(f"{CLR_RED}error: {message}{CLR_RESET}\n")
 		self.print_usage(sys.stderr)
 		sys.exit(2)
+
+def save_undo_data(history):
+	"""Saves renaming history to the undo file."""
+	try:
+		with open(UNDO_FILE, 'w', encoding='utf-8') as f:
+			for old, new in history:
+				f.write(f"{old}|{new}\n")
+	except Exception as e:
+		sys.stderr.write(f"{CLR_RED}Could not save undo data: {e}{CLR_RESET}\n")
+
+def perform_undo():
+	"""Reverses the last rename operation in reverse order."""
+	if not os.path.exists(UNDO_FILE):
+		print(f"{CLR_RED}No undo history found.{CLR_RESET}")
+		return
+
+	history = []
+	try:
+		with open(UNDO_FILE, 'r', encoding='utf-8') as f:
+			for line in f:
+				parts = line.strip().split('|')
+				if len(parts) == 2:
+					history.append(parts)
+	except Exception as e:
+		sys.stderr.write(f"{CLR_RED}Error reading undo file: {e}{CLR_RESET}\n")
+		return
+
+	if not history:
+		print("Undo history is empty.")
+		return
+
+	print(f"Undoing last operation ({len(history)} files)...\n")
+	
+	# Reverse history to undo in reverse order
+	for old_path, new_path in reversed(history):
+		if not os.path.exists(new_path):
+			print(f"{CLR_RED}Missing: {new_path}{CLR_RESET} (cannot restore to {os.path.basename(old_path)})")
+			continue
+		
+		try:
+			os.rename(new_path, old_path)
+			print(f"Restored: {CLR_ORANGE}{os.path.basename(new_path)}{CLR_RESET} -> {CLR_GREEN}{os.path.basename(old_path)}{CLR_RESET}")
+		except Exception as e:
+			sys.stderr.write(f"{CLR_RED}Failed to restore {new_path}: {e}{CLR_RESET}\n")
+
+	# Clear history
+	try:
+		os.remove(UNDO_FILE)
+	except Exception as e:
+		sys.stderr.write(f"{CLR_RED}Failed to clear undo file: {e}{CLR_RESET}\n")
+	
+	print("\nUndo complete.")
 
 def get_target_files(folder_path, allowed_extensions, include_all, wildcard_pattern=None):
 	"""Returns a list of files to process using scandir for efficiency."""
@@ -111,10 +169,11 @@ def sort_files(folder_path, files, method):
 	return files
 
 def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files):
-	"""Performs the sequential renaming/copying."""
+	"""Performs the sequential renaming/copying. Returns history for undo."""
+	history = []
 	if not files:
 		print("No matching files found. Nothing to do.")
-		return
+		return history
 
 	num_files = len(files)
 	required_digits = len(str(num_files))
@@ -146,73 +205,102 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 			# Just the number
 			content = str(i).zfill(digit_count)
 			
-		new_name = f"{prefix}{content}{suffix}{extension}"
+		base_new_name = f"{prefix}{content}{suffix}"
+		new_name = f"{base_new_name}{extension}"
 		
 		old_path = os.path.join(folder_path, filename)
-		new_path = os.path.join(folder_path, new_name)
 
 		# Check if the name hasn't changed at all
 		if filename == new_name:
 			print(f"Skipping: {CLR_ORANGE}{filename}{CLR_RESET} (no change)")
 			continue
 
-		# Basic collision check
-		if os.path.exists(new_path):
-			print(f"Skipping: {CLR_GREEN}{new_name}{CLR_RESET} already exists.")
-			continue
+		# Handle collisions with incrementing suffix
+		counter = 0
+		final_name = new_name
+		is_collision = False
+		
+		while os.path.exists(os.path.join(folder_path, final_name)):
+			if final_name == filename:
+				break
+			is_collision = True
+			counter += 1
+			final_name = f"{base_new_name}({counter}){extension}"
+		
+		new_path = os.path.join(folder_path, final_name)
+		display_color = CLR_BLUE if is_collision else CLR_GREEN
 
 		try:
 			if keep:
 				shutil.copy2(old_path, new_path)
-				print(f"Copied: {CLR_ORANGE}{filename}{CLR_RESET} -> {CLR_GREEN}{new_name}{CLR_RESET}")
+				print(f"Copied: {CLR_ORANGE}{filename}{CLR_RESET} -> {display_color}{final_name}{CLR_RESET}")
 			else:
 				os.rename(old_path, new_path)
-				print(f"Renamed: {CLR_ORANGE}{filename}{CLR_RESET} -> {CLR_GREEN}{new_name}{CLR_RESET}")
+				print(f"Renamed: {CLR_ORANGE}{filename}{CLR_RESET} -> {display_color}{final_name}{CLR_RESET}")
+				history.append((os.path.abspath(old_path), os.path.abspath(new_path)))
 		except Exception as e:
 			sys.stderr.write(f"{CLR_RED}Failed to process {filename}: {e}{CLR_RESET}\n")
+	
+	return history
 
 if __name__ == "__main__":
 	parser = ColoredArgumentParser(description="Sequentially rename files in the current folder.")
 	
-	parser.add_argument("-p", "--prefix", type=str, default="",
+	# Create a mutually exclusive group for undo vs everything else
+	action_group = parser.add_mutually_exclusive_group()
+
+	# Options for renaming
+	rename_opts = parser.add_argument_group("renaming options")
+	rename_opts.add_argument("-p", "--prefix", type=str, default="",
 						help="Prefix for the new filename.")
-
-	parser.add_argument("-f", "--folder", action="store_true",
+	rename_opts.add_argument("-f", "--folder", action="store_true",
 						help="Use the current folder name as the prefix.")
-	
-	parser.add_argument("-s", "--suffix", type=str, default="",
+	rename_opts.add_argument("-s", "--suffix", type=str, default="",
 						help="Suffix for the new filename (before extension).")
-	
-	parser.add_argument("-w", "--wildcard", type=str,
+	rename_opts.add_argument("-w", "--wildcard", type=str,
 						help="Filter files using wildcards (e.g. 'holiday*.jpg').")
-	
-	parser.add_argument("-d", "--digits", type=int,
+	rename_opts.add_argument("-d", "--digits", type=int,
 						help="Number of digits for numbering (e.g. 3 for 001). Set to 0 to keep original filenames.")
-	
-	parser.add_argument("-o", "--original", action="store_true",
+	rename_opts.add_argument("-o", "--original", action="store_true",
 						help="Keep original filename and place numbers at the start.")
-	
-	parser.add_argument("--sort", type=str, choices=['name_asc', 'name_desc', 'date_asc', 'date_desc'],
+	rename_opts.add_argument("--sort", type=str, choices=['name_asc', 'name_desc', 'date_asc', 'date_desc'],
 						default='name_asc', help="Sorting method (default: name_asc)")
-
-	parser.add_argument("-k", "--keep", action="store_true",
+	rename_opts.add_argument("-k", "--keep", action="store_true",
 						help="Keep original files in place (copy instead of move)")
-
-	parser.add_argument("-t", "--type", type=str, choices=['image', 'video', 'audio'],
+	rename_opts.add_argument("-t", "--type", type=str, choices=['image', 'video', 'audio'],
 						help="Filter by category: 'image', 'video', or 'audio'")
-
-	parser.add_argument("-e", "--ext", type=str, 
+	rename_opts.add_argument("-e", "--ext", type=str, 
 						help="Filter for a specific extension only.")
-
-	parser.add_argument("-a", "--all", action="store_true",
+	rename_opts.add_argument("-a", "--all", action="store_true",
 						help="Include all files, ignoring safety filters (requires confirmation)")
 
-	# Handle case where no arguments are provided (show help instead of hanging/exiting silently)
+	# The undo action
+	action_group.add_argument("-u", "--undo", action="store_true",
+						help="Undo the last rename operation recorded in renamer.undo.")
+	
+	# We need to add a dummy argument to action_group to make the rename_opts exclusive
+	# Since argparse groups don't support nesting perfectly, we just check manually or 
+	# restructure. The simplest way is to put a hidden flag or just validate below.
+	
+	# Handle case where no arguments are provided
 	if len(sys.argv) == 1:
 		parser.print_help()
 		sys.exit(0)
 
 	args = parser.parse_args()
+
+	# Handle Undo first
+	if args.undo:
+		# Double check if any rename-specific flag was provided
+		# This manually enforces the exclusivity if the group logic above isn't enough
+		for arg in sys.argv[1:]:
+			if arg in ['-p', '--prefix', '-f', '--folder', '-s', '--suffix', '-w', '--wildcard', 
+					  '-d', '--digits', '-o', '--original', '--sort', '-k', '--keep', 
+					  '-t', '--type', '-e', '--ext', '-a', '--all']:
+				parser.error("The --undo flag is exclusive and cannot be used with other options.")
+		
+		perform_undo()
+		sys.exit(0)
 
 	# Handle mutual exclusivity for -o and -d 0
 	if args.original and args.digits == 0:
@@ -229,7 +317,6 @@ if __name__ == "__main__":
 	current_folder = os.getcwd()
 	final_prefix = args.prefix
 	if args.folder:
-		# Get base name of the current directory
 		final_prefix = os.path.basename(current_folder)
 
 	# Determine extension filter
@@ -248,7 +335,12 @@ if __name__ == "__main__":
 	target_files = get_target_files(current_folder, allowed, args.all, args.wildcard)
 	sorted_files = sort_files(current_folder, target_files, args.sort)
 	
-	# Execute renaming
-	rename_files(current_folder, final_prefix, args.suffix, args.digits, args.keep, args.original, sorted_files)
+	# Execute renaming and capture history
+	history = rename_files(current_folder, final_prefix, args.suffix, args.digits, args.keep, args.original, sorted_files)
+	
+	# Only save undo history if we didn't use --keep (copies) and some files were renamed
+	if history and not args.keep:
+		save_undo_data(history)
+		print(f"Undo history saved to: {UNDO_FILE}")
 	
 	print("\nProcessing complete.")
