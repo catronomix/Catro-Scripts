@@ -36,6 +36,10 @@ Cross-platform network interface manager. Seamlessly toggle adapters between DHC
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems support modification and access times.
 
+- **`ts_export`**: Exports a Typescript project that was created with *ts_setup* into a clean html+js format that can be loaded locally without security errors.
+
+- **`ts_setup`**: Sets up a Typescript project folder and pre-generates some boilerplate html, ts and css to get started. It also runs commands to setup npm packages (requires node.js to be installed)
+
 - **`videofade`**: Adds smooth fade-in and fade-out effects to video clips. Supports customizable durations, various interpolation curves (like Ease-In-Out), and a special "Append Mode" that freezes the edges of the video for the duration of the fade. _Requires: decord, ffmpeg_
 
 - **`videojoin`**: This utility concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. It provides advanced features such as interactive codec selection, various resizing methods (crop, fit, stretch, limit), and options to skip the last frame or join all videos in a directory.
