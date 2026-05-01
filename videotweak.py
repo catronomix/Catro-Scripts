@@ -22,6 +22,8 @@ Usage:
 
 Options:
 	path             Path to a video file or a directory of videos.
+	-a, --all        Process all video files in the current directory.
+	-e, --ext        Filter files by specific extension (e.g., mp4, webp).
 	-d, --directory  Output results into a specific subdirectory.
 	-s, --suffix     Apply a custom suffix to the output filename.
 	-c, --codec      Enable interactive menu to select output encoder.
@@ -60,6 +62,8 @@ RED = '\033[0;31m'
 BOLD = '\033[1m'
 RESET = '\033[0m'
 
+DEFAULT_VIDEO_EXTS = ('.mp4', '.mkv', '.mov', '.webm', '.avi', '.webp', '.flv', '.mpeg', '.mpg')
+
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
 	script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -78,8 +82,6 @@ def get_available_encoders():
 	try:
 		result = subprocess.run([FFMPEG_BIN, "-encoders"], capture_output=True, text=True)
 		encoders = []
-		# Regex to find video encoders: V..... name description
-		# Updated to match any capability flags (F, S, X, B, D) instead of just dots
 		pattern = re.compile(r' V.{5} ([^ ]+) +(.*)')
 		for line in result.stdout.split('\n'):
 			match = pattern.match(line)
@@ -118,7 +120,6 @@ def parse_duration(dur_str):
 	return total_seconds
 
 def get_codec_choice():
-	# Standard favorites
 	preferred = {
 		"libx264": "H.264 (Default/High Compatibility)",
 		"libx265": "H.265 (HEVC - High Efficiency)",
@@ -134,14 +135,11 @@ def get_codec_choice():
 	}
 	
 	system_encoders = {name: desc for name, desc in get_available_encoders()}
-	
-	# Filter preferred list based on what is actually available
 	available_options = []
 	for cmd, desc in preferred.items():
 		if cmd in system_encoders:
 			available_options.append((cmd, desc))
 	
-	# Add an option to see all
 	available_options.append(("SHOW_ALL", "[Show All Available System Encoders]"))
 
 	print(f"\n{PURPLE}{BOLD}--- Select Output Codec ---{RESET}")
@@ -156,54 +154,32 @@ def get_codec_choice():
 		if not choice: return available_options[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(available_options):
 			selected_cmd = available_options[int(choice)-1][0]
-			
 			if selected_cmd == "SHOW_ALL":
 				all_enc = sorted(system_encoders.items())
 				print(f"\n{PURPLE}--- All Available Video Encoders ---{RESET}")
 				for j, (name, desc) in enumerate(all_enc, 1):
 					print(f"{CYAN}{j:3}.{RESET} {BOLD}{name:<20}{RESET} {desc[:60]}")
-				
 				sub_choice = input(f"\nSelect by number: ").strip()
 				if sub_choice.isdigit() and 1 <= int(sub_choice) <= len(all_enc):
 					return all_enc[int(sub_choice)-1][0]
 				continue
-				
 			return selected_cmd
 		print(f"{RED}Invalid choice.{RESET}")
 
 def get_resize_choice():
-	res_options = [
-		("original", "Keep original resolution"),
-		("1920x1080", "1080p (1920x1080)"),
-		("1280x720", "720p (1280x720)"),
-		("custom", "Enter custom dimensions"),
-	]
-	print(f"\n{PURPLE}{BOLD}--- Select Output Resolution ---{RESET}")
-	for i, (val, desc) in enumerate(res_options, 1):
-		print(f"{CYAN}{i}.{RESET} {desc}")
-	
-	w, h = None, None
-	while True:
-		choice = input(f"\nChoose (1-{len(res_options)}) [1]: ").strip()
-		if not choice or choice == "1": return None
-		if choice == "2":
-			w, h = 1920, 1080
-			break
-		if choice == "3":
-			w, h = 1280, 720
-			break
-		if choice == "4":
-			try:
-				w = int(input(f"{CYAN}Target Width (px):{RESET} ").strip())
-				if w % 2 != 0: w += 1
-				h_in = input(f"{CYAN}Target Height (px) [Enter for Auto]:{RESET} ").strip()
-				h = int(h_in) if h_in else -2
-				if h != -2 and h % 2 != 0: h += 1
-				break
-			except ValueError:
-				print(f"{RED}Invalid dimensions.{RESET}")
-				continue
-		print(f"{RED}Invalid choice.{RESET}")
+	print(f"\n{PURPLE}{BOLD}--- Resize Configuration ---{RESET}")
+	try:
+		w = int(input(f"{CYAN}Target Width (px):{RESET} ").strip())
+		if w % 2 != 0: w += 1
+		
+		h_in = input(f"{CYAN}Target Height (px) [Enter for Auto]:{RESET} ").strip()
+		if not h_in:
+			h = -2
+		else:
+			h = int(h_in)
+			if h != -2 and h % 2 != 0: h += 1
+	except ValueError:
+		return None
 
 	if h == -2:
 		return {"width": w, "height": h, "method": "stretch"}
@@ -212,7 +188,7 @@ def get_resize_choice():
 		("fit", "Letterbox (Keep ratio, add black bars)"),
 		("crop", "Fill (Keep ratio, crop edges)"),
 		("stretch", "Stretch (Ignore ratio)"),
-		("limit", "Downscale Only (Don't upscale if smaller)")
+		("limit", "Limit (Scale proportional within bounds)")
 	]
 	print(f"\n{YELLOW}Select Resize Method:{RESET}")
 	for i, (cmd, desc) in enumerate(methods, 1):
@@ -220,10 +196,30 @@ def get_resize_choice():
 	
 	while True:
 		choice = input(f"\nChoose (1-{len(methods)}) [1]: ").strip()
-		if not choice: return {"width": w, "height": h, "method": "fit"}
+		if not choice: 
+			method = "fit"
+			break
 		if choice.isdigit() and 1 <= int(choice) <= len(methods):
-			return {"width": w, "height": h, "method": methods[int(choice)-1][0]}
+			method = methods[int(choice)-1][0]
+			break
 		print(f"{RED}Invalid choice.{RESET}")
+
+	quant = 2
+	if method == "limit":
+		q_opts = [0, 2, 4, 8, 16, 32, 64]
+		print(f"\n{YELLOW}Select Edge Quantization (pixels):{RESET}")
+		print(f"{CYAN}Options:{RESET} {', '.join(map(str, q_opts))}")
+		while True:
+			q_in = input(f"Choose quantization [2]: ").strip()
+			if not q_in:
+				quant = 2
+				break
+			if q_in.isdigit() and int(q_in) in q_opts:
+				quant = int(q_in)
+				break
+			print(f"{RED}Invalid choice.{RESET}")
+
+	return {"width": w, "height": h, "method": method, "quant": quant}
 
 def get_effect_choice():
 	print(f"\n{PURPLE}{BOLD}--- Select Tweak Effect ---{RESET}")
@@ -247,7 +243,6 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 	effect_suffixes = {1: "_reversed", 2: "_lowfps", 3: "_speed", 4: "_bounce", 5: "_stretched", 6: "_tweak"}
 	suffix = custom_suffix if custom_suffix else effect_suffixes[effect_id]
 	
-	# Determine extension
 	if "prores" in codec:
 		output_ext = ".mov"
 	elif "rawvideo" in codec:
@@ -270,7 +265,6 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 	v_filter = ""
 	a_filter = ""
 	
-	# Handle Effects
 	if effect_id == 1: # Reverse
 		v_filter = "reverse"
 		if audio_present: a_filter = "areverse"
@@ -306,7 +300,6 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 		v_filter = ""
 		if audio_present: a_filter = "acopy"
 
-	# Handle Resizing
 	if resize_config:
 		tw, th = resize_config["width"], resize_config["height"]
 		m = resize_config["method"]
@@ -318,12 +311,16 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 		elif m == "crop":
 			res_f = f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}"
 		elif m == "limit":
-			res_f = f"scale='min({tw},iw)':'min({th},ih)':force_original_aspect_ratio=decrease,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2"
+			q = resize_config["quant"]
+			if q > 1:
+				res_f = (f"scale='trunc(min({tw},iw*min({tw}/iw,{th}/ih))/{q})*{q}':"
+						 f"'trunc(min({th},ih*min({tw}/iw,{th}/ih))/{q})*{q}'")
+			else:
+				res_f = f"scale={tw}:{th}:force_original_aspect_ratio=decrease"
 		
 		v_filter = res_f + (f",{v_filter}" if v_filter else "")
 
 	cmd = [FFMPEG_BIN, "-y", "-i", file_path]
-	is_complex = "[" in v_filter or ";" in v_filter
 	
 	if effect_id == 4:
 		v_filter = f"[0:v]{v_filter}[outv]"
@@ -340,23 +337,15 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 	else:
 		cmd.extend(["-filter_complex", v_filter, "-map", "[outv]", "-an"])
 
-	cmd.extend(["-c:v", codec])
+	cmd.extend(["-c:v", codec, "-pix_fmt", "yuv420p"])
 	
-	# Encoder compatibility settings
 	if "prores" in codec:
 		cmd.extend(["-profile:v", "3"])
 	elif "qsv" in codec:
-		# Intel QuickSync requires nv12 pixel format
 		cmd.extend(["-pix_fmt", "nv12"])
 	elif any(x in codec for x in ["x264", "x265", "nvenc", "amf", "videotoolbox"]):
-		cmd.extend(["-pix_fmt", "yuv420p"])
 		if "x264" in codec or "x265" in codec:
 			cmd.extend(["-preset", "medium", "-crf", "18"])
-	elif "rawvideo" in codec:
-		cmd.extend(["-pix_fmt", "yuv420p"])
-	else:
-		# Fallback to yuv420p for other encoders
-		cmd.extend(["-pix_fmt", "yuv420p"])
 	
 	cmd.append(output_path)
 
@@ -372,6 +361,11 @@ def main():
 	init_ansi()
 	parser = argparse.ArgumentParser(description="Tweak video files.")
 	parser.add_argument("path", nargs="?", help="Video file or directory")
+	
+	group = parser.add_mutually_exclusive_group()
+	group.add_argument("-a", "--all", action="store_true", help="Process all videos in current directory")
+	group.add_argument("-e", "--ext", help="Filter by extension (e.g., mp4, webp)")
+
 	parser.add_argument("-d", "--directory", help="Subdirectory for results")
 	parser.add_argument("-s", "--suffix", help="Custom suffix for filename")
 	parser.add_argument("-c", "--codec", action="store_true", help="Choose codec interactively")
@@ -380,15 +374,24 @@ def main():
 	args = parser.parse_args()
 	
 	target = args.path if args.path else "."
+	
+	# Determine extension criteria
+	if args.ext:
+		ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
+		filter_criteria = (ext_filter.lower(),)
+	else:
+		filter_criteria = DEFAULT_VIDEO_EXTS
+
 	files = []
-	if os.path.isfile(target):
+	if os.path.isfile(target) and not args.all and not args.ext:
 		files = [target]
-	elif os.path.isdir(target):
-		video_exts = ('.mp4', '.mkv', '.mov', '.webm', '.avi')
-		files = [os.path.join(target, f) for f in os.listdir(target) if f.lower().endswith(video_exts)]
+	elif os.path.isdir(target) or args.all or args.ext:
+		search_dir = target if os.path.isdir(target) else "."
+		files = [os.path.join(search_dir, f) for f in os.listdir(search_dir) 
+				 if f.lower().endswith(filter_criteria) and os.path.isfile(os.path.join(search_dir, f))]
 	
 	if not files:
-		print(f"{RED}No video files found.{RESET}")
+		print(f"{RED}No video files found matching criteria.{RESET}")
 		return
 
 	selected_codec = get_codec_choice() if args.codec else "libx264"
