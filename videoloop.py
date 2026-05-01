@@ -13,6 +13,8 @@ Features:
 	- Batch processing for folders.
 	- Automatic handling of silent or audio-heavy files.
 	- Fallback logic for older FFmpeg versions.
+	- Advanced resizing: Crop, Fit (Letterbox), Stretch, or Limit.
+	- Filter by specific extension with --ext.
 
 Usage:
 	python videoloop.py [path] [options]
@@ -22,6 +24,8 @@ Options:
 	-s, --shift          Start position offset (0.0 to 1.0, default: 0.0).
 	-c, --codec          Choose output codec interactively.
 	-n, --interpolation  Choose fade curve interactively (FFmpeg 4.3+).
+	-r, --resize         Configure output dimensions and method.
+	-e, --ext            Filter files by specific extension (e.g., mp4, webp).
 	-x, --suffix         Suffix for output files (default: _seamless).
 
 Requirements:
@@ -56,6 +60,8 @@ GREEN = '\033[0;32m'
 RED = '\033[0;31m'
 BOLD = '\033[1m'
 RESET = '\033[0m'
+
+DEFAULT_VIDEO_EXTS = ('.mp4', '.mkv', '.mov', '.webm', '.avi', '.webp')
 
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
@@ -132,7 +138,62 @@ def get_curve_choice():
 			return curves[int(choice)-1][0]
 		print(f"{RED}Invalid choice.{RESET}")
 
-def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve):
+def get_resize_config():
+	print(f"\n{PURPLE}{BOLD}--- Resize Configuration ---{RESET}")
+	try:
+		w = int(input(f"{CYAN}Target Width (px):{RESET} ").strip())
+		if w % 2 != 0: w += 1 
+		
+		h_in = input(f"{CYAN}Target Height (px) [Enter for Auto]:{RESET} ").strip()
+		if not h_in:
+			h = -2
+		else:
+			h = int(h_in)
+			if h != -2 and h % 2 != 0: h += 1
+	except ValueError:
+		return None
+
+	if h == -2:
+		return {"width": w, "height": h, "method": "stretch"}
+
+	methods = [
+		("fit", "Letterbox (Keep ratio, add black bars)"),
+		("crop", "Fill (Keep ratio, crop edges)"),
+		("stretch", "Stretch (Ignore ratio)"),
+		("limit", "Limit (Scale proportional within bounds)")
+	]
+	print(f"\n{YELLOW}Select Resize Method:{RESET}")
+	for i, (cmd, desc) in enumerate(methods, 1):
+		print(f"{CYAN}{i}.{RESET} {BOLD}{cmd:<8}{RESET} - {desc}")
+	
+	while True:
+		choice = input(f"\nChoose (1-{len(methods)}) [1]: ").strip()
+		if not choice: 
+			method = "fit"
+			break
+		if choice.isdigit() and 1 <= int(choice) <= len(methods):
+			method = methods[int(choice)-1][0]
+			break
+		print(f"{RED}Invalid choice.{RESET}")
+
+	quant = 2
+	if method == "limit":
+		q_opts = [0, 2, 4, 8, 16, 32, 64]
+		print(f"\n{YELLOW}Select Edge Quantization (pixels):{RESET}")
+		print(f"{CYAN}Options:{RESET} {', '.join(map(str, q_opts))}")
+		while True:
+			q_in = input(f"Choose quantization [2]: ").strip()
+			if not q_in:
+				quant = 2
+				break
+			if q_in.isdigit() and int(q_in) in q_opts:
+				quant = int(q_in)
+				break
+			print(f"{RED}Invalid choice.{RESET}")
+
+	return {"width": w, "height": h, "method": method, "quant": quant}
+
+def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config):
 	if not check_ffmpeg():
 		print(f"{RED}Error: FFmpeg not found.{RESET}")
 		return
@@ -156,12 +217,32 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 
 		print(f"{YELLOW}Processing: {os.path.basename(file_path)}...{RESET}")
 		
+		# Build Resizing Filter
+		res_filter = ""
+		if resize_config:
+			tw, th = resize_config["width"], resize_config["height"]
+			m = resize_config["method"]
+			if m == "stretch" or th == -2:
+				res_filter = f"scale={tw}:{th},"
+			elif m == "fit":
+				res_filter = f"scale={tw}:{th}:force_original_aspect_ratio=decrease,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,"
+			elif m == "crop":
+				res_filter = f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th},"
+			elif m == "limit":
+				q = resize_config["quant"]
+				if q > 1:
+					res_filter = (f"scale='trunc(min({tw},iw*min({tw}/iw,{th}/ih))/{q})*{q}':"
+								  f"'trunc(min({th},ih*min({tw}/iw,{th}/ih))/{q})*{q}',")
+				else:
+					res_filter = f"scale={tw}:{th}:force_original_aspect_ratio=decrease,"
+
 		v_curve = f":curve={curve}" if (supports_curve and curve != "tri") else ""
 		
 		v_filter = (
-			f"[0:v]trim=start={fade_dur}:end={duration-fade_dur},setpts=PTS-STARTPTS[body];"
-			f"[0:v]trim=start={duration-fade_dur}:end={duration},setpts=PTS-STARTPTS[tail];"
-			f"[0:v]trim=start=0:end={fade_dur},setpts=PTS-STARTPTS[head];"
+			f"[0:v]{res_filter}split=3[vhead][vbody][vtail];"
+			f"[vbody]trim=start={fade_dur}:end={duration-fade_dur},setpts=PTS-STARTPTS[body];"
+			f"[vtail]trim=start={duration-fade_dur}:end={duration},setpts=PTS-STARTPTS[tail];"
+			f"[vhead]trim=start=0:end={fade_dur},setpts=PTS-STARTPTS[head];"
 			f"[head]format=yuva420p,fade=t=in:st=0:d={fade_dur}:alpha=1{v_curve}[h_f];"
 			f"[tail][h_f]overlay=eof_action=repeat[trans];"
 			f"[body][trans]concat=n=2:v=1[loopv]"
@@ -181,9 +262,10 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		if audio_present:
 			a_curve = f":curve={curve}" if (supports_curve and curve != "tri") else ""
 			a_filter = (
-				f"[0:a]atrim=start={fade_dur}:end={duration-fade_dur},asetpts=PTS-STARTPTS[abody];"
-				f"[0:a]atrim=start={duration-fade_dur}:end={duration},asetpts=PTS-STARTPTS[atail];"
-				f"[0:a]atrim=start=0:end={fade_dur},asetpts=PTS-STARTPTS[ahead];"
+				f"[0:a]asplit=3[ahead_raw][abody_raw][atail_raw];"
+				f"[abody_raw]atrim=start={fade_dur}:end={duration-fade_dur},asetpts=PTS-STARTPTS[abody];"
+				f"[atail_raw]atrim=start={duration-fade_dur}:end={duration},asetpts=PTS-STARTPTS[atail];"
+				f"[ahead_raw]atrim=start=0:end={fade_dur},asetpts=PTS-STARTPTS[ahead];"
 				f"[atail]afade=t=out:st=0:d={fade_dur}{a_curve}[at_f];"
 				f"[ahead]afade=t=in:st=0:d={fade_dur}{a_curve}[ah_f];"
 				f"[at_f][ah_f]amix=inputs=2:duration=first:dropout_transition={fade_dur}[atrans];"
@@ -206,14 +288,14 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		else:
 			cmd.extend(["-filter_complex", v_filter, "-map", "[outv]", "-an"])
 
-		cmd.extend(["-c:v", codec, "-preset", "medium", output_name])
+		cmd.extend(["-c:v", codec, "-preset", "medium", "-pix_fmt", "yuv420p", output_name])
 
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		
 		if result.returncode != 0:
 			if "Option 'curve' not found" in result.stderr or "Error applying option 'curve'" in result.stderr:
 				print(f"{YELLOW}Curve '{curve}' not supported. Retrying with linear...{RESET}")
-				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False)
+				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False, resize_config)
 			print(f"{RED}FFmpeg Error Output:{RESET}\n{result.stderr}")
 		else:
 			print(f"{GREEN}[Success] Loop saved as {output_name}{RESET}")
@@ -229,20 +311,28 @@ def main():
 	parser.add_argument("-s", "--shift", type=float, default=0.0, help="Timeline offset (0.0-1.0)")
 	parser.add_argument("-c", "--codec", action="store_true", help="Choose codec interactively")
 	parser.add_argument("-n", "--interpolation", action="store_true", help="Choose curve interactively")
+	parser.add_argument("-r", "--resize", action="store_true", help="Configure output dimensions")
+	parser.add_argument("-e", "--ext", help="Filter files by specific extension (e.g., mp4)")
 	parser.add_argument("-x", "--suffix", default="_seamless", help="Suffix for output files")
 
 	args = parser.parse_args()
 	
 	target = args.path if args.path else "."
+	
+	if args.ext:
+		ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
+		filter_criteria = (ext_filter.lower(),)
+	else:
+		filter_criteria = DEFAULT_VIDEO_EXTS
+
 	files = []
 	if os.path.isfile(target):
 		files = [target]
 	elif os.path.isdir(target):
-		video_exts = ('.mp4', '.mkv', '.mov', '.webm', '.avi')
-		files = [os.path.join(target, f) for f in os.listdir(target) if f.lower().endswith(video_exts)]
+		files = [os.path.join(target, f) for f in os.listdir(target) if f.lower().endswith(filter_criteria)]
 	
 	if not files:
-		print(f"{RED}No video files found.{RESET}")
+		print(f"{RED}No video files found matching criteria.{RESET}")
 		return
 
 	v_major, v_minor = get_ffmpeg_version()
@@ -250,6 +340,7 @@ def main():
 	
 	selected_codec = get_codec_choice() if args.codec else "libx264"
 	selected_curve = get_curve_choice() if args.interpolation else "esin"
+	resize_config = get_resize_config() if args.resize else None
 
 	print(f"\n{PURPLE}{BOLD}--- LOOP SETTINGS ---{RESET}")
 	print(f"Fade Time: {args.fade}s")
@@ -257,7 +348,7 @@ def main():
 	print(f"Curve:     {selected_curve}\n")
 
 	for f in sorted(files):
-		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve)
+		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config)
 
 if __name__ == "__main__":
 	main()
