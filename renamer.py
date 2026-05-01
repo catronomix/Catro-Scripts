@@ -13,12 +13,16 @@ USAGE:
 	python renamer.py --wildcard "vacation_*.jpg"
 	python renamer.py -d 0 -p "PRE_"      # Keeps original names, adds prefix
 	python renamer.py -o -p "IMG_"       # Keeps original names, adds prefix AND numbers at start
+	python renamer.py -x " (1)"          # Renames files but removes " (1)" from original names first
+	python renamer.py -xx "_TEMP"        # Only removes "_TEMP" from matching files, no other renaming
 
 OPTIONS:
 	-p, --prefix STR   Text to put before the content
 	-f, --folder       Use the parent folder's name as the prefix
 	-s, --suffix STR   Text to put after the content (before extension)
 	-w, --wildcard STR Filter files using wildcards (e.g., 'IMG_*.jpg')
+	-x, --strip STR    Remove STR from the original filename before processing
+	-xx, --striponly STR Only target files with STR and remove it (ignores numbering/prefix/suffix)
 	-d, --digits N     Number of digits for padding. 
 	                   0: Disable numbering (keep original filename)
 	                   Default: auto-calculated based on file count
@@ -168,7 +172,7 @@ def sort_files(folder_path, files, method):
 		files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
 	return files
 
-def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files):
+def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files, strip_str=None, striponly_str=None):
 	"""Performs the sequential renaming/copying. Returns history for undo."""
 	history = []
 	if not files:
@@ -178,36 +182,45 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 	num_files = len(files)
 	required_digits = len(str(num_files))
 
-	# Handle digit padding logic
-	if digit_count is None:
-		digit_count = required_digits
-		print(f"Auto-calculated digit padding: {digit_count}")
-	elif digit_count > 0:
-		if digit_count < required_digits:
-			sys.stderr.write(f"{CLR_RED}Error: Specified digits ({digit_count}) is too small for {num_files} files.{CLR_RESET}\n")
-			sys.stderr.write(f"Required digits: {required_digits}\n")
-			sys.exit(1)
-	elif digit_count == 0:
-		print("Numbering disabled. Using original filenames.")
+	# Handle digit padding logic for normal mode
+	if striponly_str is None:
+		if digit_count is None:
+			digit_count = required_digits
+			print(f"Auto-calculated digit padding: {digit_count}")
+		elif digit_count > 0:
+			if digit_count < required_digits:
+				sys.stderr.write(f"{CLR_RED}Error: Specified digits ({digit_count}) is too small for {num_files} files.{CLR_RESET}\n")
+				sys.stderr.write(f"Required digits: {required_digits}\n")
+				sys.exit(1)
+		elif digit_count == 0:
+			print("Numbering disabled. Using original filenames.")
+	else:
+		print(f"Strip-only mode: Removing '{striponly_str}' from filenames.")
 
 	print(f"Processing {num_files} files...\n")
 
 	for i, filename in enumerate(files, start=1):
 		name_root, extension = os.path.splitext(filename)
 		
-		# Build new filename content
-		if digit_count == 0:
-			content = name_root
-		elif include_orig:
-			# Number at start, then original name
-			content = f"{str(i).zfill(digit_count)}_{name_root}"
+		# Apply Stripping
+		if striponly_str:
+			# Just strip the string, no other changes
+			base_new_name = name_root.replace(striponly_str, "")
 		else:
-			# Just the number
-			content = str(i).zfill(digit_count)
-			
-		base_new_name = f"{prefix}{content}{suffix}"
-		new_name = f"{base_new_name}{extension}"
+			if strip_str:
+				name_root = name_root.replace(strip_str, "")
+
+			# Build new filename content
+			if digit_count == 0:
+				content = name_root
+			elif include_orig:
+				content = f"{str(i).zfill(digit_count)}_{name_root}"
+			else:
+				content = str(i).zfill(digit_count)
+				
+			base_new_name = f"{prefix}{content}{suffix}"
 		
+		new_name = f"{base_new_name}{extension}"
 		old_path = os.path.join(folder_path, filename)
 
 		# Check if the name hasn't changed at all
@@ -246,7 +259,6 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 if __name__ == "__main__":
 	parser = ColoredArgumentParser(description="Sequentially rename files in the current folder.")
 	
-	# Create a mutually exclusive group for undo vs everything else
 	action_group = parser.add_mutually_exclusive_group()
 
 	# Options for renaming
@@ -259,6 +271,10 @@ if __name__ == "__main__":
 						help="Suffix for the new filename (before extension).")
 	rename_opts.add_argument("-w", "--wildcard", type=str,
 						help="Filter files using wildcards (e.g. 'holiday*.jpg').")
+	rename_opts.add_argument("-x", "--strip", type=str,
+						help="String to strip from original filename before processing.")
+	rename_opts.add_argument("-xx", "--striponly", type=str,
+						help="Target files containing this string and strip it. Cannot be used with numbering/prefix/suffix.")
 	rename_opts.add_argument("-d", "--digits", type=int,
 						help="Number of digits for numbering (e.g. 3 for 001). Set to 0 to keep original filenames.")
 	rename_opts.add_argument("-o", "--original", action="store_true",
@@ -278,11 +294,6 @@ if __name__ == "__main__":
 	action_group.add_argument("-u", "--undo", action="store_true",
 						help="Undo the last rename operation recorded in renamer.undo.")
 	
-	# We need to add a dummy argument to action_group to make the rename_opts exclusive
-	# Since argparse groups don't support nesting perfectly, we just check manually or 
-	# restructure. The simplest way is to put a hidden flag or just validate below.
-	
-	# Handle case where no arguments are provided
 	if len(sys.argv) == 1:
 		parser.print_help()
 		sys.exit(0)
@@ -291,20 +302,23 @@ if __name__ == "__main__":
 
 	# Handle Undo first
 	if args.undo:
-		# Double check if any rename-specific flag was provided
-		# This manually enforces the exclusivity if the group logic above isn't enough
 		for arg in sys.argv[1:]:
 			if arg in ['-p', '--prefix', '-f', '--folder', '-s', '--suffix', '-w', '--wildcard', 
-					  '-d', '--digits', '-o', '--original', '--sort', '-k', '--keep', 
-					  '-t', '--type', '-e', '--ext', '-a', '--all']:
+					  '-x', '--strip', '-xx', '--striponly', '-d', '--digits', '-o', '--original', 
+					  '--sort', '-k', '--keep', '-t', '--type', '-e', '--ext', '-a', '--all']:
 				parser.error("The --undo flag is exclusive and cannot be used with other options.")
-		
 		perform_undo()
 		sys.exit(0)
 
 	# Handle mutual exclusivity for -o and -d 0
 	if args.original and args.digits == 0:
 		parser.error("-o/--original and -d 0 are mutually exclusive.")
+
+	# Handle striponly constraints
+	if args.striponly:
+		# Check for forbidden combinations
+		if any([args.prefix != "", args.folder, args.suffix != "", args.digits is not None, args.original, args.strip]):
+			parser.error("--striponly (-xx) can only be combined with -w, -t, -a, -e and -k.")
 
 	# Handle confirmation for --all flag
 	if args.all:
@@ -331,14 +345,29 @@ if __name__ == "__main__":
 	elif args.type == 'audio':
 		allowed = AUDIO_EXTENSIONS
 	
-	# Get and sort target files
+	# Get files
 	target_files = get_target_files(current_folder, allowed, args.all, args.wildcard)
+	
+	# If striponly is set, filter target files to only those containing the string
+	if args.striponly:
+		target_files = [f for f in target_files if args.striponly in f]
+
+	# Sort files
 	sorted_files = sort_files(current_folder, target_files, args.sort)
 	
-	# Execute renaming and capture history
-	history = rename_files(current_folder, final_prefix, args.suffix, args.digits, args.keep, args.original, sorted_files)
+	# Execute
+	history = rename_files(
+		current_folder, 
+		final_prefix, 
+		args.suffix, 
+		args.digits, 
+		args.keep, 
+		args.original, 
+		sorted_files,
+		strip_str=args.strip,
+		striponly_str=args.striponly
+	)
 	
-	# Only save undo history if we didn't use --keep (copies) and some files were renamed
 	if history and not args.keep:
 		save_undo_data(history)
 		print(f"Undo history saved to: {UNDO_FILE}")
