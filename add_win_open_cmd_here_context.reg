@@ -1,0 +1,43 @@
+Windows Registry Editor Version 5.00
+
+; Set system-wide Console defaults to Green on Black
+[HKEY_CURRENT_USER\Console]
+"ScreenColors"=dword:0000000a
+"PopupColors"=dword:000000f5
+
+; Specifically override the PowerShell shortcut colors to match
+[HKEY_CURRENT_USER\Console\%SystemRoot%_System32_WindowsPowerShell_v1.0_powershell.exe]
+"ScreenColors"=dword:0000000a
+"PopupColors"=dword:000000f5
+
+; Add "catro-script here" to the right-click menu for folders
+[HKEY_CLASSES_ROOT\Directory\shell\OpenCmdHere]
+@="catro-script here"
+"Icon"="powershell.exe"
+
+[HKEY_CLASSES_ROOT\Directory\shell\OpenCmdHere\command]
+@="powershell.exe -NoProfile -NoExit -Command \"pushd '%V'; (New-Object -ComObject WScript.Shell).SendKeys('catro-scripts ')\""
+
+; Add "catro-script here" to the right-click menu for the background of a folder
+[HKEY_CLASSES_ROOT\Directory\Background\shell\OpenCmdHere]
+@="catro-script here"
+"Icon"="powershell.exe"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\OpenCmdHere\command]
+@="powershell.exe -NoProfile -NoExit -Command \"pushd '%V'; (New-Object -ComObject WScript.Shell).SendKeys('catro-scripts ')\""
+
+; Add "catro-script here" to the right-click menu for Drives
+[HKEY_CLASSES_ROOT\Drive\shell\OpenCmdHere]
+@="catro-script here"
+"Icon"="powershell.exe"
+
+[HKEY_CLASSES_ROOT\Drive\shell\OpenCmdHere\command]
+@="powershell.exe -NoProfile -NoExit -Command \"pushd '%V'; (New-Object -ComObject WScript.Shell).SendKeys('catro-scripts ')\""
+
+; Add "catro-script here" to the right-click menu for Files
+[HKEY_CLASSES_ROOT\*\shell\OpenCmdHere]
+@="catro-script here"
+"Icon"="powershell.exe"
+
+[HKEY_CLASSES_ROOT\*\shell\OpenCmdHere\command]
+@="powershell.exe -NoProfile -NoExit -Command \"(New-Object -ComObject WScript.Shell).SendKeys('catro-scripts %1 ')\""

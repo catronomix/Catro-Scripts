@@ -9,9 +9,12 @@ FFmpeg filter chains for resizing and trimming.
 Features:
 	- Join any number of video files.
 	- Skip the last frame of each video (loop optimization).
+	- Loop segments: Repeat each clip X times (e.g., a-a-b-b).
 	- Interactive codec selection.
 	- Advanced resizing: Crop, Fit (Letterbox), Stretch, or Limit.
 	- Auto-detects audio and handles silent/video-only files gracefully.
+	- Auto-matches resolution of the first clip if no resize is specified.
+	- Retains metadata (e.g., ComfyUI workflows) from the first clip.
 	- Join all videos in the current directory with --all.
 	- Batch process all subdirectories with --dir.
 	- Filter by specific extension with --ext.
@@ -23,6 +26,7 @@ Options:
 	-a, --all        Join all video files in the working directory (alphanumerical).
 	-e, --ext        Join all videos with a specific extension (e.g., mp4, webp).
 	-d, --dir        Process all subdirectories in the working directory.
+	-l, --loop       Number of times to repeat each video (default: 1).
 	-s, --skipframe  Skip the last frame of each clip.
 	-c, --codec      Manually choose output codec.
 	-r, --resize     Configure output dimensions and method.
@@ -186,11 +190,25 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir="
 		print(f"{RED}Error: FFmpeg not found in PATH or program directory.{RESET}")
 		return
 
+	# Auto-detect resolution from the first file if no resize provided
+	# This ensures the concat filter doesn't fail due to mixed dimensions.
+	if not resize and files:
+		try:
+			first_vr = VideoReader(os.path.join(working_dir, files[0]))
+			fh, fw = first_vr[0].shape[:2]
+			# Ensure even dimensions for compatibility
+			fw = fw if fw % 2 == 0 else fw + 1
+			fh = fh if fh % 2 == 0 else fh + 1
+			resize = {"width": fw, "height": fh, "method": "fit", "quant": 2}
+			print(f"{CYAN}Auto-matching resolution to first clip: {fw}x{fh}{RESET}")
+		except Exception as e:
+			print(f"{YELLOW}Warning: Could not detect dimensions of first file. FFmpeg might fail if dimensions differ.{RESET}")
+
 	input_args = []
 	filter_complex = ""
 	any_audio = False
 	
-	print(f"\n{GREEN}Analyzing {len(files)} files in '{working_dir}'...{RESET}")
+	print(f"\n{GREEN}Analyzing {len(files)} inputs in '{working_dir}'...{RESET}")
 	
 	try:
 		for i, f in enumerate(files):
@@ -213,7 +231,7 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir="
 				v_trim = f"trim=end_frame={total_frames-1},setpts=PTS-STARTPTS,"
 				a_trim = f"atrim=end={(total_frames-1)/fps},asetpts=PTS-STARTPTS,"
 			
-			# 2. Resizing
+			# 2. Resizing (Mandatory if dimensions differ)
 			res_filter = ""
 			if resize:
 				tw, th = resize["width"], resize["height"]
@@ -225,16 +243,11 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir="
 				elif m == "crop":
 					res_filter = f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th},"
 				elif m == "limit":
-					# Scale to fit inside bounds while preserving ratio, then quantize edges
 					q = resize["quant"]
 					if q > 1:
-						# complex scale logic: 
-						# 1. scale proportionally within bounds
-						# 2. force rounding to the nearest multiple of 'q'
 						res_filter = (f"scale='trunc(min({tw},iw*min({tw}/iw,{th}/ih))/{q})*{q}':"
 									  f"'trunc(min({th},ih*min({tw}/iw,{th}/ih))/{q})*{q}',")
 					else:
-						# Simple limit with aspect ratio preserved
 						res_filter = f"scale={tw}:{th}:force_original_aspect_ratio=decrease,"
 
 			# Final Video Chain
@@ -242,13 +255,12 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir="
 			if not v_chain: v_chain = "copy"
 			filter_complex += f"[{i}:v]{v_chain.rstrip(',')}[{v_label}];"
 			
-			# Final Audio Chain (with silence fallback if we need audio output)
+			# Final Audio Chain
 			if any_audio:
 				if audio_present:
 					a_chain = a_trim if a_trim else "acopy"
 					filter_complex += f"[{i}:a]{a_chain.rstrip(',')}[{a_label}];"
 				else:
-					# Generate silence of the correct duration for this specific segment
 					dur = (total_frames - 1) / fps if skip_frame else total_frames / fps
 					filter_complex += f"aevalsrc=0:d={dur}[{a_label}];"
 
@@ -269,7 +281,8 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir="
 			FFMPEG_BIN, "-y",
 			*input_args,
 			"-filter_complex", filter_complex,
-			"-map", "[outv]"
+			"-map", "[outv]",
+			"-map_metadata", "0"
 		]
 		
 		if any_audio:
@@ -292,6 +305,16 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir="
 		print(f"\n{RED}An error occurred processing {working_dir}: {e}{RESET}")
 		return False
 
+def apply_loop_to_list(file_list, loop_count):
+	"""Repeats each item in the list loop_count times."""
+	if loop_count <= 1:
+		return file_list
+	looped = []
+	for f in file_list:
+		for _ in range(loop_count):
+			looped.append(f)
+	return looped
+
 def main():
 	init_ansi()
 	parser = argparse.ArgumentParser(description="Concatenate video files using FFmpeg and Decord.")
@@ -302,6 +325,7 @@ def main():
 	group.add_argument("-e", "--ext", help="Filter files by specific extension (e.g., mp4)")
 
 	parser.add_argument("-d", "--dir", action="store_true", help="Process all subdirectories in working directory")
+	parser.add_argument("-l", "--loop", type=int, default=1, help="Number of times to repeat each video")
 	parser.add_argument("-s", "--skipframe", action="store_true", help="Skip the last frame of each clip")
 	parser.add_argument("-c", "--codec", action="store_true", help="Manually choose output codec")
 	parser.add_argument("-r", "--resize", action="store_true", help="Configure output dimensions")
@@ -309,18 +333,14 @@ def main():
 
 	args = parser.parse_args()
 	
-	# Determine filter extensions
 	if args.ext:
 		ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
 		filter_criteria = (ext_filter.lower(),)
 	else:
 		filter_criteria = DEFAULT_VIDEO_EXTS
 
-	# Get global configs
 	selected_codec = get_codec_choice() if args.codec else "libx264"
 	resize_config = get_resize_config() if args.resize else None
-	
-	# Global output name handling (will be adjusted per directory if --dir is used)
 	base_output_name = args.output
 
 	# Mode 1: Directory Batch Processing
@@ -334,13 +354,10 @@ def main():
 		for d in subdirs:
 			found = [f for f in os.listdir(d) if f.lower().endswith(filter_criteria) and os.path.isfile(os.path.join(d, f))]
 			if not found:
-				ext_msg = f"with extension '{args.ext}'" if args.ext else ""
-				print(f"{YELLOW}Skipping '{d}': No video files found {ext_msg}.{RESET}")
 				continue
 			
-			target_files = sorted(found)
+			target_files = apply_loop_to_list(sorted(found), args.loop)
 			
-			# Handle output naming: respect -o if provided, else {dirname}_joined.mp4
 			if base_output_name:
 				current_out = base_output_name
 			else:
@@ -353,7 +370,7 @@ def main():
 			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output_file, working_dir=d)
 		return
 
-	# Mode 2: Single Directory (Default, --all, or --ext)
+	# Mode 2: Single Directory
 	target_files = args.filenames
 	if args.all or args.ext:
 		found = [f for f in os.listdir('.') if f.lower().endswith(filter_criteria) and os.path.isfile(f)]
@@ -361,14 +378,16 @@ def main():
 			print(f"{RED}Error: No video files found in the current directory matching criteria.{RESET}")
 			sys.exit(1)
 		target_files = sorted(found)
-		print(f"{GREEN}Found {len(target_files)} video files in directory.{RESET}")
 	
 	if not target_files:
 		print(f"{RED}No files provided. Provide filenames or use -a, -e, or -d.{RESET}")
 		parser.print_help()
 		return
 
-	# Single mode output naming
+	# Apply loop logic to final file list
+	target_files = apply_loop_to_list(target_files, args.loop)
+	print(f"{GREEN}Processing {len(target_files)} segments (including loops).{RESET}")
+
 	final_output = base_output_name if base_output_name else "joined_video.mp4"
 	if not final_output.lower().endswith((".mp4", ".mkv", ".webm", ".webp")):
 		final_output += ".mp4"
