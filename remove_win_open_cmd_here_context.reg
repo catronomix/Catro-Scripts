@@ -1,0 +1,23 @@
+Windows Registry Editor Version 5.00
+
+; Reset system-wide Console defaults (typically White on Black)
+[HKEY_CURRENT_USER\Console]
+"ScreenColors"=dword:00000007
+"PopupColors"=dword:000000f5
+
+; Reset PowerShell specific shortcut colors to Windows default (White on Blue)
+[HKEY_CURRENT_USER\Console\%SystemRoot%_System32_WindowsPowerShell_v1.0_powershell.exe]
+"ScreenColors"=dword:00000056
+"PopupColors"=dword:000000f5
+
+; Remove "catro-script here" from the right-click menu for folders
+[-HKEY_CLASSES_ROOT\Directory\shell\OpenCmdHere]
+
+; Remove "catro-script here" from the right-click menu for the background of a folder
+[-HKEY_CLASSES_ROOT\Directory\Background\shell\OpenCmdHere]
+
+; Remove "catro-script here" from the right-click menu for Drives
+[-HKEY_CLASSES_ROOT\Drive\shell\OpenCmdHere]
+
+; Remove "catro-script here" from the right-click menu for Files
+[-HKEY_CLASSES_ROOT\*\shell\OpenCmdHere]

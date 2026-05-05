@@ -40,6 +40,7 @@ import argparse
 import platform
 import subprocess
 import re
+import json
 
 def init_ansi():
 	if platform.system().lower() == "windows":
@@ -62,7 +63,8 @@ RED = '\033[0;31m'
 BOLD = '\033[1m'
 RESET = '\033[0m'
 
-DEFAULT_VIDEO_EXTS = ('.mp4', '.mkv', '.mov', '.webm', '.avi', '.webp', '.flv', '.mpeg', '.mpg')
+# Supported video extensions
+DEFAULT_VIDEO_EXTS = ('.mp4', '.mkv', '.mov', '.webm', '.avi', '.webp', '.flv', '.mpeg', '.mpg', '.mts', '.m2ts')
 
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
@@ -92,15 +94,17 @@ def get_available_encoders():
 		return []
 
 def has_audio(filename):
-	"""Check if the video file contains an audio stream."""
+	"""Check if the video file contains an audio stream using JSON probing."""
 	cmd = [
-		FFPROBE_BIN, "-v", "error", "-select_streams", "a", 
-		"-show_entries", "stream=index", "-of", "csv=p=0", filename
+		FFPROBE_BIN, "-v", "quiet", "-print_format", "json", 
+		"-show_streams", "-select_streams", "a", filename
 	]
 	try:
 		result = subprocess.run(cmd, capture_output=True, text=True)
-		return len(result.stdout.strip()) > 0
-	except: return False
+		data = json.loads(result.stdout)
+		return 'streams' in data and len(data['streams']) > 0
+	except: 
+		return False
 
 def parse_duration(dur_str):
 	"""Parses strings like 1m30s, 2m, 45s into total seconds."""
@@ -264,14 +268,16 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 	
 	v_filter = ""
 	a_filter = ""
+	uses_audio_filter = False
 	
 	if effect_id == 1: # Reverse
 		v_filter = "reverse"
-		if audio_present: a_filter = "areverse"
+		if audio_present: 
+			a_filter = "areverse"
+			uses_audio_filter = True
 	elif effect_id == 2: # Lower FPS
 		target_fps = float(input(f"Current FPS: {orig_fps:.2f}. Enter target FPS: "))
 		v_filter = f"fps=fps={target_fps}"
-		if audio_present: a_filter = "acopy"
 	elif effect_id == 3: # Change FPS (Speed)
 		target_fps = float(input(f"Target playback FPS (Original: {orig_fps:.2f}): "))
 		speed_factor = orig_fps / target_fps
@@ -279,10 +285,12 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 		if audio_present:
 			a_factor = 1.0 / speed_factor
 			a_filter = f"atempo={a_factor}"
+			uses_audio_filter = True
 	elif effect_id == 4: # Bounce
 		v_filter = "split[f][r];[r]reverse[rr];[f][rr]concat=n=2:v=1:a=0"
 		if audio_present:
 			a_filter = "asplit[af][ar];[ar]areverse[arr];[af][arr]concat=n=2:v=0:a=1"
+			uses_audio_filter = True
 	elif effect_id == 5: # Time Stretch
 		target_input = input(f"Enter target duration (Orig: {orig_duration:.2f}s): ")
 		target_dur = parse_duration(target_input)
@@ -296,9 +304,9 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 			v_filter = f"setpts={speed_factor}*PTS"
 		if audio_present:
 			a_filter = f"atempo={1.0/speed_factor}"
+			uses_audio_filter = True
 	elif effect_id == 6: # Passthrough
 		v_filter = ""
-		if audio_present: a_filter = "acopy"
 
 	if resize_config:
 		tw, th = resize_config["width"], resize_config["height"]
@@ -322,28 +330,49 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 
 	cmd = [FFMPEG_BIN, "-y", "-i", file_path]
 	
+	# Construct filter chains
 	if effect_id == 4:
-		v_filter = f"[0:v]{v_filter}[outv]"
-		if audio_present: a_filter = f"[0:a]{a_filter}[outa]"
+		v_filter_final = f"[0:v]{v_filter}[outv]"
+		if audio_present: a_filter_final = f"[0:a]{a_filter}[outa]"
 	else:
 		if not v_filter: v_filter = "null"
-		v_filter = f"[0:v]{v_filter}[outv]"
-		if audio_present:
-			if not a_filter: a_filter = "anull"
-			a_filter = f"[0:a]{a_filter}[outa]"
+		v_filter_final = f"[0:v]{v_filter}[outv]"
+		if audio_present and uses_audio_filter:
+			a_filter_final = f"[0:a]{a_filter}[outa]"
 
+	# Build mapping and codec arguments
 	if audio_present:
-		cmd.extend(["-filter_complex", f"{v_filter};{a_filter}", "-map", "[outv]", "-map", "[outa]", "-c:a", "aac"])
+		if "prores" in codec:
+			target_a_codec = "pcm_s16le"
+			# Professional MOV standard for audio
+			cmd.extend(["-ar", "48000"]) 
+		else:
+			target_a_codec = "aac"
+		
+		if uses_audio_filter:
+			# Use filtered audio output
+			cmd.extend(["-filter_complex", f"{v_filter_final};{a_filter_final}", "-map", "[outv]", "-map", "[outa]"])
+		else:
+			# Use direct mapping for audio to prevent MTS stream drops
+			# Explicitly target the first audio stream (0:a:0)
+			cmd.extend(["-filter_complex", v_filter_final, "-map", "[outv]", "-map", "0:a:0"])
+		
+		cmd.extend(["-c:a", target_a_codec])
 	else:
-		cmd.extend(["-filter_complex", v_filter, "-map", "[outv]", "-an"])
+		cmd.extend(["-filter_complex", v_filter_final, "-map", "[outv]", "-an"])
 
-	cmd.extend(["-c:v", codec, "-pix_fmt", "yuv420p"])
+	# Build video codec and pixel format arguments
+	cmd.extend(["-c:v", codec])
 	
 	if "prores" in codec:
-		cmd.extend(["-profile:v", "3"])
+		# HQ profile (3) standard requires 10-bit 4:2:2 for maximum compatibility
+		cmd.extend(["-profile:v", "3", "-pix_fmt", "yuv422p10le"])
 	elif "qsv" in codec:
 		cmd.extend(["-pix_fmt", "nv12"])
-	elif any(x in codec for x in ["x264", "x265", "nvenc", "amf", "videotoolbox"]):
+	else:
+		cmd.extend(["-pix_fmt", "yuv420p"])
+	
+	if any(x in codec for x in ["x264", "x265", "nvenc", "amf", "videotoolbox"]):
 		if "x264" in codec or "x265" in codec:
 			cmd.extend(["-preset", "medium", "-crf", "18"])
 	
@@ -377,8 +406,8 @@ def main():
 	
 	# Determine extension criteria
 	if args.ext:
-		ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
-		filter_criteria = (ext_filter.lower(),)
+		ext_filter_val = args.ext if args.ext.startswith('.') else f".{args.ext}"
+		filter_criteria = (ext_filter_val.lower(),)
 	else:
 		filter_criteria = DEFAULT_VIDEO_EXTS
 
