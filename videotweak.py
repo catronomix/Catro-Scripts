@@ -26,7 +26,7 @@ Options:
 	-e, --ext        Filter files by specific extension (e.g., mp4, webp).
 	-d, --directory  Output results into a specific subdirectory.
 	-s, --suffix     Apply a custom suffix to the output filename.
-	-c, --codec      Enable interactive menu to select output encoder.
+	-c, --codec      Enable interactive menu to select output encoder and container.
 	-r, --resize     Enable interactive menu to select output resolution and method.
 
 Requirements:
@@ -66,6 +66,20 @@ RESET = '\033[0m'
 # Supported video extensions
 DEFAULT_VIDEO_EXTS = ('.mp4', '.mkv', '.mov', '.webm', '.avi', '.webp', '.flv', '.mpeg', '.mpg', '.mts', '.m2ts')
 
+CODEC_TO_CONTAINERS = {
+	"libx264": [(".mp4", "MP4"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+	"libx265": [(".mp4", "MP4"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+	"libsvtav1": [(".mp4", "MP4"), (".mkv", "Matroska"), (".webm", "WebM")],
+	"libaom-av1": [(".mp4", "MP4"), (".mkv", "Matroska"), (".webm", "WebM")],
+	"mpeg4": [(".mp4", "MP4"), (".avi", "AVI"), (".mov", "QuickTime")],
+	"rawvideo": [(".avi", "AVI"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+	"prores_ks": [(".mov", "QuickTime (Standard)"), (".mkv", "Matroska")],
+	"h264_nvenc": [(".mp4", "MP4"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+	"h264_videotoolbox": [(".mp4", "MP4"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+	"h264_amf": [(".mp4", "MP4"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+	"h264_qsv": [(".mp4", "MP4"), (".mkv", "Matroska"), (".mov", "QuickTime")],
+}
+
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
 	script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -94,17 +108,24 @@ def get_available_encoders():
 		return []
 
 def has_audio(filename):
-	"""Check if the video file contains an audio stream using JSON probing."""
+	"""Check if the video file contains an audio stream using resilient JSON probing."""
 	cmd = [
-		FFPROBE_BIN, "-v", "quiet", "-print_format", "json", 
-		"-show_streams", "-select_streams", "a", filename
+		FFPROBE_BIN, "-v", "quiet", 
+		"-print_format", "json", 
+		"-show_streams", "-show_format", "-select_streams", "a", filename
 	]
 	try:
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		data = json.loads(result.stdout)
-		return 'streams' in data and len(data['streams']) > 0
-	except: 
-		return False
+		# Priority 1: Direct stream identification
+		if 'streams' in data and len(data['streams']) > 0:
+			return True
+		# Priority 2: Format-level stream count (often more robust for interleaved .mts)
+		elif 'format' in data and int(data['format'].get('nb_streams', 0)) > 1:
+			return True
+	except Exception: 
+		pass
+	return False
 
 def parse_duration(dur_str):
 	"""Parses strings like 1m30s, 2m, 45s into total seconds."""
@@ -153,9 +174,12 @@ def get_codec_choice():
 		else:
 			print(f"{CYAN}{i}.{RESET} {BOLD}{cmd:<18}{RESET} - {desc}")
 	
+	codec = ""
 	while True:
-		choice = input(f"\nChoose (1-{len(available_options)}) [1]: ").strip()
-		if not choice: return available_options[0][0]
+		choice = input(f"\nChoose Codec (1-{len(available_options)}) [1]: ").strip()
+		if not choice: 
+			codec = available_options[0][0]
+			break
 		if choice.isdigit() and 1 <= int(choice) <= len(available_options):
 			selected_cmd = available_options[int(choice)-1][0]
 			if selected_cmd == "SHOW_ALL":
@@ -165,9 +189,25 @@ def get_codec_choice():
 					print(f"{CYAN}{j:3}.{RESET} {BOLD}{name:<20}{RESET} {desc[:60]}")
 				sub_choice = input(f"\nSelect by number: ").strip()
 				if sub_choice.isdigit() and 1 <= int(sub_choice) <= len(all_enc):
-					return all_enc[int(sub_choice)-1][0]
+					codec = all_enc[int(sub_choice)-1][0]
+					break
 				continue
-			return selected_cmd
+			codec = selected_cmd
+			break
+		print(f"{RED}Invalid choice.{RESET}")
+
+	# Container selection based on compatible pairs
+	containers = CODEC_TO_CONTAINERS.get(codec, [(".mp4", "MP4"), (".mkv", "Matroska")])
+	print(f"\n{PURPLE}{BOLD}--- Select Output Container ---{RESET}")
+	for i, (ext, desc) in enumerate(containers, 1):
+		print(f"{CYAN}{i}.{RESET} {BOLD}{ext:<6}{RESET} ({desc})")
+	
+	while True:
+		choice = input(f"\nChoose Container (1-{len(containers)}) [1]: ").strip()
+		if not choice:
+			return codec, containers[0][0]
+		if choice.isdigit() and 1 <= int(choice) <= len(containers):
+			return codec, containers[int(choice)-1][0]
 		print(f"{RED}Invalid choice.{RESET}")
 
 def get_resize_choice():
@@ -240,26 +280,20 @@ def get_effect_choice():
 			return int(choice)
 		print(f"{RED}Invalid choice.{RESET}")
 
-def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_config):
+def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config):
 	base_name = os.path.basename(file_path)
 	name_no_ext, ext = os.path.splitext(base_name)
 	
 	effect_suffixes = {1: "_reversed", 2: "_lowfps", 3: "_speed", 4: "_bounce", 5: "_stretched", 6: "_tweak"}
 	suffix = custom_suffix if custom_suffix else effect_suffixes[effect_id]
 	
-	if "prores" in codec:
-		output_ext = ".mov"
-	elif "rawvideo" in codec:
-		output_ext = ".avi"
-	else:
-		output_ext = ext
-		
-	output_name = f"{name_no_ext}{suffix}{output_ext}"
+	output_name = f"{name_no_ext}{suffix}{target_ext}"
 	output_path = os.path.join(out_dir, output_name) if out_dir else output_name
 
 	if out_dir and not os.path.exists(out_dir):
 		os.makedirs(out_dir)
 
+	# Metadata check using VideoReader
 	vr = VideoReader(file_path)
 	orig_fps = vr.get_avg_fps()
 	total_frames = len(vr)
@@ -268,13 +302,10 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 	
 	v_filter = ""
 	a_filter = ""
-	uses_audio_filter = False
+	needs_complex = False
 	
 	if effect_id == 1: # Reverse
-		v_filter = "reverse"
-		if audio_present: 
-			a_filter = "areverse"
-			uses_audio_filter = True
+		v_filter, a_filter, needs_complex = "reverse", "areverse", True
 	elif effect_id == 2: # Lower FPS
 		target_fps = float(input(f"Current FPS: {orig_fps:.2f}. Enter target FPS: "))
 		v_filter = f"fps=fps={target_fps}"
@@ -283,14 +314,12 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 		speed_factor = orig_fps / target_fps
 		v_filter = f"setpts={speed_factor}*PTS"
 		if audio_present:
-			a_factor = 1.0 / speed_factor
-			a_filter = f"atempo={a_factor}"
-			uses_audio_filter = True
+			a_filter, needs_complex = f"atempo={1.0 / speed_factor}", True
 	elif effect_id == 4: # Bounce
 		v_filter = "split[f][r];[r]reverse[rr];[f][rr]concat=n=2:v=1:a=0"
 		if audio_present:
 			a_filter = "asplit[af][ar];[ar]areverse[arr];[af][arr]concat=n=2:v=0:a=1"
-			uses_audio_filter = True
+		needs_complex = True
 	elif effect_id == 5: # Time Stretch
 		target_input = input(f"Enter target duration (Orig: {orig_duration:.2f}s): ")
 		target_dur = parse_duration(target_input)
@@ -303,11 +332,9 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 		else:
 			v_filter = f"setpts={speed_factor}*PTS"
 		if audio_present:
-			a_filter = f"atempo={1.0/speed_factor}"
-			uses_audio_filter = True
-	elif effect_id == 6: # Passthrough
-		v_filter = ""
+			a_filter, needs_complex = f"atempo={1.0/speed_factor}", True
 
+	# Spatial resizing logic
 	if resize_config:
 		tw, th = resize_config["width"], resize_config["height"]
 		m = resize_config["method"]
@@ -320,62 +347,47 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, resize_co
 			res_f = f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}"
 		elif m == "limit":
 			q = resize_config["quant"]
-			if q > 1:
-				res_f = (f"scale='trunc(min({tw},iw*min({tw}/iw,{th}/ih))/{q})*{q}':"
-						 f"'trunc(min({th},ih*min({tw}/iw,{th}/ih))/{q})*{q}'")
-			else:
-				res_f = f"scale={tw}:{th}:force_original_aspect_ratio=decrease"
-		
+			res_f = f"scale='trunc(min({tw},iw*min({tw}/iw,{th}/ih))/{q})*{q}':'trunc(min({th},ih*min({tw}/iw,{th}/ih))/{q})*{q}'"
 		v_filter = res_f + (f",{v_filter}" if v_filter else "")
 
+	# Build FFMPEG Command
 	cmd = [FFMPEG_BIN, "-y", "-i", file_path]
 	
-	# Construct filter chains
-	if effect_id == 4:
-		v_filter_final = f"[0:v]{v_filter}[outv]"
-		if audio_present: a_filter_final = f"[0:a]{a_filter}[outa]"
-	else:
-		if not v_filter: v_filter = "null"
-		v_filter_final = f"[0:v]{v_filter}[outv]"
-		if audio_present and uses_audio_filter:
-			a_filter_final = f"[0:a]{a_filter}[outa]"
-
-	# Build mapping and codec arguments
-	if audio_present:
-		if "prores" in codec:
-			target_a_codec = "pcm_s16le"
-			# Professional MOV standard for audio
-			cmd.extend(["-ar", "48000"]) 
+	if needs_complex:
+		# Use complex graph only for temporal modifications.
+		# Explicit mapping of labels prevents automatic selection conflicts.
+		v_chain = f"[0:v]{v_filter or 'null'}[outv]"
+		if audio_present:
+			a_chain = f"[0:a]{a_filter or 'anull'}[outa]"
+			cmd.extend(["-filter_complex", f"{v_chain};{a_chain}", "-map", "[outv]", "-map", "[outa]"])
 		else:
-			target_a_codec = "aac"
-		
-		if uses_audio_filter:
-			# Use filtered audio output
-			cmd.extend(["-filter_complex", f"{v_filter_final};{a_filter_final}", "-map", "[outv]", "-map", "[outa]"])
-		else:
-			# Use direct mapping for audio to prevent MTS stream drops
-			# Explicitly target the first audio stream (0:a:0)
-			cmd.extend(["-filter_complex", v_filter_final, "-map", "[outv]", "-map", "0:a:0"])
-		
-		cmd.extend(["-c:a", target_a_codec])
+			cmd.extend(["-filter_complex", v_chain, "-map", "[outv]"])
 	else:
-		cmd.extend(["-filter_complex", v_filter_final, "-map", "[outv]", "-an"])
-
-	# Build video codec and pixel format arguments
+		# Spatial only / Passthrough path (Mimics working getaudio logic)
+		# By NOT using manual -map here, FFmpeg uses its best-stream automatic selection
+		# which is proven to be the most resilient way to handle interleaved .mts files.
+		if v_filter:
+			cmd.extend(["-vf", v_filter])
+		# If we strictly want to ensure video exists, we could use -map 0:v? but 
+		# automatic selection is usually safer for problematic source containers.
+	
+	# Set Video Codec
 	cmd.extend(["-c:v", codec])
 	
+	# Handle specific codec requirements
 	if "prores" in codec:
-		# HQ profile (3) standard requires 10-bit 4:2:2 for maximum compatibility
 		cmd.extend(["-profile:v", "3", "-pix_fmt", "yuv422p10le"])
-	elif "qsv" in codec:
-		cmd.extend(["-pix_fmt", "nv12"])
+		if audio_present:
+			# Professional MOV standard: PCM 16-bit 48kHz
+			cmd.extend(["-c:a", "pcm_s16le", "-ar", "48000"])
 	else:
 		cmd.extend(["-pix_fmt", "yuv420p"])
+		if audio_present:
+			cmd.extend(["-c:a", "aac", "-b:a", "192k"])
 	
-	if any(x in codec for x in ["x264", "x265", "nvenc", "amf", "videotoolbox"]):
-		if "x264" in codec or "x265" in codec:
-			cmd.extend(["-preset", "medium", "-crf", "18"])
-	
+	if not audio_present: 
+		cmd.append("-an")
+
 	cmd.append(output_path)
 
 	print(f"{YELLOW}Tweaking: {base_name}...{RESET}")
@@ -390,31 +402,27 @@ def main():
 	init_ansi()
 	parser = argparse.ArgumentParser(description="Tweak video files.")
 	parser.add_argument("path", nargs="?", help="Video file or directory")
-	
 	group = parser.add_mutually_exclusive_group()
 	group.add_argument("-a", "--all", action="store_true", help="Process all videos in current directory")
-	group.add_argument("-e", "--ext", help="Filter by extension (e.g., mp4, webp)")
-
+	group.add_argument("-e", "--ext", help="Filter by extension")
 	parser.add_argument("-d", "--directory", help="Subdirectory for results")
 	parser.add_argument("-s", "--suffix", help="Custom suffix for filename")
-	parser.add_argument("-c", "--codec", action="store_true", help="Choose codec interactively")
+	parser.add_argument("-c", "--codec", action="store_true", help="Choose codec and container interactively")
 	parser.add_argument("-r", "--resize", action="store_true", help="Choose resolution interactively")
 
 	args = parser.parse_args()
-	
 	target = args.path if args.path else "."
 	
-	# Determine extension criteria
 	if args.ext:
-		ext_filter_val = args.ext if args.ext.startswith('.') else f".{args.ext}"
-		filter_criteria = (ext_filter_val.lower(),)
+		ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
+		filter_criteria = (ext_filter.lower(),)
 	else:
 		filter_criteria = DEFAULT_VIDEO_EXTS
 
 	files = []
-	if os.path.isfile(target) and not args.all and not args.ext:
+	if os.path.isfile(target) and not (args.all or args.ext):
 		files = [target]
-	elif os.path.isdir(target) or args.all or args.ext:
+	else:
 		search_dir = target if os.path.isdir(target) else "."
 		files = [os.path.join(search_dir, f) for f in os.listdir(search_dir) 
 				 if f.lower().endswith(filter_criteria) and os.path.isfile(os.path.join(search_dir, f))]
@@ -423,12 +431,24 @@ def main():
 		print(f"{RED}No video files found matching criteria.{RESET}")
 		return
 
-	selected_codec = get_codec_choice() if args.codec else "libx264"
+	if args.codec:
+		selected_codec, selected_ext = get_codec_choice()
+	else:
+		selected_codec = "libx264"
+		selected_ext = ".mp4"
+
 	selected_res_config = get_resize_choice() if args.resize else None
 	effect_id = get_effect_choice()
 
 	for f in sorted(files):
-		process_video(f, effect_id, args.directory, args.suffix, selected_codec, selected_res_config)
+		if not args.codec:
+			_, current_ext = os.path.splitext(f)
+			# Default to MP4 if source is a transport stream, otherwise keep original
+			target_ext = ".mp4" if current_ext.lower() in ['.mts', '.m2ts'] else current_ext
+		else:
+			target_ext = selected_ext
+
+		process_video(f, effect_id, args.directory, args.suffix, selected_codec, target_ext, selected_res_config)
 
 if __name__ == "__main__":
 	main()
