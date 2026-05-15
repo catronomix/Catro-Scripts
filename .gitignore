@@ -3,3 +3,5 @@ cs.bat
 ffmpeg.exe
 networks.json
 renamer.undo
+ffplay.exe
+ffprobe.exe
