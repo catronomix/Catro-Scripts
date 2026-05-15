@@ -8,11 +8,15 @@ run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 
 - **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience.
 
+- **`audiosplit`**: Splits multi-channel audio files into individual mono tracks. Supports multiple formats (MP3, WAV, FLAC, AAC, OGG, M4A, etc.) with batch processing, wildcard filtering, and interactive codec selection. *Requires: pydub, ffmpeg*
+
 - **`count`**: Display file counts and total size per file type found in a directory, with options to search for directory counts, set starting subdirectory and search depth. Has nice rainbow colors.
 
 - **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
 
 - **`extractframe`**: This utility extracts a single frame from a video file, saving it as a PNG image. It leverages the Decord library for efficient seeking, allowing extraction by frame index, timestamp, or percentile position.
+
+- **`fakeserver`**: A terminal screensaver that simulates hacker-style rapid typing with various code styles (Python, C++, or plaintext). Includes adjustable typing speed in WPM and interactive keyboard controls. *Requires: pynput*
 
 - **`getaudio`**: Extracts audio tracks from video files and saves them in various formats. Supports batch processing and format conversion with customizable quality settings.
 
@@ -33,6 +37,8 @@ run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 - **`randomsorter`**: Renames and distributes files in the current directory to anonymize them. It generates unique random identifiers (numeric or alphanumeric, with configurable length) and organizes them into subdirectories.
 
 - **`renamer`**: This script renames files in the current directory sequentially. It supports custom prefixes, suffixes, and sorting methods while retaining the media filters and safety features of the codebase.
+
+- **`screensaver`**: A general terminal renderer and screensaver host that loads external screensaver modules (.screensaver files) and provides them with a high-performance double-buffered terminal drawing API. Features an interactive menu system with keyboard controls. *Supports custom screensaver plugins*
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. May require administrative privileges.
 
