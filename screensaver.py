@@ -79,8 +79,9 @@ class TerminalRenderer:
 		sys.stdout.flush()
 
 def get_screensavers():
-	"""Scans the directory for .screensaver files."""
-	files = [f for f in os.listdir('.') if f.endswith('.screensaver')]
+	"""Scans the program directory for .screensaver files."""
+	program_dir = os.path.dirname(os.path.abspath(__file__))
+	files = [os.path.join(program_dir, f) for f in os.listdir(program_dir) if f.endswith('.screensaver')]
 	return sorted(files)
 
 def load_screensaver(filepath):
@@ -125,7 +126,7 @@ def listen_for_any_key(stop_event):
 
 def get_menu_selection(screensavers):
 	"""Displays an interactive styled menu to select a screensaver."""
-	names = [os.path.splitext(f)[0] for f in screensavers]
+	names = [os.path.splitext(os.path.basename(f))[0] for f in screensavers]
 	selected_idx = 0
 	
 	sys.stdout.write("\033[?25l") # Hide cursor
