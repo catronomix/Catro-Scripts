@@ -5,3 +5,4 @@ networks.json
 renamer.undo
 ffplay.exe
 ffprobe.exe
+/__pycache__
