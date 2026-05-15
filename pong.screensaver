@@ -1,0 +1,106 @@
+"""
+Automated self-playing Pong screensaver plugin.
+"""
+import random
+
+class ScreensaverPlugin:
+	def init(self, renderer):
+		self.reset_game(renderer)
+		
+		# Define ANSI colors
+		self.COLOR_PADDLE = "\033[36m" # Cyan
+		self.COLOR_BALL = "\033[33m"   # Yellow
+		self.COLOR_NET = "\033[90m"    # Dark Gray
+		
+		self.paddle_speed = 30.0
+
+	def reset_game(self, renderer):
+		self.ball_x = renderer.width / 2.0
+		self.ball_y = renderer.height / 2.0
+		
+		# Randomize initial velocities
+		direction_x = 1 if random.random() > 0.5 else -1
+		direction_y = 1 if random.random() > 0.5 else -1
+		self.ball_vx = 40.0 * direction_x
+		self.ball_vy = 15.0 * direction_y
+		
+		self.p1_y = renderer.height / 2.0
+		self.p2_y = renderer.height / 2.0
+
+	def update(self, dt, renderer):
+		# Dynamically adapt paddle sizes to terminal height
+		paddle_height = max(3, renderer.height // 5)
+		half_paddle = paddle_height / 2.0
+
+		# Update ball position
+		self.ball_x += self.ball_vx * dt
+		self.ball_y += self.ball_vy * dt
+
+		# Top / Bottom collisions
+		if self.ball_y <= 0:
+			self.ball_y = 0
+			self.ball_vy *= -1
+		elif self.ball_y >= renderer.height - 1:
+			self.ball_y = renderer.height - 1
+			self.ball_vy *= -1
+
+		# Paddle collisions (left / right)
+		# Left Paddle (Player 1)
+		if self.ball_x <= 2 and self.ball_vx < 0:
+			if abs(self.ball_y - self.p1_y) <= half_paddle + 0.5:
+				self.ball_x = 2
+				self.ball_vx *= -1.05 # Slightly increase speed on hit
+		
+		# Right Paddle (Player 2)
+		if self.ball_x >= renderer.width - 3 and self.ball_vx > 0:
+			if abs(self.ball_y - self.p2_y) <= half_paddle + 0.5:
+				self.ball_x = renderer.width - 3
+				self.ball_vx *= -1.05
+
+		# Score / Out of bounds logic
+		if self.ball_x < 0 or self.ball_x >= renderer.width:
+			self.reset_game(renderer)
+
+		# Auto-play AI (track ball y position with limited speed)
+		# Left paddle AI
+		if self.ball_vx < 0: # Ball moving towards P1
+			target_y = self.ball_y
+			if self.p1_y < target_y:
+				self.p1_y = min(self.p1_y + self.paddle_speed * dt, target_y)
+			elif self.p1_y > target_y:
+				self.p1_y = max(self.p1_y - self.paddle_speed * dt, target_y)
+
+		# Right paddle AI
+		if self.ball_vx > 0: # Ball moving towards P2
+			target_y = self.ball_y
+			if self.p2_y < target_y:
+				self.p2_y = min(self.p2_y + self.paddle_speed * dt, target_y)
+			elif self.p2_y > target_y:
+				self.p2_y = max(self.p2_y - self.paddle_speed * dt, target_y)
+
+		# Keep paddles inside screen bounds
+		self.p1_y = max(half_paddle, min(renderer.height - 1 - half_paddle, self.p1_y))
+		self.p2_y = max(half_paddle, min(renderer.height - 1 - half_paddle, self.p2_y))
+
+	def draw(self, renderer):
+		paddle_height = max(3, renderer.height // 5)
+		half_paddle = paddle_height // 2
+
+		# Draw Net (Center Line)
+		center_x = renderer.width // 2
+		for y in range(renderer.height):
+			if y % 2 == 0:
+				renderer.draw_char(center_x, y, '|', self.COLOR_NET)
+
+		# Draw Left Paddle
+		start_y = int(self.p1_y) - half_paddle
+		for i in range(paddle_height):
+			renderer.draw_char(1, start_y + i, '█', self.COLOR_PADDLE)
+
+		# Draw Right Paddle
+		start_y = int(self.p2_y) - half_paddle
+		for i in range(paddle_height):
+			renderer.draw_char(renderer.width - 2, start_y + i, '█', self.COLOR_PADDLE)
+
+		# Draw Ball
+		renderer.draw_char(int(self.ball_x), int(self.ball_y), 'O', self.COLOR_BALL)
