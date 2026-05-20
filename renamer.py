@@ -18,6 +18,7 @@ USAGE:
 	python renamer.py -sd -p "Sub_"      # Renames files within each subfolder sequentially
 	python renamer.py -sd "folder1" -p "Sub_"  # Renames files inside subfolder "folder1"
 	python renamer.py -sd "folder*" -p "Sub_"  # Renames files inside subfolders starting with "folder"
+	python renamer.py -t folder -p "DIR_" # Renames directories instead of files
 
 OPTIONS:
 	-p, --prefix STR   Text to put before the content
@@ -33,7 +34,7 @@ OPTIONS:
 	                   (Mutually exclusive with -d 0)
 	--sort METHOD      Sorting: 'name_asc' (default), 'name_desc', 'date_asc', 'date_desc'
 	-k, --keep         Keep original files in place (copy instead of move)
-	-t, --type TYPE    Filter by 'image', 'video', or 'audio'
+	-t, --type TYPE    Filter by category: 'image', 'video', 'audio', or 'folder'
 	-e, --ext EXT      Filter for a specific extension only
 	-a, --all          Include all files, ignoring safety filters (requires confirmation)
 	-sd, --subdir [PAT] Process subfolders individually. Can optionally target a specific subfolder
@@ -135,35 +136,45 @@ def perform_undo():
 	
 	print("\nUndo complete.")
 
-def get_target_files(folder_path, allowed_extensions, include_all, wildcard_pattern=None):
-	"""Returns a list of files to process using scandir for efficiency."""
+def get_target_files(folder_path, allowed_extensions, include_all, wildcard_pattern=None, target_type=None):
+	"""Returns a list of files or folders to process using scandir for efficiency."""
 	script_name = os.path.basename(sys.argv[0])
-	files = []
+	items = []
 	
 	try:
 		with os.scandir(folder_path) as entries:
 			for entry in entries:
-				if entry.is_file() and entry.name != script_name:
-					filename = entry.name
-					
-					# 1. Wildcard Filter
-					if wildcard_pattern and not fnmatch.fnmatch(filename, wildcard_pattern):
-						continue
+				if target_type == 'folder':
+					if entry.is_dir() and not entry.name.startswith('.') and entry.name != script_name:
+						filename = entry.name
+						
+						# 1. Wildcard Filter
+						if wildcard_pattern and not fnmatch.fnmatch(filename, wildcard_pattern):
+							continue
+						
+						items.append(filename)
+				else:
+					if entry.is_file() and entry.name != script_name:
+						filename = entry.name
+						
+						# 1. Wildcard Filter
+						if wildcard_pattern and not fnmatch.fnmatch(filename, wildcard_pattern):
+							continue
 
-					# 2. Extension Filters
-					if allowed_extensions:
-						if not filename.lower().endswith(allowed_extensions):
-							continue
-					elif not include_all:
-						if filename.lower().endswith(FORBIDDEN_EXTENSIONS):
-							continue
-					
-					files.append(filename)
+						# 2. Extension Filters
+						if allowed_extensions:
+							if not filename.lower().endswith(allowed_extensions):
+								continue
+						elif not include_all:
+							if filename.lower().endswith(FORBIDDEN_EXTENSIONS):
+								continue
+						
+						items.append(filename)
 	except OSError as e:
 		sys.stderr.write(f"{CLR_RED}Error accessing directory: {e}{CLR_RESET}\n")
 		sys.exit(1)
 		
-	return files
+	return items
 
 def sort_files(folder_path, files, method):
 	"""Sorts files based on the chosen method."""
@@ -177,7 +188,7 @@ def sort_files(folder_path, files, method):
 		files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
 	return files
 
-def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files, strip_str=None, striponly_str=None):
+def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files, strip_str=None, striponly_str=None, is_folder_mode=False):
 	"""Performs the sequential renaming/copying. Returns history for undo."""
 	history = []
 	if not files:
@@ -198,14 +209,25 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 				sys.stderr.write(f"Required digits: {required_digits}\n")
 				sys.exit(1)
 		elif digit_count == 0:
-			print("Numbering disabled. Using original filenames.")
+			if is_folder_mode:
+				print("Numbering disabled. Using original folder names.")
+			else:
+				print("Numbering disabled. Using original filenames.")
 	else:
-		print(f"Strip-only mode: Removing '{striponly_str}' from filenames.")
+		if is_folder_mode:
+			print(f"Strip-only mode: Removing '{striponly_str}' from folder names.")
+		else:
+			print(f"Strip-only mode: Removing '{striponly_str}' from filenames.")
 
-	print(f"Processing {num_files} files in '{os.path.basename(folder_path)}'...\n")
+	item_type_str = "folders" if is_folder_mode else "files"
+	print(f"Processing {num_files} {item_type_str} in '{os.path.basename(folder_path)}'...\n")
 
 	for i, filename in enumerate(files, start=1):
-		name_root, extension = os.path.splitext(filename)
+		if is_folder_mode:
+			name_root = filename
+			extension = ""
+		else:
+			name_root, extension = os.path.splitext(filename)
 		
 		# Apply Stripping
 		if striponly_str:
@@ -250,7 +272,10 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 
 		try:
 			if keep:
-				shutil.copy2(old_path, new_path)
+				if is_folder_mode:
+					shutil.copytree(old_path, new_path)
+				else:
+					shutil.copy2(old_path, new_path)
 				print(f"Copied: {CLR_ORANGE}{filename}{CLR_RESET} -> {display_color}{final_name}{CLR_RESET}")
 			else:
 				os.rename(old_path, new_path)
@@ -288,8 +313,8 @@ if __name__ == "__main__":
 						default='name_asc', help="Sorting method (default: name_asc)")
 	rename_opts.add_argument("-k", "--keep", action="store_true",
 						help="Keep original files in place (copy instead of move)")
-	rename_opts.add_argument("-t", "--type", type=str, choices=['image', 'video', 'audio'],
-						help="Filter by category: 'image', 'video', or 'audio'")
+	rename_opts.add_argument("-t", "--type", type=str, choices=['image', 'video', 'audio', 'folder'],
+						help="Filter by category: 'image', 'video', 'audio', or 'folder'")
 	rename_opts.add_argument("-e", "--ext", type=str, 
 						help="Filter for a specific extension only.")
 	rename_opts.add_argument("-a", "--all", action="store_true",
@@ -326,6 +351,10 @@ if __name__ == "__main__":
 		# Check for forbidden combinations
 		if any([args.prefix != "", args.folder, args.suffix != "", args.digits is not None, args.original, args.strip]):
 			parser.error("--striponly (-xx) can only be combined with -w, -t, -a, -e, -k, and -sd.")
+
+	# Handle extension filter mutual exclusion with directory type
+	if args.type == 'folder' and args.ext:
+		parser.error("-e/--ext and -t folder are mutually exclusive.")
 
 	# Handle confirmation for --all flag
 	if args.all:
@@ -376,7 +405,7 @@ if __name__ == "__main__":
 			if args.folder:
 				final_prefix = os.path.basename(subfolder_path)
 
-			target_files = get_target_files(subfolder_path, allowed, args.all, args.wildcard)
+			target_files = get_target_files(subfolder_path, allowed, args.all, args.wildcard, target_type=args.type)
 			if args.striponly:
 				target_files = [f for f in target_files if args.striponly in f]
 
@@ -391,7 +420,8 @@ if __name__ == "__main__":
 				args.original, 
 				sorted_files,
 				strip_str=args.strip,
-				striponly_str=args.striponly
+				striponly_str=args.striponly,
+				is_folder_mode=(args.type == 'folder')
 			)
 			history.extend(sub_history)
 	else:
@@ -400,7 +430,7 @@ if __name__ == "__main__":
 		if args.folder:
 			final_prefix = os.path.basename(current_folder)
 
-		target_files = get_target_files(current_folder, allowed, args.all, args.wildcard)
+		target_files = get_target_files(current_folder, allowed, args.all, args.wildcard, target_type=args.type)
 		if args.striponly:
 			target_files = [f for f in target_files if args.striponly in f]
 
@@ -415,7 +445,8 @@ if __name__ == "__main__":
 			args.original, 
 			sorted_files,
 			strip_str=args.strip,
-			striponly_str=args.striponly
+			striponly_str=args.striponly,
+			is_folder_mode=(args.type == 'folder')
 		)
 	
 	if history and not args.keep:
