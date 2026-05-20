@@ -2,11 +2,11 @@
 """
 			DEPENDENCY INSTALLER
 			====================
-This script automatically scans all Python files in its directory, 
-identifies required third-party libraries, and installs them via pip 
-if they are missing. It fetches a public mapping from pipreqs to resolve
-import names to actual PyPI package names. Optionally, it can scan a 
-different working directory using the `-workdir` command-line argument.
+This script automatically scans all Python and .screensaver files in its 
+directory, identifies required third-party libraries, and installs them 
+via pip if they are missing. It fetches a public mapping from pipreqs to 
+resolve import names to actual PyPI package names. Optionally, it can 
+scan a different working directory using the `-workdir` command-line argument.
 
 Usage:
 	python installdeps.py
@@ -119,8 +119,10 @@ def main():
 	current_name = os.path.basename(__file__)
 	
 	all_imports = set()
+	valid_extensions = (".py", ".screensaver")
+	
 	for filename in os.listdir(target_dir):
-		if filename.endswith(".py") and filename != current_name:
+		if filename.lower().endswith(valid_extensions) and filename != current_name:
 			all_imports.update(get_imports_from_file(os.path.join(target_dir, filename)))
 
 	missing_imports = [imp for imp in all_imports if not is_module_available(imp)]
