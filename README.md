@@ -12,7 +12,7 @@ run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 
 - **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
 
-- **`extractframe`**: This utility extracts a single frame from a video file, saving it as a PNG image. It leverages the Decord library for efficient seeking, allowing extraction by frame index, 'first', or 'last', with an option for keyframe snapping.
+- **`getaudio`**: Extracts audio from video files or converts existing audio files. Supports batch processing, recursive directory scanning, and interactive re-encoding with options for custom codecs, bit rates, and sample rates. Requires `ffmpeg`.
 
 - **`help`**: Displays help information and usage details for available scripts. A utility for exploring script functionality.
 
@@ -22,15 +22,15 @@ run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 
 - **`installdeps`**: Automatically scans all Python files in the directory, identifies required third-party libraries, and installs missing dependencies via pip. Supports custom working directories via `-workdir` argument. Includes manual mapping for common import name discrepancies.
 
-- **`networktool`**:
-Cross-platform network interface manager. Seamlessly toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter restarts. Requires administrative/root privileges.
-
-
 - **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
+
+- **`netconfig`**: Cross-platform network interface manager. Seamlessly toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter restarts. Requires administrative/root privileges.
+
+- **`newfile`**: Generates complex file and directory structures using series expansion (wildcards), supporting numeric ranges, character series, and nested creation via ordered flag processing.
 
 - **`randomsorter`**: Renames and distributes files in the current directory to anonymize them. It generates unique random identifiers (numeric or alphanumeric, with configurable length) and organizes them into numbered subfolders (e.g., `batch01`, `batch02`) based on user-specified quantities. Supports filtering by file type (image, video, audio) or specific extension, and can copy files instead of moving them. *Supports common image, video, and audio formats.*
 
-- **`renamer`**: This script renames files in the current directory sequentially. It supports custom prefixes, suffixes, and sorting methods while retaining the media filters and safety features of the random sorter.
+- **`renamer`**: This script renames files in the current directory sequentially. It supports custom prefixes, suffixes, and sorting methods while retaining the media filters and safety features of the random sorter. It can also batch process files in subfolders.
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. May require sudo/admin privileges on Unix systems.
 
@@ -40,12 +40,17 @@ Cross-platform network interface manager. Seamlessly toggle adapters between DHC
 
 - **`ts_setup`**: Sets up a Typescript project folder and pre-generates some boilerplate html, ts and css to get started. It also runs commands to setup npm packages (requires node.js to be installed)
 
+- **`venvreplicator`**: Analyzes an existing Python virtual environment and generates a restoration script to accurately recreate it on another system, preserving package versions, installation sources (including direct URLs), and dependency order.
+
 - **`videofade`**: Adds smooth fade-in and fade-out effects to video clips. Supports customizable durations, various interpolation curves (like Ease-In-Out), and a special "Append Mode" that freezes the edges of the video for the duration of the fade. _Requires: decord, ffmpeg_
+
+- **`videoframes`**: This utility extracts one or multiple frames from a video file, saving it as PNG. It leverages the Decord library for efficient seeking, allowing extraction by frame index, 'first', 'last' or a range of frames at once, with an option for keyframe snapping.
 
 - **`videojoin`**: This utility concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. It provides advanced features such as interactive codec selection, various resizing methods (crop, fit, stretch, limit), and options to skip the last frame or join all videos in a directory.
 
 - **`videolooper`**: Creates a seamless, crossfaded loop from a single video file by fading the end of the clip into the beginning. Features a "Timeline Shift" option to specify the starting position of the final loop and handles silent videos gracefully. _Requires: decord, ffmpeg_
 
+- **`videotweak`**: A versatile video processing tool for changing FPS, reversing, bouncing, time stretching and/or general transcoding. _Requires: decord, ffmpeg_
 
 ## Language Composition
 

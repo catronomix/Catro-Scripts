@@ -15,10 +15,13 @@ USAGE:
 	python renamer.py -o -p "IMG_"       # Keeps original names, adds prefix AND numbers at start
 	python renamer.py -x " (1)"          # Renames files but removes " (1)" from original names first
 	python renamer.py -xx "_TEMP"        # Only removes "_TEMP" from matching files, no other renaming
+	python renamer.py -sd -p "Sub_"      # Renames files within each subfolder sequentially
+	python renamer.py -sd "folder1" -p "Sub_"  # Renames files inside subfolder "folder1"
+	python renamer.py -sd "folder*" -p "Sub_"  # Renames files inside subfolders starting with "folder"
 
 OPTIONS:
 	-p, --prefix STR   Text to put before the content
-	-f, --folder       Use the parent folder's name as the prefix
+	-f, --folder       Use the parent folder's name as the prefix (or subfolder name with -sd)
 	-s, --suffix STR   Text to put after the content (before extension)
 	-w, --wildcard STR Filter files using wildcards (e.g., 'IMG_*.jpg')
 	-x, --strip STR    Remove STR from the original filename before processing
@@ -33,6 +36,8 @@ OPTIONS:
 	-t, --type TYPE    Filter by 'image', 'video', or 'audio'
 	-e, --ext EXT      Filter for a specific extension only
 	-a, --all          Include all files, ignoring safety filters (requires confirmation)
+	-sd, --subdir [PAT] Process subfolders individually. Can optionally target a specific subfolder
+	                   name or a wildcard pattern (e.g., 'vacation*'). Matches all if empty.
 	-u, --undo         Undo the last rename operation
 """
 
@@ -176,7 +181,7 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 	"""Performs the sequential renaming/copying. Returns history for undo."""
 	history = []
 	if not files:
-		print("No matching files found. Nothing to do.")
+		print(f"No matching files found in '{os.path.basename(folder_path)}'. Nothing to do.")
 		return history
 
 	num_files = len(files)
@@ -197,7 +202,7 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 	else:
 		print(f"Strip-only mode: Removing '{striponly_str}' from filenames.")
 
-	print(f"Processing {num_files} files...\n")
+	print(f"Processing {num_files} files in '{os.path.basename(folder_path)}'...\n")
 
 	for i, filename in enumerate(files, start=1):
 		name_root, extension = os.path.splitext(filename)
@@ -266,7 +271,7 @@ if __name__ == "__main__":
 	rename_opts.add_argument("-p", "--prefix", type=str, default="",
 						help="Prefix for the new filename.")
 	rename_opts.add_argument("-f", "--folder", action="store_true",
-						help="Use the current folder name as the prefix.")
+						help="Use the current folder name as the prefix (or subfolder name if using -sd).")
 	rename_opts.add_argument("-s", "--suffix", type=str, default="",
 						help="Suffix for the new filename (before extension).")
 	rename_opts.add_argument("-w", "--wildcard", type=str,
@@ -289,6 +294,8 @@ if __name__ == "__main__":
 						help="Filter for a specific extension only.")
 	rename_opts.add_argument("-a", "--all", action="store_true",
 						help="Include all files, ignoring safety filters (requires confirmation)")
+	rename_opts.add_argument("-sd", "--subdir", nargs="?", const="*", type=str,
+						help="Process files inside each subfolder of the current folder individually. Can supply a name or wildcard pattern (e.g. -sd 'folder*').")
 
 	# The undo action
 	action_group.add_argument("-u", "--undo", action="store_true",
@@ -305,7 +312,7 @@ if __name__ == "__main__":
 		for arg in sys.argv[1:]:
 			if arg in ['-p', '--prefix', '-f', '--folder', '-s', '--suffix', '-w', '--wildcard', 
 					  '-x', '--strip', '-xx', '--striponly', '-d', '--digits', '-o', '--original', 
-					  '--sort', '-k', '--keep', '-t', '--type', '-e', '--ext', '-a', '--all']:
+					  '--sort', '-k', '--keep', '-t', '--type', '-e', '--ext', '-a', '--all', '-sd', '--subdir']:
 				parser.error("The --undo flag is exclusive and cannot be used with other options.")
 		perform_undo()
 		sys.exit(0)
@@ -318,7 +325,7 @@ if __name__ == "__main__":
 	if args.striponly:
 		# Check for forbidden combinations
 		if any([args.prefix != "", args.folder, args.suffix != "", args.digits is not None, args.original, args.strip]):
-			parser.error("--striponly (-xx) can only be combined with -w, -t, -a, -e and -k.")
+			parser.error("--striponly (-xx) can only be combined with -w, -t, -a, -e, -k, and -sd.")
 
 	# Handle confirmation for --all flag
 	if args.all:
@@ -326,12 +333,6 @@ if __name__ == "__main__":
 		if confirm.lower() != 'y':
 			print("Operation cancelled.")
 			sys.exit()
-
-	# Determine prefix
-	current_folder = os.getcwd()
-	final_prefix = args.prefix
-	if args.folder:
-		final_prefix = os.path.basename(current_folder)
 
 	# Determine extension filter
 	allowed = None
@@ -344,29 +345,78 @@ if __name__ == "__main__":
 		allowed = VIDEO_EXTENSIONS
 	elif args.type == 'audio':
 		allowed = AUDIO_EXTENSIONS
-	
-	# Get files
-	target_files = get_target_files(current_folder, allowed, args.all, args.wildcard)
-	
-	# If striponly is set, filter target files to only those containing the string
-	if args.striponly:
-		target_files = [f for f in target_files if args.striponly in f]
 
-	# Sort files
-	sorted_files = sort_files(current_folder, target_files, args.sort)
-	
-	# Execute
-	history = rename_files(
-		current_folder, 
-		final_prefix, 
-		args.suffix, 
-		args.digits, 
-		args.keep, 
-		args.original, 
-		sorted_files,
-		strip_str=args.strip,
-		striponly_str=args.striponly
-	)
+	current_folder = os.getcwd()
+	history = []
+
+	# Resolve targets (either subfolders or the current working directory)
+	if args.subdir is not None:
+		subfolders = []
+		try:
+			with os.scandir(current_folder) as entries:
+				for entry in entries:
+					if entry.is_dir() and not entry.name.startswith('.'):
+						if fnmatch.fnmatch(entry.name, args.subdir):
+							subfolders.append(entry.name)
+			subfolders.sort()
+		except OSError as e:
+			sys.stderr.write(f"{CLR_RED}Error accessing directories: {e}{CLR_RESET}\n")
+			sys.exit(1)
+
+		if not subfolders:
+			print(f"No subfolders found matching '{args.subdir}'. Nothing to do.")
+			sys.exit(0)
+
+		# Run sequential renaming in each subfolder individually
+		for subdir in subfolders:
+			subfolder_path = os.path.join(current_folder, subdir)
+			
+			# Determine dynamic prefix for this subfolder
+			final_prefix = args.prefix
+			if args.folder:
+				final_prefix = os.path.basename(subfolder_path)
+
+			target_files = get_target_files(subfolder_path, allowed, args.all, args.wildcard)
+			if args.striponly:
+				target_files = [f for f in target_files if args.striponly in f]
+
+			sorted_files = sort_files(subfolder_path, target_files, args.sort)
+
+			sub_history = rename_files(
+				subfolder_path, 
+				final_prefix, 
+				args.suffix, 
+				args.digits, 
+				args.keep, 
+				args.original, 
+				sorted_files,
+				strip_str=args.strip,
+				striponly_str=args.striponly
+			)
+			history.extend(sub_history)
+	else:
+		# Standard single-folder processing
+		final_prefix = args.prefix
+		if args.folder:
+			final_prefix = os.path.basename(current_folder)
+
+		target_files = get_target_files(current_folder, allowed, args.all, args.wildcard)
+		if args.striponly:
+			target_files = [f for f in target_files if args.striponly in f]
+
+		sorted_files = sort_files(current_folder, target_files, args.sort)
+
+		history = rename_files(
+			current_folder, 
+			final_prefix, 
+			args.suffix, 
+			args.digits, 
+			args.keep, 
+			args.original, 
+			sorted_files,
+			strip_str=args.strip,
+			striponly_str=args.striponly
+		)
 	
 	if history and not args.keep:
 		save_undo_data(history)
