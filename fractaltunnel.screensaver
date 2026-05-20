@@ -1,0 +1,108 @@
+"""
+Optimized Fractal Tunnel Screensaver
+====================================
+An infinite, psychedelic tunnel with a winding path.
+Optimized for real-time terminal rendering.
+"""
+import math
+import random
+
+class ScreensaverPlugin:
+    def init(self, renderer):
+        self.time = 0.0
+        # Very slow zoom speed for a hypnotic effect
+        self.speed = 0.7
+        self.rotation_speed = 0.4
+        
+        # Reduced layer count for real-time performance
+        self.num_layers = 26
+        self.layers = [i / self.num_layers for i in range(self.num_layers)]
+        
+        # Texture characters
+        self.chars = ['█', '▓', '▒', '░', '◈', '×', '·']
+
+    def get_psychedelic_color(self, offset):
+        """Generates a shifting ANSI color code based on time and depth."""
+        # Simplified color math for performance
+        t = self.time * 1.2 + offset
+        r = int(3 + 2 * math.sin(t))
+        g = int(3 + 2 * math.sin(t * 1.2 + 1.5))
+        b = int(3 + 2 * math.sin(t * 0.8 + 3.0))
+        
+        color_idx = 16 + (max(0, min(5, r)) * 36) + (max(0, min(5, g)) * 6) + max(0, min(5, b))
+        return f"\033[38;5;{color_idx}m"
+
+    def update(self, dt, renderer):
+        self.time += dt
+        
+        # Progress layers toward the screen
+        for i in range(len(self.layers)):
+            self.layers[i] += dt * self.speed
+            if self.layers[i] >= 1.0:
+                self.layers[i] -= 1.0
+
+    def draw(self, renderer):
+        # Slower wandering frequencies
+        wander_range_x = renderer.width * 0.3
+        wander_range_y = renderer.height * 0.3
+        
+        # Calculate the movement of the tunnel's far end (the horizon)
+        target_x = math.sin(self.time * 0.4) * wander_range_x
+        target_y = math.cos(self.time * 0.3) * wander_range_y
+        
+        base_cx = renderer.width // 2
+        base_cy = renderer.height // 2
+        
+        # Render layers from back to front
+        sorted_layers = sorted(self.layers, reverse=True)
+
+        for progress in sorted_layers:
+            # Exponential scale for perspective
+            scale = math.pow(progress, 2.5)
+            
+            # Radius calculation
+            max_radius = min(renderer.width, renderer.height * 2) * 1.1
+            r = scale * max_radius
+            
+            if r < 0.2: continue
+
+            # Perspective Bending:
+            # Farther rings follow the wandering target.
+            # Using a power function on intensity makes the "bend" more dramatic.
+            intensity = math.pow(1.0 - progress, 1.5)
+            cx = int(base_cx + target_x * intensity)
+            cy = int(base_cy + target_y * intensity)
+
+            # Rotation
+            layer_rot = self.time * self.rotation_speed + (progress * 3.0)
+            
+            # Reduced point density for real-time performance
+            num_points = int(r * 2.2) + 12
+            
+            color = self.get_psychedelic_color(progress * 8)
+            char = self.chars[int(progress * (len(self.chars) - 1))]
+
+            # Morphing geometry
+            morph = 0.5 + 0.5 * math.sin(self.time * 0.2)
+            
+            for p in range(num_points):
+                theta = (p / num_points) * 2 * math.pi + layer_rot
+                
+                dx = math.cos(theta)
+                dy = math.sin(theta)
+                
+                # Subtle geometric distortion
+                dist = 1.0
+                if morph > 0.4:
+                    dist = 1.0 + 0.08 * math.sin(theta * 6) * morph
+                
+                # Pixel coordinates with aspect ratio compensation
+                px = int(cx + dx * r * dist * 2.0)
+                py = int(cy + dy * r * dist)
+                
+                renderer.draw_char(px, py, char, color)
+
+        # Draw the distant horizon exit point
+        exit_x = int(base_cx + target_x)
+        exit_y = int(base_cy + target_y)
+        renderer.draw_char(exit_x, exit_y, '¤', "\033[38;5;231m")

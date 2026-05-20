@@ -1,0 +1,202 @@
+"""
+Outrun-style pseudo-3D driving screensaver plugin.
+"""
+import random
+import math
+
+class ScreensaverPlugin:
+	def init(self, renderer):
+		self.distance = 0.0
+		self.curve = 0.0
+		self.target_curve = 0.0
+		self.curve_timer = 0.0
+		self.camera_x = 0.0
+		self.speed = 8.0
+
+		# Generate a random city skyline for parallax
+		self.city_profile = []
+		for _ in range(200):
+			self.city_profile.append(random.randint(2, 6))
+
+		# Add occasional clusters of tall buildings
+		for i in range(0, 200, 15):
+			h = random.randint(8, 14)
+			self.city_profile[i] = h
+			self.city_profile[(i+1) % 200] = h
+			self.city_profile[(i+2) % 200] = h - 2
+
+		# Initialize passing trees
+		self.trees = []
+		for _ in range(25):
+			self.trees.append({
+				'z': random.uniform(0.01, 1.0),
+				'side': random.choice([-1, 1]),
+				'x_off': random.uniform(2.0, 15.0)
+			})
+
+	def update(self, dt, renderer):
+		# Move forward
+		self.distance += self.speed * dt
+		self.curve_timer -= dt
+
+		# Change road curvature periodically
+		if self.curve_timer <= 0:
+			self.curve_timer = random.uniform(2.0, 5.0)
+			self.target_curve = random.uniform(-0.8, 0.8)
+			# Occasional straight road
+			if random.random() > 0.7:
+				self.target_curve = 0.0
+
+		# Smoothly transition current curve to target curve
+		self.curve += (self.target_curve - self.curve) * dt * 1.5
+
+		# Parallax background camera movement based on curvature
+		self.camera_x += self.curve * self.speed * dt * 2.0
+
+		# Update trees moving towards the camera
+		for t in self.trees:
+			t['z'] -= dt * 0.4
+			# Respawn tree in the distance once it passes the camera
+			if t['z'] <= 0:
+				t['z'] += 1.0
+				t['side'] = random.choice([-1, 1])
+				t['x_off'] = random.uniform(2.0, 15.0)
+
+	def draw(self, renderer):
+		horizon = renderer.height // 2
+
+		# Synthwave / Outrun Color Palette
+		C_SKY    = "\033[38;5;17m"   # Deep Dark Blue
+		C_SUN    = "\033[38;5;214m"  # Vibrant Orange
+		C_CITY   = "\033[38;5;54m"   # Dark Purple
+		C_GRASS_D= "\033[38;5;22m"   # Dark Green
+		C_GRASS_L= "\033[38;5;28m"   # Lighter Green
+		C_ROAD   = "\033[38;5;236m"  # Dark Gray
+		C_STRIPE = "\033[38;5;255m"  # Bright White
+		C_TREE_L = "\033[38;5;34m"   # Neon-ish Green Leaves
+		C_TREE_T = "\033[38;5;94m"   # Brown Trunk
+
+		# 1. DRAW SKY
+		for y in range(horizon):
+			for x in range(renderer.width):
+				renderer.draw_char(x, y, '█', C_SKY)
+
+		# 2. DRAW SUN (Synthwave style with horizontal slits)
+		sun_r = renderer.height // 4
+		sun_x = renderer.width // 2
+		sun_y = horizon - sun_r // 2
+		for sy in range(-sun_r, sun_r + 1):
+			for sx in range(-sun_r * 2, sun_r * 2 + 1): # *2 width for terminal aspect ratio
+				if (sx*sx)/(4.0) + (sy*sy) <= sun_r*sun_r:
+					# Create the iconic bottom-half slit effect
+					if sy > 0 and sy % 2 == 1:
+						continue
+					renderer.draw_char(sun_x + sx, sun_y + sy, '█', C_SUN)
+
+		# 3. DRAW CITYSCAPE (Parallax)
+		city_w = len(self.city_profile)
+		parallax = int(self.camera_x) % city_w
+		for x in range(renderer.width):
+			h = self.city_profile[(x + parallax) % city_w]
+			for y in range(horizon - h, horizon):
+				renderer.draw_char(x, y, '█', C_CITY)
+
+		# 4. DRAW GROUND (Pseudo-3D Road and Grass)
+		for y in range(horizon, renderer.height):
+			# Scale goes from 0.0 (at horizon) to 1.0 (at bottom of screen)
+			scale = (y - horizon) / max(1.0, float(renderer.height - horizon - 1))
+			
+			# Calculate Z-distance for texture mapping
+			z = 1.0 / (scale + 0.05) 
+
+			# Quadratic widening of the road for better perspective
+			w = scale * scale
+			road_w = int(renderer.width * 0.4 * w) + 2
+			
+			# Shift X center based on accumulated curve to bend the road
+			shift = self.curve * (1.0 - scale) * (renderer.width / 2)
+			mid_x = int(renderer.width / 2 + shift)
+
+			# Checkerboard grass calculation
+			grass_c = C_GRASS_L if math.sin(z * 6.0 + self.distance * 10.0) > 0 else C_GRASS_D
+
+			for x in range(renderer.width):
+				if abs(x - mid_x) <= road_w:
+					renderer.draw_char(x, y, '█', C_ROAD)
+				else:
+					renderer.draw_char(x, y, '█', grass_c)
+
+			# Road Stripes
+			if road_w > 4 and math.sin(z * 8.0 + self.distance * 15.0) > 0:
+				stripe_w = max(1, road_w // 15)
+				for sx in range(-stripe_w, stripe_w + 1):
+					renderer.draw_char(mid_x + sx, y, '█', C_STRIPE)
+
+		# 5. DRAW TREES
+		# Sort trees from back to front (Painter's algorithm)
+		self.trees.sort(key=lambda t: t['z'], reverse=True)
+		for t in self.trees:
+			scale = 1.0 - t['z'] # 0.0 at horizon, 1.0 at bottom
+			y = int(horizon + scale * (renderer.height - horizon))
+			
+			if y < horizon + 1: 
+				continue
+
+			w = scale * scale
+			road_w = int(renderer.width * 0.4 * w) + 2
+			shift = self.curve * (1.0 - scale) * (renderer.width / 2)
+			mid_x = int(renderer.width / 2 + shift)
+
+			# Position tree outside the road bounds, bringing them closer to the road edge
+			tree_x = int(mid_x + t['side'] * (road_w + t['x_off'] * scale * 2 + 1))
+
+			# Make trees scale much taller to break the horizon line
+			tree_h = int(renderer.height * 0.6 * scale) + 2
+			tree_w = int(renderer.width * 0.12 * scale) + 1
+			trunk_h = max(1, int(tree_h * 0.2))
+
+			# Draw tree shape
+			for ty in range(tree_h):
+				for tx in range(-tree_w, tree_w + 1):
+					px = tree_x + tx
+					py = y - ty
+					
+					# Allowed to draw over the sky/horizon for a more dynamic view
+					if ty >= trunk_h: # Leaves
+						leaf_y = ty - trunk_h
+						leaf_h = tree_h - trunk_h
+						# Taper to a point at the top
+						current_w = tree_w - int(tree_w * (leaf_y / max(1, leaf_h - 1)))
+						if abs(tx) <= current_w:
+							renderer.draw_char(px, py, '█', C_TREE_L)
+					else: # Trunk
+						if tx == 0:
+							renderer.draw_char(px, py, '█', C_TREE_T)
+
+		# 6. DRAW CAR
+		CAR_COLORS = {
+			'R': "\033[38;5;196m", # Red Body
+			'B': "\033[38;5;51m",  # Cyan Window
+			'O': "\033[38;5;240m", # Gray Tire Outline
+			'K': "\033[38;5;16m",  # Black Tire Hub
+			'Y': "\033[38;5;226m", # Yellow Headlights
+			'D': "\033[38;5;52m",  # Dark Red Shadow/Grill
+		}
+		car_pixels = [
+			"  RRRRR  ",
+			" RBBBBBR ",
+			"RRRRRRRRR",
+			"YDRRRRRDY",
+			"OK     KO"
+		]
+		car_h = len(car_pixels)
+		car_w = len(car_pixels[0])
+
+		# Shift car opposite to the curve to simulate centrifugal force
+		car_x = int(renderer.width / 2 - car_w / 2 - self.curve * 12.0)
+		car_y = renderer.height - car_h - 1
+
+		for cy, row in enumerate(car_pixels):
+			for cx, char in enumerate(row):
+				if char != ' ':
+					renderer.draw_char(car_x + cx, car_y + cy, '█', CAR_COLORS.get(char, "\033[0m"))
