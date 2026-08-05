@@ -1,23 +1,23 @@
 # Terminal Markdown Reader
 """
-												FULL TERMINAL MARKDOWN READER
-												=============================
+			FULL TERMINAL MARKDOWN READER
+			=============================
 A full-screen interactive command-line utility for rendering and reading
 Markdown (.md) files directly in your terminal with dynamic line wrapping,
 Rich-powered custom themes & table boxes, smooth scrolling, and keyboard navigation.
 
 Usage:
-				catro-scripts mdreader [filename.md]
+	catro-scripts mdreader [filename.md]
 
 Features:
-				- Markdown rendering powered by 'rich' with custom palettes & table boxes.
-				- Pinned 2-line bottom menu and status bar with page percentage.
-				- Full scrolling support (Up/Down, PgUp/PgDn, Home/End, Left/Right file navigation).
-				- Viewport border toggle [H] and Contrast theme modes [C].
+	- Markdown rendering powered by 'rich' with custom palettes & table boxes.
+	- Pinned 2-line bottom menu and status bar with page percentage.
+	- Full scrolling support (Up/Down, PgUp/PgDn, Home/End, Left/Right file navigation).
+	- Viewport border toggle [H] and Contrast theme modes [C].
 
 Requirements:
-				- python libraries rich, curses
-				- On Windows: 'windows-curses' (installed automatically if missing).
+	- python libraries rich, curses
+	- On Windows: 'windows-curses' (installed automatically if missing).
 
 Disclaimer: This script was generated with Gemini 3
 """
