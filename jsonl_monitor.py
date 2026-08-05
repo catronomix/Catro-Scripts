@@ -32,14 +32,16 @@ import platform
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEBUG_LOG_PATH = os.path.join(SCRIPT_DIR, "jsonl_debug.log")
+DEBUGLEVEL = 0
 
 def debug_log(msg):
 	"""Writes a timestamped debug message to jsonl_debug.log in the script's directory."""
-	try:
-		with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-			f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
-	except Exception:
-		pass
+	if DEBUGLEVEL > 0:
+		try:
+			with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+				f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+		except Exception:
+			pass
 
 # ---------------------------------------------------------------------------
 # Cross-Platform Terminal Utilities
