@@ -6,3 +6,4 @@ renamer.undo
 ffplay.exe
 ffprobe.exe
 /__pycache__
+jsonl_debug.log
