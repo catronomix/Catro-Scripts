@@ -1,12 +1,14 @@
 # Catro-Scripts
 
-Collection of personal Python scripts for whatevers.  
-Use at your own peril. I am using python 3.11.9
-run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
+**Collection of personal Python scripts for whatevers. **
+- Use at your own peril. I am using python 3.12.5
+- run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
+- It is highly recommended to add the install directory to your PATH, the scripts operate on the working directory by default
+
 
 ## Scripts Overview
 
-- **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience.
+- **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience/personalization
 
 - **`audiosplit`**: Splits multi-channel audio files into individual mono tracks. Supports multiple formats (MP3, WAV, FLAC, AAC, OGG, M4A, etc.) with batch processing, wildcard filtering, and interactive options.
 
