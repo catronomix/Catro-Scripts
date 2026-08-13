@@ -5,6 +5,8 @@
 - run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 - It is highly recommended to add the install directory to your PATH, the scripts operate on the working directory by default
 
+<img width="934" height="1014" alt="image" src="https://github.com/user-attachments/assets/24244c88-0ee7-40ae-afe1-dc0e7c67adbc" />
+
 
 ## Scripts Overview
 
