@@ -1,3 +1,4 @@
+# (Nanobot) JSONL reader
 """
                                                 Live JSONL Monitor
                                                 =============================

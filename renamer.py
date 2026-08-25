@@ -13,6 +13,7 @@ USAGE:
 	python renamer.py --wildcard "vacation_*.jpg"
 	python renamer.py -d 0 -p "PRE_"      # Keeps original names, adds prefix
 	python renamer.py -o -p "IMG_"       # Keeps original names, adds prefix AND numbers at start
+	python renamer.py -r " " "_"         # Replaces spaces with underscores in filenames
 	python renamer.py -x " (1)"          # Renames files but removes " (1)" from original names first
 	python renamer.py -xx "_TEMP"        # Only removes "_TEMP" from matching files, no other renaming
 	python renamer.py -sd -p "Sub_"      # Renames files within each subfolder sequentially
@@ -25,6 +26,7 @@ OPTIONS:
 	-f, --folder       Use the parent folder's name as the prefix (or subfolder name with -sd)
 	-s, --suffix STR   Text to put after the content (before extension)
 	-w, --wildcard STR Filter files using wildcards (e.g., 'IMG_*.jpg')
+	-r, --replace IN OUT Replace all occurrences of IN with OUT in filename (excluding extension)
 	-x, --strip STR    Remove STR from the original filename before processing
 	-xx, --striponly STR Only target files with STR and remove it (ignores numbering/prefix/suffix)
 	-d, --digits N     Number of digits for padding. 
@@ -32,7 +34,8 @@ OPTIONS:
 	                   Default: auto-calculated based on file count
 	-o, --original     Keep original filename but add numbering at the start.
 	                   (Mutually exclusive with -d 0)
-	--sort METHOD      Sorting: 'name_asc' (default), 'name_desc', 'date_asc', 'date_desc'
+	--sort METHOD      Sorting: 'name_asc' (default), 'name_desc', 'date_asc', 'date_desc',
+	                   'alphanum_asc', 'alphanum_desc', 'winname_asc', 'winname_desc'
 	-k, --keep         Keep original files in place (copy instead of move)
 	-t, --type TYPE    Filter by category: 'image', 'video', 'audio', or 'folder'
 	-e, --ext EXT      Filter for a specific extension only
@@ -47,6 +50,9 @@ import argparse
 import sys
 import shutil
 import fnmatch
+import re
+import functools
+import ctypes
 
 # Initialize environment for ANSI colors on Windows
 if os.name == 'nt':
@@ -176,6 +182,22 @@ def get_target_files(folder_path, allowed_extensions, include_all, wildcard_patt
 		
 	return items
 
+def natural_sort_key(s):
+	"""Key function for natural/alphanumeric sorting."""
+	return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+def get_win_sort_key():
+	"""Returns a key function using Windows StrCmpLogicalW if available, or natural sort fallback."""
+	if os.name == 'nt':
+		try:
+			str_cmp = ctypes.windll.shlwapi.StrCmpLogicalW
+			str_cmp.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+			str_cmp.restype = ctypes.c_int
+			return functools.cmp_to_key(str_cmp)
+		except Exception:
+			pass
+	return natural_sort_key
+
 def sort_files(folder_path, files, method):
 	"""Sorts files based on the chosen method."""
 	if method == 'name_asc':
@@ -186,9 +208,17 @@ def sort_files(folder_path, files, method):
 		files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)))
 	elif method == 'date_desc':
 		files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+	elif method == 'alphanum_asc':
+		files.sort(key=natural_sort_key)
+	elif method == 'alphanum_desc':
+		files.sort(key=natural_sort_key, reverse=True)
+	elif method == 'winname_asc':
+		files.sort(key=get_win_sort_key())
+	elif method == 'winname_desc':
+		files.sort(key=get_win_sort_key(), reverse=True)
 	return files
 
-def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files, strip_str=None, striponly_str=None, is_folder_mode=False):
+def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, files, replace_str=None, strip_str=None, striponly_str=None, is_folder_mode=False):
 	"""Performs the sequential renaming/copying. Returns history for undo."""
 	history = []
 	if not files:
@@ -228,7 +258,12 @@ def rename_files(folder_path, prefix, suffix, digit_count, keep, include_orig, f
 			extension = ""
 		else:
 			name_root, extension = os.path.splitext(filename)
-		
+
+		# Apply String Replacement (happens before other operations)
+		if replace_str:
+			str_in, str_out = replace_str
+			name_root = name_root.replace(str_in, str_out)
+
 		# Apply Stripping
 		if striponly_str:
 			# Just strip the string, no other changes
@@ -301,6 +336,8 @@ if __name__ == "__main__":
 						help="Suffix for the new filename (before extension).")
 	rename_opts.add_argument("-w", "--wildcard", type=str,
 						help="Filter files using wildcards (e.g. 'holiday*.jpg').")
+	rename_opts.add_argument("-r", "--replace", nargs=2, metavar=("STR_IN", "STR_OUT"),
+						help="Replace all occurrences of STR_IN with STR_OUT in filename (excluding extension).")
 	rename_opts.add_argument("-x", "--strip", type=str,
 						help="String to strip from original filename before processing.")
 	rename_opts.add_argument("-xx", "--striponly", type=str,
@@ -309,7 +346,9 @@ if __name__ == "__main__":
 						help="Number of digits for numbering (e.g. 3 for 001). Set to 0 to keep original filenames.")
 	rename_opts.add_argument("-o", "--original", action="store_true",
 						help="Keep original filename and place numbers at the start.")
-	rename_opts.add_argument("--sort", type=str, choices=['name_asc', 'name_desc', 'date_asc', 'date_desc'],
+	rename_opts.add_argument("--sort", type=str, 
+						choices=['name_asc', 'name_desc', 'date_asc', 'date_desc', 
+								 'alphanum_asc', 'alphanum_desc', 'winname_asc', 'winname_desc'],
 						default='name_asc', help="Sorting method (default: name_asc)")
 	rename_opts.add_argument("-k", "--keep", action="store_true",
 						help="Keep original files in place (copy instead of move)")
@@ -336,8 +375,9 @@ if __name__ == "__main__":
 	if args.undo:
 		for arg in sys.argv[1:]:
 			if arg in ['-p', '--prefix', '-f', '--folder', '-s', '--suffix', '-w', '--wildcard', 
-					  '-x', '--strip', '-xx', '--striponly', '-d', '--digits', '-o', '--original', 
-					  '--sort', '-k', '--keep', '-t', '--type', '-e', '--ext', '-a', '--all', '-sd', '--subdir']:
+					  '-r', '--replace', '-x', '--strip', '-xx', '--striponly', '-d', '--digits', 
+					  '-o', '--original', '--sort', '-k', '--keep', '-t', '--type', '-e', '--ext', 
+					  '-a', '--all', '-sd', '--subdir']:
 				parser.error("The --undo flag is exclusive and cannot be used with other options.")
 		perform_undo()
 		sys.exit(0)
@@ -349,7 +389,7 @@ if __name__ == "__main__":
 	# Handle striponly constraints
 	if args.striponly:
 		# Check for forbidden combinations
-		if any([args.prefix != "", args.folder, args.suffix != "", args.digits is not None, args.original, args.strip]):
+		if any([args.prefix != "", args.folder, args.suffix != "", args.digits is not None, args.original, args.strip, args.replace is not None]):
 			parser.error("--striponly (-xx) can only be combined with -w, -t, -a, -e, -k, and -sd.")
 
 	# Handle extension filter mutual exclusion with directory type
@@ -419,6 +459,7 @@ if __name__ == "__main__":
 				args.keep, 
 				args.original, 
 				sorted_files,
+				replace_str=args.replace,
 				strip_str=args.strip,
 				striponly_str=args.striponly,
 				is_folder_mode=(args.type == 'folder')
@@ -444,6 +485,7 @@ if __name__ == "__main__":
 			args.keep, 
 			args.original, 
 			sorted_files,
+			replace_str=args.replace,
 			strip_str=args.strip,
 			striponly_str=args.striponly,
 			is_folder_mode=(args.type == 'folder')
