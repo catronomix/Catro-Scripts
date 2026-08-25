@@ -56,6 +56,12 @@ if [ -z "$1" ]; then
     exit 0
 fi
 
+# Check for shorthand '.' to invoke the 'action' script with a 'run' command.
+if [ "$1" = "." ]; then
+    shift # remove the '.'
+    exec "$0" action run "$@"
+fi
+
 SCRIPT_NAME="$1"
 FULL_PATH="$SCRIPT_DIR/$SCRIPT_NAME.py"
 
@@ -66,7 +72,9 @@ if [ ! -f "$FULL_PATH" ]; then
 fi
 
 # Shift the arguments so we can pass the rest to python
-shift
-
-# Run the python script with all remaining arguments
+# The first argument is the script name (or '.'), so we shift it off.
+shift 
+ 
+# Run the python script with all remaining arguments.
+# The python script itself is responsible for parsing its own arguments.
 python3 "$FULL_PATH" "$@"

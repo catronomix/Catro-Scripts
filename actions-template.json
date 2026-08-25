@@ -1,0 +1,10 @@
+{
+	"ping": {
+		"command": "ping 127.0.0.1",
+		"description": "Ping local loopback interface"
+	},
+	"echo-test": {
+		"command": "echo Macro system operational!",
+		"description": "Test command output"
+	}
+}
