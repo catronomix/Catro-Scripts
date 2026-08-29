@@ -42,6 +42,14 @@ if "%~1"=="" (
     exit /b 0
 )
 
+:: Check for shorthand '.' to invoke the action script with a 'run' command.
+set "DOT_ARG=%~1"
+if not "!DOT_ARG:~-2!"=="\." goto :not_dot
+shift
+python "%SCRIPT_DIR%action.py" run %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %errorlevel%
+:not_dot
+
 set "SCRIPT_NAME=%~1"
 set "FULL_PATH=%SCRIPT_DIR%%SCRIPT_NAME%.py"
 
