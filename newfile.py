@@ -1,8 +1,3 @@
-import os
-import re
-import sys
-import platform
-
 # wildcard file and folder creator
 """
 			CATRO-SCRIPTS FILE & FOLDER CREATOR
@@ -34,6 +29,11 @@ Requirements:
 	- No external libraries required.
 	- Validates filenames against OS-specific reserved names (Windows).
 """
+
+import os
+import re
+import sys
+import platform
 
 def expand_filenames(pattern):
 	"""
