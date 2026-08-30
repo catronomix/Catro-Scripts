@@ -15,7 +15,7 @@ Usage:
         python action.py                             # List all saved actions
         python action.py list                        # List all saved actions
         python action.py run <name> [extra_args...] # Run a macro with optional arguments
-        python action.py <name> [extra_args...]     # Shortcut to run a macro
+        catro-scripts . <name> [extra_args...]     # Shortcut to run a macro
         python action.py add [name]                  # Interactive mini-TUI to add/edit macro
         python action.py remove [name]               # Interactive mini-TUI to delete macro
 """
