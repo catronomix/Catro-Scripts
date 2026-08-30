@@ -42,7 +42,7 @@ if "%~1"=="" (
     exit /b 0
 )
 
-:: Check for shorthand '.' to invoke the action script with a 'run' command.
+:: Check for action shorthand '.' to invoke the action script with a 'run' command.
 if not "%~1"=="." goto :not_dot
 shift
 python "%SCRIPT_DIR%action.py" run %1 %2 %3 %4 %5 %6 %7 %8 %9
