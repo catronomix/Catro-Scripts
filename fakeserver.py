@@ -13,22 +13,17 @@ Options:
 	-t, --type    Style of output (python, cpp, plaintext). Default: plaintext
 
 Requirements:
-	- pynput (pip install pynput)
+	- Pure Python standard library (no external dependencies).
+	- Compatible with headless/SSH Android Termux sessions.
 """
 
 import sys
 import time
 import random
 import argparse
-import threading
-import os
-
-try:
-	from pynput import keyboard
-except ImportError:
-	print("\033[0;31mError: 'pynput' library is not installed.\033[0m")
-	print("Please install it using: pip install pynput")
-	sys.exit(1)
+import select
+import termios
+import tty
 
 # --- Vocabularies for different styles ---
 
@@ -177,6 +172,23 @@ def generate_line(style):
 	else:
 		return random.choice(PLAINTEXT_VOCAB)
 
+def check_for_quit(fd, timeout):
+	"""
+	Waits up to `timeout` seconds for keyboard input on a terminal.
+	Returns True if ESC, 'q', or Ctrl+C is read.
+	"""
+	if fd is None:
+		time.sleep(timeout)
+		return False
+
+	rlist, _, _ = select.select([fd], [], [], timeout)
+	if rlist:
+		char = sys.stdin.read(1)
+		# 27 = ESC, 3 = Ctrl+C
+		if char in ('\x1b', 'q', 'Q', '\x03'):
+			return True
+	return False
+
 def main():
 	parser = argparse.ArgumentParser(description="Terminal screensaver simulating hacker code.")
 	parser.add_argument(
@@ -198,46 +210,45 @@ def main():
 	chars_per_min = args.speed * 5.0
 	delay_per_char = 60.0 / chars_per_min if chars_per_min > 0 else 0
 
+	# Terminal raw mode setup for non-blocking ESC key detection
+	fd = None
+	old_settings = None
+	if sys.stdin.isatty():
+		fd = sys.stdin.fileno()
+		old_settings = termios.tcgetattr(fd)
+		tty.setcbreak(fd)
+
 	# Set text color to green
 	sys.stdout.write("\033[32m")
 	sys.stdout.flush()
 
-	stop_event = threading.Event()
-
-	def on_press(key):
-		if key == keyboard.Key.esc:
-			stop_event.set()
-			return False  # Stop listener
-
-	# Start listener in a background thread
-	listener = keyboard.Listener(on_press=on_press)
-	listener.start()
-
 	try:
-		while not stop_event.is_set():
+		running = True
+		while running:
 			line = generate_line(args.type)
 			
 			for char in line:
-				if stop_event.is_set():
-					break
-				
 				sys.stdout.write(char)
 				sys.stdout.flush()
 				
 				jitter = random.uniform(0.5, 1.5)
-				stop_event.wait(delay_per_char * jitter)
+				if check_for_quit(fd, delay_per_char * jitter):
+					running = False
+					break
 			
-			if stop_event.is_set():
+			if not running:
 				break
 			
 			sys.stdout.write('\n')
 			sys.stdout.flush()
-			stop_event.wait(delay_per_char * 10)
+			if check_for_quit(fd, delay_per_char * 10):
+				break
 
 	except KeyboardInterrupt:
 		pass
 	finally:
-		listener.stop()
+		if fd is not None and old_settings is not None:
+			termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 		sys.stdout.write("\033[0m\n")
 		sys.stdout.flush()
 		sys.exit(0)
