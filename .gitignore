@@ -1,3 +1,6 @@
+/.vscode
+/.continue
+/__pycache__
 cs.sh
 cs.bat
 ffmpeg.exe
@@ -5,10 +8,7 @@ networks.json
 renamer.undo
 ffplay.exe
 ffprobe.exe
-/__pycache__
 jsonl_debug.log
-<<<<<<< HEAD
 actions.json
-=======
-.vscode/settings.json
->>>>>>> 22596a958e28d6fbdba6cfbe149de57f45b19ea0
+networks.json
+.env
