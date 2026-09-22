@@ -18,10 +18,10 @@ Requirements: none
 import sys
 import subprocess
 
-def run(args):
-	"""Run a command and raise on failure."""
+def run(args, check=True):
+	"""Run a command and raise on failure unless check is False."""
 	result = subprocess.run(args)
-	if result.returncode != 0:
+	if check and result.returncode != 0:
 		raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args)}")
 	return result
 
@@ -35,8 +35,22 @@ def main():
 	message = sys.argv[1]
 
 	run(['git', 'add', '-A'])
-	run(['git', 'commit', '-m', message])
-	run(['git', 'push'])
+	# Commit only if there is something to commit; otherwise proceed to push.
+	commit_result = run(['git', 'commit', '-m', message], check=False)
+	if commit_result.returncode != 0:
+		# Check whether the working tree is clean (nothing to commit).
+		status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
+		if status.stdout.strip() == '':
+			print('Nothing to commit; skipping commit.')
+		else:
+			raise RuntimeError(f"Commit failed ({commit_result.returncode}): git commit -m {message}")
+
+	# If origin is ahead, pull with rebase before pushing to avoid non-fast-forward rejection.
+	push_result = run(['git', 'push'], check=False)
+	if push_result.returncode != 0:
+		print('Push failed; attempting pull --rebase then retrying push...')
+		run(['git', 'pull', '--rebase'])
+		run(['git', 'push'])
 
 
 if __name__ == "__main__":
