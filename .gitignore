@@ -1,6 +1,6 @@
-/.vscode
-/.continue
-/__pycache__
+.vscode/
+.continue/
+__pycache__/
 cs.sh
 cs.bat
 ffmpeg.exe
