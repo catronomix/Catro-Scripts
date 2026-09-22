@@ -24,6 +24,8 @@
 
 - **`getaudio`**: Extracts audio tracks from video files and saves them in various formats. Supports batch processing and format conversion with customizable quality settings.
 
+- **`gitpush`**: Shorthand for quickly staging, committing and pushing to remote of a git repository.
+
 - **`help`**: Displays help information and usage details for available scripts. A utility for exploring script functionality.
 
 - **`image_generator`**: Generates a batch of timestamped images with solid background colors and noise patterns. Organizes files into timestamped directories and artificially distributes modification times for testing.
