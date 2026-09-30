@@ -50,6 +50,8 @@
 
 - **`screensaver`**: A general terminal renderer and screensaver host that loads external screensaver modules (.screensaver files) and provides a high-performance double-buffered terminal canvas.
 
+- **`sanitize`**: Rewrites full git history to replace a leaked secret with a placeholder (file contents + commit messages), then expires reflogs and GCs. Pre-checks history to avoid no-op rewrites and verifies afterwards. *Requires: git + git-filter-repo*
+
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems use conventional timestamp modification.
