@@ -17,6 +17,12 @@
 	Usage:
 		python sanitize.py "<secret>" "<placeholder>" [--yes]
 
+	Note:
+		Always quote both values. Secrets/placeholders often contain shell
+		metacharacters ([ ] ( ) & ! % < >); unquoted, the shell eats them
+		before Python ever runs (e.g. bare <redacted> is input redirection
+		and fails with "The syntax of the command is incorrect").
+
 	Examples:
 		- python sanitize.py "Mypassword123" "<redacted-pass1>"
 		- python sanitize.py "Mypassword123" "***" --yes
@@ -58,6 +64,10 @@ def init_ansi():
 
 def run(cmd, **kwargs):
 	# Thin wrapper: capture stdout/stderr as text so callers can inspect it.
+	# Uses UTF-8 with replacement so binary blobs in history (images, zips,
+	# legacy encodings) never crash decoding on Windows (cp1252 default).
+	kwargs.setdefault("encoding", "utf-8")
+	kwargs.setdefault("errors", "replace")
 	return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 
@@ -85,7 +95,7 @@ def print_table(title, rows):
 	w_val = max([len(str(v)) for _, v in rows] + [0])
 	w_key = max(w_key, 8)
 	w_val = max(w_val, 8)
-	total = w_key + w_val + 7
+	total = w_key + w_val + 5
 	tl, tr, bl, br, h, v, l_join, r_join = _box_chars()
 	print(f"{Colors.PURPLE}{tl}{h * total}{tr}{Colors.END}")
 	header = f" {title} ".center(total)
@@ -94,7 +104,7 @@ def print_table(title, rows):
 	for i, (k, val) in enumerate(rows):
 		bg = Colors.BG_BLACK if i % 2 == 0 else Colors.BG_GREY
 		style = Colors.LIGHT_BLUE + bg
-		row = (f"{Colors.PURPLE}{v}{style} {str(k):<{w_key}} | "
+		row = (f"{Colors.PURPLE}{v}{style} {str(k):<{w_key}} {v} "
 			   f"{str(val):<{w_val}} {Colors.END}{Colors.PURPLE}{v}{Colors.END}")
 		print(row)
 	print(f"{Colors.PURPLE}{bl}{h * total}{br}{Colors.END}")
