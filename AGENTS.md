@@ -58,3 +58,6 @@ This document provides instructions for AI agents working on the `catro-scripts`
 1. Analyze the existing `catro-scripts` implementation before creating new scripts.
 2. Adhere to the established command-line argument patterns.
 3. Ensure cross-platform compatibility for all new scripts.
+
+## OpenCode Skill
+- For any use/run/explain task involving catro-scripts tools, load skill `catro-scripts` via the skill tool first, then follow it (`cs list`, `cs help <script>` before use).

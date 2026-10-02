@@ -182,6 +182,50 @@ def secret_in_history(secret):
 	return False
 
 
+def get_remotes():
+	# Snapshot remotes as {name: {"fetch": url, "push": url}} so they can be
+	# restored after filter-repo (which strips `origin` by design to prevent
+	# an accidental force-push of rewritten history).
+	remotes = {}
+	r = run(["git", "remote", "-v"])
+	if r.returncode != 0:
+		return remotes
+	for line in (r.stdout or "").splitlines():
+		parts = line.split()
+		if len(parts) < 3:
+			continue
+		name, url, kind = parts[0], parts[1], parts[2].strip("()")
+		entry = remotes.setdefault(name, {})
+		if kind in ("fetch", "push"):
+			entry.setdefault(kind, url)
+	return remotes
+
+
+def restore_remotes(saved):
+	# Re-add any remotes missing after the rewrite; returns list of restored names.
+	if not saved:
+		return []
+	r = run(["git", "remote"])
+	existing = set((r.stdout or "").split()) if r.returncode == 0 else set()
+	restored = []
+	for name, urls in saved.items():
+		if name in existing:
+			continue
+		fetch_url = urls.get("fetch") or urls.get("push")
+		if not fetch_url:
+			continue
+		a = run(["git", "remote", "add", name, fetch_url])
+		if a.returncode != 0:
+			print(f"{Colors.YELLOW}WARNING: could not restore remote "
+				  f"'{name}': {a.stderr.strip()}{Colors.END}", file=sys.stderr)
+			continue
+		push_url = urls.get("push")
+		if push_url and push_url != fetch_url:
+			run(["git", "remote", "set-url", "--push", name, push_url])
+		restored.append(name)
+	return restored
+
+
 def main(argv=None) -> int:
 	init_ansi()
 	args = parse_args(sys.argv[1:] if argv is None else argv)
@@ -243,6 +287,10 @@ def main(argv=None) -> int:
 		print(f"{Colors.GREEN}Secret not found in repo history. Nothing to do (exit 0).{Colors.END}")
 		return 0
 
+	# Snapshot remotes: git-filter-repo strips `origin` by design, so save
+	# them now and restore after the rewrite.
+	saved_remotes = get_remotes()
+
 	# Write the replacement file as plain UTF-8 without BOM; the literal:
 	# prefix keeps regex special chars in the secret safe.
 	with tempfile.NamedTemporaryFile(
@@ -268,6 +316,15 @@ def main(argv=None) -> int:
 		# no dangling copy of the secret survives (filter-repo already GCs).
 		run(["git", "reflog", "expire", "--expire=now", "--all"])
 		run(["git", "gc", "--prune=now", "--aggressive"])
+
+		# filter-repo removes `origin` (and other remotes) by design; put them back.
+		restored = restore_remotes(saved_remotes)
+		if saved_remotes and restored:
+			detail = ", ".join(
+				n + " -> " + saved_remotes[n].get("fetch", "") for n in restored)
+			print(f"{Colors.LIGHT_BLUE}Restored remote(s): {detail}{Colors.END}")
+		elif saved_remotes:
+			print(f"{Colors.LIGHT_BLUE}Remotes already present, nothing to restore.{Colors.END}")
 
 		# Verify the secret is gone: searchable history plus a blob-by-blob scan.
 		print(f"{Colors.LIGHT_BLUE}Verifying rewrite...{Colors.END}")
