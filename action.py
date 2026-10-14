@@ -147,10 +147,10 @@ def list_actions():
         return
 
     # Column widths
-    w_id = 4
-    w_name = 18
-    w_cmd = 35
-    w_desc = 35
+    w_id = 2
+    w_name = 13
+    w_cmd = 30
+    w_desc = 34
 
     # Box Drawing Characters
     tl, tr, bl, br = "┌", "┐", "└", "┘"
