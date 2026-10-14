@@ -1,14 +1,26 @@
+# Editors / tooling
 .vscode/
 .continue/
 __pycache__/
+
+# Entry-point wrappers generated per-OS
 cs.sh
 cs.bat
+
+# Local binaries
 ffmpeg.exe
-networks.json
-renamer.undo
 ffplay.exe
 ffprobe.exe
-jsonl_debug.log
-actions.json
+
+# Local config & state (may hold machine-specific data)
 networks.json
+actions.json
+renamer.undo
+jsonl_debug.log
 .env
+
+# Script-specific local artifacts
+opencode.default
+venv_info.txt
+recreate_venv.py
+failed_packages.txt
