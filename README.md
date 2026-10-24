@@ -36,6 +36,8 @@
 
 - **`jsonl_monitor`**: (New) A monitoring tool for JSONL log files and streams. Watches files for appended JSON lines, filters entries by criteria, and can print live summaries or forward matching entries to other tools.
 
+- **`keygen`**: Interactive random-key generator. Opens on a default alphanumeric 32-character key, then lets you switch the algorithm (alphanumeric, uppercase, lowercase, hex, base64, printable ASCII, UUID) or key length via an arrow-key menu. Keys are cryptographically secure and shown with a live entropy readout. ENTER randomizes again; ESC or Q exits.
+
 - **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
 
 - **`mdreader`**: (New) A lightweight markdown reader/renderer for terminal use. Supports rendering headers, code blocks, lists, and basic formatting for quick previews of README and notes files.
