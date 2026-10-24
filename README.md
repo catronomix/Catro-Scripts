@@ -94,3 +94,24 @@ catro-scripts [script_name] [arguments]
 ## Testing
 
 Stdlib-only smoke suite, no installs needed: `python -m unittest discover -s tests -v`
+
+Linux/POSIX compatibility is verified in a checked-in container instead of a
+throwaway interpreter, because this host's only WSL distribution is
+`docker-desktop` (no shell, no `python3`). Requires Docker:
+
+```bash
+python tests/container/run.py                    # Python 3.12, stdlib + extras layers
+python tests/container/run.py --python 3.11,3.12 # both supported interpreters
+```
+
+The runner builds `tests/container/Dockerfile` twice - `EXTRAS=0` (stdlib only,
+the acceptance gate: every script must import cleanly and answer `--help`) and
+`EXTRAS=1` (adds `pillow`, `piexif`, `pydub`) - then runs the smoke suite plus
+the Linux column of the cross-platform sweep inside each image, read-only and
+without network. Exit code is non-zero on a failing suite or a hanging/crashing
+probe. Evidence lands in `.devteam/artifacts/container/` (gitignored). Details,
+including the deliberately skipped `decord`/`ffmpeg` extras, are in
+`tests/container/README.md`.
+
+WSL is *not* covered: the container is the POSIX oracle, and the wrappers were
+not exercised natively inside WSL.

@@ -144,6 +144,10 @@ def main():
 	)
 	parser.parse_args()
 
+	# Refuse a non-terminal before anything else: the dependency check below
+	# would otherwise print to a pipe and hide the real problem.
+	require_tty()
+
 	# Pillow is only needed for an actual run.
 	global Image
 	try:
@@ -153,7 +157,6 @@ def main():
 		print("Please install it using: pip install pillow")
 		sys.exit(1)
 
-	require_tty()
 	generate_colored_images()
 
 if __name__ == "__main__":
