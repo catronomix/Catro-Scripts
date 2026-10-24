@@ -24,3 +24,16 @@ opencode.default
 venv_info.txt
 recreate_venv.py
 failed_packages.txt
+
+# dev-team state and dev-time artifacts (kept local only)
+.devteam/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+*.log
