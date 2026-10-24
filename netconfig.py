@@ -94,14 +94,14 @@ def elevate_privileges():
 def load_configs():
 	if os.path.exists(CONFIG_FILE):
 		try:
-			with open(CONFIG_FILE, 'r') as f:
+			with open(CONFIG_FILE, 'r', encoding="utf-8") as f:
 				return json.load(f)
 		except:
 			return {}
 	return {}
 
 def save_configs(configs):
-	with open(CONFIG_FILE, 'w') as f:
+	with open(CONFIG_FILE, 'w', encoding="utf-8") as f:
 		json.dump(configs, f, indent=4)
 
 def get_interfaces():

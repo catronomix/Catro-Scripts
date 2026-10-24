@@ -120,7 +120,7 @@ def create_item(path, is_dir=False):
 			if parent:
 				os.makedirs(parent, exist_ok=True)
 			
-			with open(path, 'a'):
+			with open(path, 'a', encoding="utf-8"):
 				os.utime(path, None)
 			print(f"[Created] File: {path}")
 		return True
