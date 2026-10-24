@@ -90,3 +90,7 @@ Once installed, you can run any Python script within the `Catro-Scripts` directo
 ```bash
 catro-scripts [script_name] [arguments]
 ```
+
+## Testing
+
+Stdlib-only smoke suite, no installs needed: `python -m unittest discover -s tests -v`
