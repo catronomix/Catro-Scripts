@@ -22,9 +22,21 @@ DISCLAIMER:
 """
 
 import os
+import sys
 import random
+import argparse
 from datetime import datetime, timedelta
-from PIL import Image
+
+# Optional dependency, imported on demand inside main() so that --help works
+# without pillow installed.
+Image = None
+
+def require_tty():
+	if sys.stdin.isatty() and sys.stdout.isatty():
+		return
+	sys.stderr.write("[Error] image_generator needs an interactive terminal "
+					 "(stdin/stdout is not a tty).\n")
+	raise SystemExit(2)
 
 def generate_colored_images():
 	# User Inputs
@@ -125,5 +137,24 @@ def generate_colored_images():
 
 	print(f"\nProcess complete. Files are in: {os.path.abspath(folder_name)}")
 
-if __name__ == "__main__":
+def main():
+	# parse_args() first so --help works without pillow or a terminal.
+	parser = argparse.ArgumentParser(
+		description="Generate timestamped, color-coded test images with a noise square."
+	)
+	parser.parse_args()
+
+	# Pillow is only needed for an actual run.
+	global Image
+	try:
+		from PIL import Image
+	except ImportError:
+		print("Error: 'pillow' library is not installed.")
+		print("Please install it using: pip install pillow")
+		sys.exit(1)
+
+	require_tty()
 	generate_colored_images()
+
+if __name__ == "__main__":
+	main()

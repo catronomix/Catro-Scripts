@@ -44,13 +44,9 @@ def init_ansi():
 	if platform.system().lower() == "windows":
 		os.system('color')
 
-try:
-	from decord import VideoReader
-except ImportError:
-	init_ansi()
-	print("\033[0;31mError: 'decord' library is not installed.\033[0m")
-	print(f"Please install it using: {sys.executable} -m pip install decord")
-	sys.exit(1)
+# Optional dependency, imported on demand inside main() so that --help works
+# without decord installed.
+VideoReader = None
 
 # ANSI Color constants
 PURPLE = '\033[38;2;170;0;255m'
@@ -316,6 +312,15 @@ def main():
 	parser.add_argument("-x", "--suffix", default="_seamless", help="Suffix for output files")
 
 	args = parser.parse_args()
+	
+	# decord is only needed for an actual run, not for --help.
+	global VideoReader
+	try:
+		from decord import VideoReader
+	except ImportError:
+		print("\033[0;31mError: 'decord' library is not installed.\033[0m")
+		print(f"Please install it using: {sys.executable} -m pip install decord")
+		sys.exit(1)
 	
 	target = args.path if args.path else "."
 	

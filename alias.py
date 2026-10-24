@@ -60,12 +60,12 @@ def create_alias(alias_name):
 	try:
 		# Create Windows .bat. newline="" disables the platform translation,
 		# so the CRLF above survives verbatim.
-		with open(bat_path, "w", newline="") as f:
+		with open(bat_path, "w", newline="", encoding="utf-8") as f:
 			f.write(bat_content)
 		print(f"[Success] Created Windows alias: {bat_path}")
 
 		# Create Unix .sh. newline="" keeps the LF endings verbatim.
-		with open(sh_path, "w", newline="") as f:
+		with open(sh_path, "w", newline="", encoding="utf-8") as f:
 			f.write(sh_content)
 		
 		# Make the .sh file executable

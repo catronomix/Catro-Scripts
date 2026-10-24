@@ -44,20 +44,16 @@ import sys
 import argparse
 import subprocess
 import platform
-from PIL import Image
 
 def init_ansi():
 	if platform.system().lower() == "windows":
 		os.system('color')
 
-try:
-	import decord
-	from decord import VideoReader, cpu
-except ImportError:
-	init_ansi()
-	print("\033[0;31mError: 'decord' library is not installed.\033[0m")
-	print("Please install it using: pip install decord")
-	sys.exit(1)
+# Optional dependencies, imported on demand inside main() so that --help works
+# without pillow/decord installed.
+Image = None
+VideoReader = None
+cpu = None
 
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
@@ -197,6 +193,21 @@ def main():
 	group.add_argument("-t", "--total", type=int, help="Extract N evenly spaced frames spanning the video")
 
 	args = parser.parse_args()
+
+	# Both dependencies are only needed for an actual run, not for --help.
+	global Image, VideoReader, cpu
+	try:
+		from PIL import Image
+	except ImportError:
+		print("\033[0;31mError: 'pillow' library is not installed.\033[0m")
+		print(f"Please install it using: {sys.executable} -m pip install pillow")
+		sys.exit(1)
+	try:
+		from decord import VideoReader, cpu
+	except ImportError:
+		print("\033[0;31mError: 'decord' library is not installed.\033[0m")
+		print("Please install it using: pip install decord")
+		sys.exit(1)
 
 	# Manual mutual exclusion validation between positional and optional arguments
 	if args.frame_id is not None and (args.interval is not None or args.total is not None):

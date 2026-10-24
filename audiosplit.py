@@ -46,13 +46,9 @@ def init_ansi():
 	if platform.system().lower() == "windows":
 		os.system('color')
 
-try:
-	from pydub import AudioSegment
-except ImportError:
-	init_ansi()
-	print(f"{CLR_RED}Error: 'pydub' library is not installed.{CLR_RESET}")
-	print("Please install it using: pip install pydub")
-	sys.exit(1)
+# Optional dependency, imported on demand inside main() so that --help and
+# argument errors work on machines without pydub installed.
+AudioSegment = None
 
 class ColoredArgumentParser(argparse.ArgumentParser):
 	"""Custom ArgumentParser that outputs errors in red."""
@@ -201,6 +197,15 @@ def main():
 						help="Enable interactive menu to select output encoder and container.")
 
 	args = parser.parse_args()
+
+	# pydub is optional for --help/usage flows: load it only for a real run.
+	global AudioSegment
+	try:
+		from pydub import AudioSegment
+	except ImportError:
+		print(f"{CLR_RED}Error: 'pydub' library is not installed.{CLR_RESET}")
+		print("Please install it using: pip install pydub")
+		sys.exit(1)
 
 	if not check_ffmpeg():
 		print(f"\n{CLR_ORANGE}FFmpeg is missing or not found.{CLR_RESET}")

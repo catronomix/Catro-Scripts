@@ -13,9 +13,20 @@ REQUIREMENTS:
 """
 
 import os
-from PIL import Image
-from datetime import datetime
 import sys
+import argparse
+from datetime import datetime
+
+# Optional dependency, imported on demand inside main() so that --help works
+# without pillow installed.
+Image = None
+
+def require_tty():
+	if sys.stdin.isatty() and sys.stdout.isatty():
+		return
+	sys.stderr.write("[Error] image_resizer needs an interactive terminal "
+					 "(stdin/stdout is not a tty).\n")
+	raise SystemExit(2)
 
 # --- ANSI Color Codes for Progress Bar ---
 class Colors:
@@ -185,5 +196,24 @@ def resize_images_in_folder():
 
 	print(f"\n\nResizing complete. Resized images are in: {os.path.abspath(output_path)}")
 
-if __name__ == "__main__":
+def main():
+	# parse_args() first so --help works without pillow or a terminal.
+	parser = argparse.ArgumentParser(
+		description="Batch resize every image in the working folder."
+	)
+	parser.parse_args()
+
+	# Pillow is only needed for an actual run.
+	global Image
+	try:
+		from PIL import Image
+	except ImportError:
+		print("Error: 'pillow' library is not installed.")
+		print("Please install it using: pip install pillow")
+		sys.exit(1)
+
+	require_tty()
 	resize_images_in_folder()
+
+if __name__ == "__main__":
+	main()

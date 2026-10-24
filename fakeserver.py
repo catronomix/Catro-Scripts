@@ -21,9 +21,28 @@ import sys
 import time
 import random
 import argparse
-import select
-import termios
-import tty
+import platform
+
+# --- Platform keyboard backend ---
+# The POSIX backend (select/termios/tty) does not exist on Windows, so importing
+# it unconditionally made this module unimportable there (even `--help` died).
+# Bind the names to None when unavailable and pick the backend in main().
+IS_WINDOWS = platform.system().lower().startswith("win")
+
+termios = None
+tty = None
+select = None
+
+if IS_WINDOWS:
+	import msvcrt
+else:
+	try:
+		import select
+		import termios
+		import tty
+	except ImportError:
+		# Partial/non-standard Unix build: fall back to blind sleeps.
+		select = termios = tty = None
 
 # --- Vocabularies for different styles ---
 
@@ -177,7 +196,24 @@ def check_for_quit(fd, timeout):
 	Waits up to `timeout` seconds for keyboard input on a terminal.
 	Returns True if ESC, 'q', or Ctrl+C is read.
 	"""
-	if fd is None:
+	if IS_WINDOWS:
+		# msvcrt has no timeout-aware read: poll kbhit() in short slices so the
+		# caller's typing cadence is preserved. Without a console there is no
+		# key to poll, so fall back to a plain sleep like the POSIX path does.
+		if not sys.stdin.isatty():
+			time.sleep(timeout)
+			return False
+		deadline = time.time() + timeout
+		while time.time() < deadline:
+			if msvcrt.kbhit():
+				char = msvcrt.getwch()
+				# 27 = ESC, 3 = Ctrl+C
+				if char in ('\x1b', 'q', 'Q', '\x03'):
+					return True
+			time.sleep(0.02)
+		return False
+
+	if fd is None or select is None:
 		time.sleep(timeout)
 		return False
 
@@ -210,10 +246,11 @@ def main():
 	chars_per_min = args.speed * 5.0
 	delay_per_char = 60.0 / chars_per_min if chars_per_min > 0 else 0
 
-	# Terminal raw mode setup for non-blocking ESC key detection
+	# Terminal raw mode setup for non-blocking ESC key detection.
+	# cbreak mode is POSIX-only (and pointless without a tty), so guard it.
 	fd = None
 	old_settings = None
-	if sys.stdin.isatty():
+	if termios is not None and tty is not None and sys.stdin.isatty():
 		fd = sys.stdin.fileno()
 		old_settings = termios.tcgetattr(fd)
 		tty.setcbreak(fd)
@@ -247,7 +284,7 @@ def main():
 	except KeyboardInterrupt:
 		pass
 	finally:
-		if fd is not None and old_settings is not None:
+		if fd is not None and old_settings is not None and termios is not None:
 			termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 		sys.stdout.write("\033[0m\n")
 		sys.stdout.flush()

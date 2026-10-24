@@ -661,7 +661,18 @@ def render_reader(stdscr, filepath, raw_content):
             stdscr.clear()
 
 
+def require_tty():
+    """Refuse to run when stdin/stdout is redirected: curses needs a terminal."""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return
+    sys.stderr.write("[Error] mdreader needs an interactive terminal "
+                     "(stdin/stdout is not a tty).\n")
+    raise SystemExit(2)
+
+
 def main():
+    require_tty()
+
     filepath = None
 
     if len(sys.argv) == 1:
