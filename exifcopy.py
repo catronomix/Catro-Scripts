@@ -17,7 +17,9 @@ Disclaimer: This script was generated with Gemini 3
 
 import sys
 import os
-import piexif
+
+# Optional dependency: piexif is imported on demand inside copy_exif() so the
+# usage path still works on machines where it is not installed.
 
 def copy_exif(source_path, target_path):
 	"""
@@ -27,6 +29,15 @@ def copy_exif(source_path, target_path):
 		source_path (str): Path to the image containing the metadata.
 		target_path (str): Path to the image where metadata will be written.
 	"""
+	# piexif is only needed for an actual copy, so the dependency is checked
+	# here (first use) instead of at import time.
+	try:
+		import piexif
+	except ImportError:
+		print("Error: 'piexif' library is not installed.")
+		print(f"Please install it using: {sys.executable} -m pip install piexif")
+		sys.exit(1)
+
 	# Convert to absolute paths so the output is clear regardless of where the script is called from
 	abs_source = os.path.abspath(source_path)
 	abs_target = os.path.abspath(target_path)
