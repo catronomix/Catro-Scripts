@@ -1,0 +1,17 @@
+# Build context hygiene for tests/container/Dockerfile.
+# The image is a test oracle: no git history, no dev-team state, no local
+# machine data, no bundled binaries.
+.git
+.gitignore
+.devteam
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+*.exe
+renamer.undo
+networks.json
+actions.json
+.venv
+venv
+*.log
+out.txt
