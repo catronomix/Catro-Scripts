@@ -999,6 +999,15 @@ def render_fullscreen_ui(monitor, last_rendered_rows):
 # ---------------------------------------------------------------------------
 # Main Loop
 # ---------------------------------------------------------------------------
+def require_tty():
+    """Refuse to run when stdin/stdout is redirected: key polling needs a terminal."""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return
+    sys.stderr.write("[Error] jsonl_monitor needs an interactive terminal "
+                     "(stdin/stdout is not a tty).\n")
+    raise SystemExit(2)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Live monitor for JSONL logs.")
     parser.add_argument(
@@ -1013,6 +1022,9 @@ def main():
         help="Directory to monitor for .jsonl files.",
     )
     args = parser.parse_args()
+
+    # argparse has already handled --help; from here on we need a real terminal.
+    require_tty()
 
     debug_log("\n=== Application Started ===")
     debug_log(f"Arguments: {args}")

@@ -78,6 +78,14 @@ class TerminalRenderer:
 		sys.stdout.write("".join(out))
 		sys.stdout.flush()
 
+def require_tty():
+	"""Refuse to run when stdin/stdout is redirected: the menu needs a terminal."""
+	if sys.stdin.isatty() and sys.stdout.isatty():
+		return
+	sys.stderr.write("[Error] screensaver needs an interactive terminal "
+					 "(stdin/stdout is not a tty).\n")
+	raise SystemExit(2)
+
 def get_screensavers():
 	"""Scans the program directory for .screensaver files."""
 	program_dir = os.path.dirname(os.path.abspath(__file__))
@@ -217,6 +225,9 @@ def get_menu_selection(screensavers):
 			termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 def main():
+	# No tty (piped stdin, cron, IDE output pane): the menu cannot work.
+	require_tty()
+
 	# Clear screen initially
 	sys.stdout.write("\033[2J\033[H")
 	sys.stdout.flush()

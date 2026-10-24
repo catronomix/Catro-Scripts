@@ -61,6 +61,15 @@ DEFAULT_LENGTH = 32
 MAX_LENGTH = 4096
 
 
+def require_tty():
+	"""Refuse to run when stdin/stdout is redirected: the UI needs a terminal."""
+	if sys.stdin.isatty() and sys.stdout.isatty():
+		return
+	sys.stderr.write("[Error] keygen needs an interactive terminal "
+					 "(stdin/stdout is not a tty).\n")
+	raise SystemExit(2)
+
+
 # ---------------------------------------------------------------------------
 # Raw terminal input (blocking, cross-platform)
 # ---------------------------------------------------------------------------
@@ -291,6 +300,7 @@ def show_key(algo_idx, length):
 
 
 def main():
+	require_tty()
 	init_terminal()
 
 	try:

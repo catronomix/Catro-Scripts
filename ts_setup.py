@@ -41,7 +41,17 @@ def check_env():
 	except (subprocess.CalledProcessError, FileNotFoundError):
 		return None, None
 
+def require_tty():
+	"""Refuse to run when stdin/stdout is redirected: the setup prompts need a terminal."""
+	if sys.stdin.isatty() and sys.stdout.isatty():
+		return
+	sys.stderr.write("[Error] ts_setup needs an interactive terminal "
+					 "(stdin/stdout is not a tty).\n")
+	raise SystemExit(2)
+
 def main():
+	require_tty()
+
 	# 0. Environment Check
 	print("Checking environment...")
 	node_v, npm_v = check_env()
