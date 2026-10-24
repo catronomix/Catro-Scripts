@@ -4,6 +4,10 @@
 # ----------------------------------
 # DISCLAIMER: This script was generated with Gemini 3.
 
+# Force UTF-8 for the child Python process, so piped or redirected output
+# stays UTF-8 regardless of the caller's locale.
+export PYTHONUTF8=1
+
 # ANSI Color Codes
 C_RESET='\033[0m'
 C_HEADER='\033[95m'
@@ -15,6 +19,17 @@ C_BOLD='\033[1m'
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Resolve the Python interpreter once instead of assuming "python3" exists.
+# Prefer "python3", then fall back to "python". Used for every call below.
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON="python"
+else
+    echo "Error: no Python interpreter found. Install Python 3.11+ and make sure either python3 or python is on your PATH."
+    exit 127
+fi
 
 # Identify OS for tailored instructions
 OS_TYPE="$(uname)"
@@ -48,7 +63,7 @@ if [ -z "$1" ]; then
 
     # Use the list utility if it exists
     if [ -f "$SCRIPT_DIR/list.py" ]; then
-        python3 "$SCRIPT_DIR/list.py"
+        "$PYTHON" "$SCRIPT_DIR/list.py"
     else
         echo -e "${C_CYAN}Available scripts in folder:${C_RESET}"
         ls "$SCRIPT_DIR"/*.py 2>/dev/null | xargs -n 1 basename | sed 's/\.py$//'
@@ -77,4 +92,4 @@ shift
  
 # Run the python script with all remaining arguments.
 # The python script itself is responsible for parsing its own arguments.
-python3 "$FULL_PATH" "$@"
+"$PYTHON" "$FULL_PATH" "$@"

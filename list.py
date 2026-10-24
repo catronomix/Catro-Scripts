@@ -118,8 +118,13 @@ def list_scripts():
 		print(bot_border)
 		print(f"{Colors.PURPLE}{Colors.BOLD}Total scripts found:{Colors.END} {len(scripts)}\n")
 		
+	except UnicodeEncodeError:
+		# Do not swallow this one: printing it and exiting 0 would make a
+		# UTF-8 problem look like a successful, empty scan.
+		raise
 	except Exception as e:
 		print(f"\033[91mError scanning directory: {e}{Colors.END}")
+		sys.exit(1)
 
 if __name__ == "__main__":
 	list_scripts()

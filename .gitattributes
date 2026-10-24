@@ -4,6 +4,12 @@
 # Explicitly enforce LF for shell scripts (prevents "invalid option / missing file" errors on Linux)
 *.sh text eol=lf
 
+# The extension-less 'cs' dispatcher is a bash script too, but matches no
+# *.sh pattern, so Windows tooling kept saving it as CRLF and bash choked on
+# the shebang. Pin both the alias and its .sh twin to LF.
+cs text eol=lf
+cs.sh text eol=lf
+
 # Explicitly enforce CRLF for Windows batch scripts
 *.bat text eol=crlf
 *.cmd text eol=crlf

@@ -1,7 +1,7 @@
 # Catro-Scripts
 
 **Collection of personal Python scripts for whatevers. **
-- Use at your own peril. I am using python 3.12.5
+- Use at your own peril. I am using python 3.11+ (tested on 3.11 and 3.12)
 - run catro-scripts.bat (windows) or catro-scripts.sh (linux) to get started
 - It is highly recommended to add the install directory to your PATH, the scripts operate on the working directory by default
 
@@ -12,13 +12,13 @@
 
 - **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience/personalization
 
+- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI.
+
 - **`audiosplit`**: Splits multi-channel audio files into individual mono tracks. Supports multiple formats (MP3, WAV, FLAC, AAC, OGG, M4A, etc.) with batch processing, wildcard filtering, and interactive options.
 
 - **`count`**: Display file counts and total size per file type found in a directory, with options to search for directory counts, set starting subdirectory and search depth.
 
 - **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
-
-- **`extractframe`**: Extracts a single frame from a video file, saving it as a PNG image. Leverages Decord for efficient seeking, allowing extraction by frame index or timestamp.
 
 - **`fakeserver`**: A terminal screensaver that simulates hacker-style rapid typing with various code styles (Python, C++, or plaintext). Includes adjustable typing speed in WPM and interactive keyboard effects.
 
