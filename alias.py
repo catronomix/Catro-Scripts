@@ -47,21 +47,25 @@ def create_alias(alias_name):
 	sh_path = os.path.join(script_dir, f"{alias_name}.sh")
 
 	# Content for .bat file
-	# %~dp0 ensures the path is relative to the alias file's location
-	bat_content = f"@echo off\ncall \"%~dp0catro-scripts.bat\" %*\n"
+	# %~dp0 ensures the path is relative to the alias file's location.
+	# Line endings are spelled out as CRLF because cmd.exe mis-parses a batch
+	# file that uses bare LF line endings.
+	bat_content = "@echo off\r\ncall \"%~dp0catro-scripts.bat\" %*\r\n"
 
 	# Content for .sh file
-	# Preserves working directory and passes all arguments
-	sh_content = f"#!/bin/bash\n\"$(dirname \"$0\")/catro-scripts.sh\" \"$@\"\n"
+	# Preserves working directory and passes all arguments.
+	# Line endings are spelled out as LF because bash fails on a CR before "\n".
+	sh_content = "#!/bin/bash\n\"$(dirname \"$0\")/catro-scripts.sh\" \"$@\"\n"
 
 	try:
-		# Create Windows .bat
-		with open(bat_path, "w") as f:
+		# Create Windows .bat. newline="" disables the platform translation,
+		# so the CRLF above survives verbatim.
+		with open(bat_path, "w", newline="") as f:
 			f.write(bat_content)
 		print(f"[Success] Created Windows alias: {bat_path}")
 
-		# Create Unix .sh
-		with open(sh_path, "w") as f:
+		# Create Unix .sh. newline="" keeps the LF endings verbatim.
+		with open(sh_path, "w", newline="") as f:
 			f.write(sh_content)
 		
 		# Make the .sh file executable
