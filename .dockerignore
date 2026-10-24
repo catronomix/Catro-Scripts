@@ -1,12 +1,27 @@
 # Build context hygiene for tests/container/Dockerfile.
 # The image is a test oracle: no git history, no dev-team state, no local
-# machine data, no bundled binaries.
+# machine data, no credentials, no bundled binaries.
 .git
 .gitignore
 .devteam
 **/__pycache__
 **/*.pyc
 **/.pytest_cache
+
+# Never bake local state or secrets into an image layer (COPY . /app).
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+netrc
+.netrc
+*_netrc
+secrets.*
+*.kdbx
+
+# Local runtime data written by the wrappers, and packaged Windows binaries.
 *.exe
 renamer.undo
 networks.json
