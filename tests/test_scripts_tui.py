@@ -150,6 +150,19 @@ class ListNoColorTest(unittest.TestCase):
 		self.assertNotIn("\x1b", out)
 		self.assertIn("\u250c", out)
 
+	def test_ascii_glyphs_when_unicode_is_decided_off(self):
+		# A tty is where caps.unicode is the deciding factor: at a pipe the box
+		# is stripped because the layout is plain, not because of unicode, so a
+		# pipe test cannot tell the two apart. CATRO_ASCII on a tty must keep
+		# the box and swap its glyphs for ASCII equivalents.
+		out = self.render(tty=True, environ={"CATRO_ASCII": "1"})
+		self.assertIn("+", out, "ASCII box corners are missing:\n" + out[:400])
+		self.assertIn("|", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518":
+			self.assertNotIn(glyph, out, "CATRO_ASCII left a unicode glyph")
+		self.assertIn("ID", out)
+		self.assertIn("Total scripts found:", out)
+
 	def test_forced_colour_pipe_keeps_tabs_and_adds_ansi(self):
 		# Contract invariant 2: forcing colour on a pipe is deliberate. TAB
 		# records and no box glyphs (machine-readable), escapes present.

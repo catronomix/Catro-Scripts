@@ -241,19 +241,40 @@ class SmokeTests(unittest.TestCase):
 					  "list.py did not report the encoding failure:\n{}".format(
 						  failure_detail(proc)))
 
-	def test_legacy_console_degrades_to_ascii_boxes(self):
-		"""A cp1252 terminal must get ASCII boxes and exit 0, not a traceback."""
+	def test_legacy_console_pipe_still_gets_plain_records(self):
+		"""A cp1252 *pipe* must keep the TAB layout and exit 0, not a traceback.
+
+		This used to assert "ASCII boxes", which passed for the wrong reason:
+		off a tty `list.py` is plain whatever `caps.unicode` says, so no glyph
+		fallback was ever exercised. The structure is what matters at a pipe:
+		the header is one TAB record, every record has four fields, and there
+		are no box glyphs and no escapes. The glyph decision is pinned where
+		unicode is the deciding factor (a tty, in ListNoColorTest).
+		"""
 		env = child_env(PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
 		proc = run([sys.executable, str(REPO / "list.py")], env=env)
 		self.assertEqual(proc.returncode, 0,
 						 "list.py failed on a cp1252 pipe:\n{}".format(
 							 failure_detail(proc)))
-		# Pure ASCII: every byte below 0x80, i.e. no glyph or escape leaked.
-		self.assertTrue(all(byte < 0x80 for byte in proc.stdout),
-						"cp1252 output was not pure ASCII: {!r}".format(
-							proc.stdout[:200]))
-		self.assertNotIn(b"\x1b", proc.stdout,
-						 "cp1252 output carried ANSI escapes")
+		try:
+			out = proc.stdout.decode("ascii")
+		except UnicodeDecodeError as error:
+			self.fail("cp1252 pipe output was not pure ASCII: {}".format(error))
+		lines = out.splitlines()
+		self.assertIn(LIST_HEADER, lines,
+					  "cp1252 pipe lost the TAB header:\n" + out[:400])
+		records = lines[lines.index(LIST_HEADER) + 1:]
+		records = [line for line in records if line.strip()]
+		footer = next(index for index, line in enumerate(records)
+					  if line.startswith("Total scripts found:"))
+		records = records[:footer]
+		self.assertTrue(records, "cp1252 pipe listed no scripts")
+		for line in records:
+			self.assertEqual(len(line.split("\t")), 4,
+							 "not a four-field TAB record: {!r}".format(line))
+		for glyph in BOX_GLYPHS:
+			self.assertNotIn(glyph, out, "pipe output carried a box glyph")
+		self.assertNotIn("\x1b", out, "cp1252 output carried ANSI escapes")
 
 	def test_wrapper_list_is_utf8(self):
 		"""The wrapper must force UTF-8 so the plain table survives a pipe."""
