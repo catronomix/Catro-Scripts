@@ -67,102 +67,95 @@ def listen_for_any_key(stop_event):
 			# Failsafe if not running in a standard TTY
 			pass
 
+def menu_step(count, index, key):
+	"""Apply one key token to the menu; returns (action, index).
+
+	Actions: "move" (redraw at the returned index), "select" (take the index)
+	or "exit" (leave with status 0). Unknown keys redraw in place, so every
+	press gives feedback.
+	"""
+	if key == "up":
+		return "move", (index - 1) % count
+	if key == "down":
+		return "move", (index + 1) % count
+	if key == "enter":
+		return "select", index
+	if key in ("esc", "ctrl-c"):
+		return "exit", index
+	return "move", index
+
+
+def draw_menu(stream, names, selected_idx, cap):
+	"""Paint one menu frame; every write goes to `stream` (test seam)."""
+	def border(text):
+		# The border used to be the old menu's hardcoded magenta SGR (ESC[35m).
+		# It is now the shared palette's "border" key, because the rest of the
+		# house style moved with it: a truecolor accent normally, and ESC[95m
+		# (bright magenta) of the standard 16, so the identity still reads as
+		# magenta without hardcoding a code that 256/truecolor themes cannot
+		# override.
+		return tui.style(text, fg="border", cap=cap)
+
+	stream.write(tui.screen.CLEAR_HOME)
+
+	title = " SCREENSAVERS "
+	width = max(len(title), max(len(n) for n in names) + 8)
+
+	# Draw Top Border
+	stream.write(border("┌" + "─" * width + "┐") + "\n")
+
+	# Draw Title
+	pad_left = (width - len(title)) // 2
+	pad_right = width - len(title) - pad_left
+	stream.write(border("│") + " " * pad_left + title + " " * pad_right
+				 + border("│") + "\n")
+
+	# Draw Divider
+	stream.write(border("├" + "─" * width + "┤") + "\n")
+
+	# Draw Rows
+	for i, name in enumerate(names):
+		prefix = "  > " if i == selected_idx else "    "
+		text = f"{prefix}{name}"
+		pad = width - len(text)
+
+		if i == selected_idx:
+			stream.write(border("│")
+						 + tui.style(text + " " * pad, reverse=True, cap=cap)
+						 + border("│") + "\n")
+		else:
+			stream.write(border("│") + text + " " * pad + border("│") + "\n")
+
+	# Draw Bottom Border
+	stream.write(border("└" + "─" * width + "┘") + "\n")
+	stream.write("Use UP/DOWN arrows to select, ENTER to run.\n")
+	stream.flush()
+
+
 def get_menu_selection(screensavers):
-	"""Displays an interactive styled menu to select a screensaver."""
+	"""Displays an interactive styled menu to select a screensaver.
+
+	Key input goes through `tui.keys.read_key` and the screen lifecycle through
+	`tui.Screen`, so both platforms share the decoder that Phase A extracted
+	instead of a private msvcrt/termios loop. A real POSIX terminal smoke test
+	is still owed; the unit tests drive the decode path with fakes.
+	"""
 	names = [os.path.splitext(os.path.basename(f))[0] for f in screensavers]
 	selected_idx = 0
 	cap = tui.detect()
 
-	sys.stdout.write(tui.screen.CURSOR_HIDE)
-	sys.stdout.flush()
-
-	def border(text):
-		# Old menu used the basic magenta SGR; the border key downgrades to it.
-		return tui.style(text, fg="border", cap=cap)
-
-	def draw_menu():
-		sys.stdout.write(tui.screen.CLEAR_HOME)
-
-		title = " SCREENSAVERS "
-		width = max(len(title), max(len(n) for n in names) + 8)
-
-		# Draw Top Border
-		sys.stdout.write(border("┌" + "─" * width + "┐") + "\n")
-
-		# Draw Title
-		pad_left = (width - len(title)) // 2
-		pad_right = width - len(title) - pad_left
-		sys.stdout.write(border("│") + " " * pad_left + title + " " * pad_right
-						 + border("│") + "\n")
-
-		# Draw Divider
-		sys.stdout.write(border("├" + "─" * width + "┤") + "\n")
-
-		# Draw Rows
-		for i, name in enumerate(names):
-			prefix = "  > " if i == selected_idx else "    "
-			text = f"{prefix}{name}"
-			pad = width - len(text)
-
-			if i == selected_idx:
-				sys.stdout.write(border("│")
-								 + tui.style(text + " " * pad, reverse=True, cap=cap)
-								 + border("│") + "\n")
-			else:
-				sys.stdout.write(border("│") + text + " " * pad + border("│") + "\n")
-
-		# Draw Bottom Border
-		sys.stdout.write(border("└" + "─" * width + "┘") + "\n")
-		sys.stdout.write("Use UP/DOWN arrows to select, ENTER to run.\n")
-		sys.stdout.flush()
-
-	def exit_menu():
-		sys.stdout.write(tui.screen.CURSOR_SHOW + tui.screen.SGR_RESET)
-		sys.stdout.flush()
-		sys.exit(0)
-
-	if os.name == 'nt':
-		import msvcrt
+	# Screen owns the alternate screen, cursor hide/show and the reset on the
+	# way out; raw_mode owns cbreak and its restore. sys.exit(0) inside the
+	# blocks still unwinds both context managers, so the cursor comes back.
+	with tui.Screen() as screen, tui.keys.raw_mode():
 		while True:
-			draw_menu()
-			key = msvcrt.getch()
-			if key in (b'\x00', b'\xe0'):
-				arrow = msvcrt.getch()
-				if arrow == b'H': # Up
-					selected_idx = (selected_idx - 1) % len(names)
-				elif arrow == b'P': # Down
-					selected_idx = (selected_idx + 1) % len(names)
-			elif key == b'\r':
+			draw_menu(screen, names, selected_idx, cap)
+			action, selected_idx = menu_step(len(names), selected_idx,
+											 tui.keys.read_key())
+			if action == "select":
 				return screensavers[selected_idx]
-			elif key in (b'\x03', b'\x1b'): # Ctrl+C or ESC
-				exit_menu()
-	else:
-		import tty
-		import termios
-		import select
-		fd = sys.stdin.fileno()
-		old_settings = termios.tcgetattr(fd)
-		try:
-			tty.setcbreak(fd)
-			while True:
-				draw_menu()
-				key = sys.stdin.read(1)
-				if key == '\x1b': # Escape seq start
-					dr, _, _ = select.select([sys.stdin], [], [], 0.1)
-					if dr:
-						seq = sys.stdin.read(2)
-						if seq == '[A': # Up
-							selected_idx = (selected_idx - 1) % len(names)
-						elif seq == '[B': # Down
-							selected_idx = (selected_idx + 1) % len(names)
-					else:
-						exit_menu()
-				elif key in ('\n', '\r'):
-					return screensavers[selected_idx]
-				elif key == '\x03': # Ctrl+C
-					exit_menu()
-		finally:
-			termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+			if action == "exit":
+				sys.exit(0)
 
 def main():
 	tui.init_ansi()

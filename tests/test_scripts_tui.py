@@ -233,5 +233,82 @@ class ActionPlainTableTest(unittest.TestCase):
 		self.assertEqual(fields[3], "y" * 32 + "..")
 
 
+class ScreensaverMenuTest(unittest.TestCase):
+	"""The menu decodes keys through tui.keys; a real terminal smoke is owed."""
+
+	class Stream:
+		def __init__(self, tty=True):
+			self._buffer = io.StringIO()
+			self._tty = tty
+
+		def write(self, text):
+			return self._buffer.write(text)
+
+		def flush(self):
+			pass
+
+		def isatty(self):
+			return self._tty
+
+		def getvalue(self):
+			return self._buffer.getvalue()
+
+	def setUp(self):
+		import screensaver as module
+		self.screensaver = module
+
+	def test_step_wraps_up_and_down(self):
+		self.assertEqual(self.screensaver.menu_step(3, 0, "up"), ("move", 2))
+		self.assertEqual(self.screensaver.menu_step(3, 2, "down"), ("move", 0))
+		self.assertEqual(self.screensaver.menu_step(3, 1, "up"), ("move", 0))
+
+	def test_step_enter_selects_and_escape_exits(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "enter"),
+						 ("select", 1))
+		for key in ("esc", "ctrl-c"):
+			self.assertEqual(self.screensaver.menu_step(3, 1, key),
+							 ("exit", 1))
+
+	def test_step_unknown_key_redraws_in_place(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "x"), ("move", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 1, None), ("move", 1))
+
+	def test_draw_menu_marks_only_the_selected_row(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
+		out = stream.getvalue()
+		self.assertEqual(out.count("  > "), 1)
+		self.assertIn("  > beta", out)
+		self.assertNotIn("  > alpha", out)
+		self.assertIn("Use UP/DOWN arrows", out)
+
+	def test_select_returns_the_file_through_the_decoded_keys(self):
+		stream = self.Stream()
+		keys = iter(["down", "enter"])
+		with mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(tui.keys, "read_key",
+								  side_effect=lambda *a, **k: next(keys)), \
+				mock.patch.object(tui.keys, "raw_mode",
+								  return_value=contextlib.nullcontext()):
+			chosen = self.screensaver.get_menu_selection(
+				["alpha.screensaver", "beta.screensaver"])
+		self.assertTrue(chosen.endswith("beta.screensaver"), chosen)
+		self.assertIn(tui.screen.CURSOR_HIDE, stream.getvalue())
+		self.assertIn(tui.screen.ALT_SCREEN_ON, stream.getvalue())
+
+	def test_escape_leaves_with_status_zero_and_restores_the_cursor(self):
+		stream = self.Stream()
+		with mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(tui.keys, "read_key", return_value="esc"), \
+				mock.patch.object(tui.keys, "raw_mode",
+								  return_value=contextlib.nullcontext()):
+			with self.assertRaises(SystemExit) as caught:
+				self.screensaver.get_menu_selection(["alpha.screensaver"])
+		self.assertEqual(caught.exception.code, 0)
+		out = stream.getvalue()
+		self.assertIn(tui.screen.CURSOR_SHOW, out)
+		self.assertIn(tui.screen.ALT_SCREEN_OFF, out)
+
+
 if __name__ == "__main__":
 	unittest.main()
