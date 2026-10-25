@@ -359,4 +359,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Downstream reader closed the pipe; exit quietly and point stdout at
+        # devnull so the interpreter's shutdown flush cannot raise again.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)
