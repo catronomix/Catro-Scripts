@@ -19,6 +19,11 @@ FEATURES:
 USAGE:
 	python netconfig.py
 
+RENDERING:
+	- Menus and mastheads are the shared `tui.chrome` rows and prompts come
+	  from `tui.prompts`, so the theme, colour level and ASCII fallback are the
+	  library's, not this script's. Answers are still plain numbers.
+
 INTERMEDIATE OPTIONS:
 	- Switch Mode: Toggle between dynamic and manual addressing.
 	- Set DNS: Configure DNS servers (Auto/Manual).
@@ -38,6 +43,24 @@ import tui
 
 # Configuration file for storing manual profiles
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "networks.json")
+
+# Masthead of the tool: the shared page width, so every menu lines up under it.
+PAGE_WIDTH = 64
+
+
+def banner(title, subtitle=None, cap=None):
+	"""House masthead for one page of the tool."""
+	return tui.chrome.header(title, subtitle, width=PAGE_WIDTH, cap=cap)
+
+
+def menu(items, cap=None):
+	"""Numbered menu rows from the shared chrome.
+
+	`selected=None`: these menus are answered by number, so nothing is
+	highlighted until the operator picks a row. A caller that does select a row
+	gets the accent-on-surface bar from `chrome.menu`.
+	"""
+	return tui.chrome.menu(items, selected=None, width=PAGE_WIDTH, cap=cap)
 
 
 def get_platform():
@@ -409,21 +432,26 @@ def interface_menu(selected_iface, cap=None):
 	while True:
 		configs = load_configs()
 		print()
-		print(tui.section(f"--- Managing: {selected_iface} ---", cap=cap))
-		print(f"{tui.style('1.', fg='accent', cap=cap)} Switch IP Mode (DHCP/Static)")
-		print(f"{tui.style('2.', fg='accent', cap=cap)} Set DNS (Auto/Manual)")
-		print(f"{tui.style('3.', fg='accent', cap=cap)} Restart Network Adapter")
-		print(f"{tui.style('4.', fg='accent', cap=cap)} Show Network Info")
-		print(f"{tui.style('5.', fg='error', cap=cap)} Exit (Back to Interface Selection)")
-		
+		print(banner(f"Managing: {selected_iface}", "Network adapter menu",
+					 cap=cap))
+		print(menu([
+			"Switch IP Mode (DHCP/Static)",
+			"Set DNS (Auto/Manual)",
+			"Restart Network Adapter",
+			"Show Network Info",
+			"Exit (Back to Interface Selection)",
+		], cap=cap))
+
 		choice = tui.ask_text("\nSelect option (or Enter to go back): ")
 		if not choice:
 			break
 		
 		if choice == "1":
 			print()
-			print(f"{tui.style('1.', fg='accent', cap=cap)} Switch to {tui.style('DHCP', fg='success', cap=cap)}")
-			print(f"{tui.style('2.', fg='accent', cap=cap)} Switch to {tui.style('Static IP', fg='warn', cap=cap)}")
+			print(menu([
+				"Switch to DHCP",
+				"Switch to Static IP",
+			], cap=cap))
 			mode_choice = tui.ask_text("Select mode: ")
 			
 			if mode_choice == "1":
@@ -438,8 +466,10 @@ def interface_menu(selected_iface, cap=None):
 
 		elif choice == "2":
 			print()
-			print(f"{tui.style('1.', fg='accent', cap=cap)} Set DNS to {tui.style('Auto (DHCP)', fg='success', cap=cap)}")
-			print(f"{tui.style('2.', fg='accent', cap=cap)} Set DNS to {tui.style('Manual', fg='warn', cap=cap)}")
+			print(menu([
+				"Set DNS to Auto (DHCP)",
+				"Set DNS to Manual",
+			], cap=cap))
 			dns_choice = tui.ask_text("Select DNS mode: ")
 			
 			if dns_choice == "1":
@@ -497,10 +527,9 @@ def main():
 			continue
 
 		print()
-		print(tui.section("=== Available Interfaces ===", cap=cap))
-		for i, iface in enumerate(interfaces):
-			print(f"{tui.style(f'{i + 1}.', fg='accent', cap=cap)} {iface}")
-		print(tui.style(f"{len(interfaces) + 1}. Quit", fg="error", cap=cap))
+		print(banner("Available Interfaces", "Select adapter number",
+					 cap=cap))
+		print(menu(list(interfaces) + ["Quit"], cap=cap))
 
 		try:
 			choice_str = tui.ask_text("\nSelect interface (or Enter to quit): ")

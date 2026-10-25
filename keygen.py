@@ -6,10 +6,12 @@ Interactive random-key generator. It opens straight onto a freshly generated
 ALPHANUMERIC key (32 chars); the hotkeys below then let you change the
 algorithm or the key length and roll new keys as often as you like.
 
-Rendering and input come from the shared `tui` library: the palette decides the
-colours for the active theme and colour level, `tui.keys` decodes the
-keystrokes (EOF reads as cancel), and `tui.Screen` owns the alternate screen
-and the cursor. No escape sequence is hardcoded here.
+Rendering and input come from the shared `tui` library: `tui.Screen.fill()`
+paints the theme background, every frame, menu and field comes from
+`tui.chrome`, the palette decides the colours for the active theme and colour
+level, `tui.keys` decodes the keystrokes (EOF reads as cancel), and
+`tui.Screen` owns the alternate screen and the cursor. No escape sequence and
+no palette of its own lives here.
 
 Features:
 	- Starts immediately with a default ALPHANUMERIC 32-character key.
@@ -49,6 +51,11 @@ MAX_LENGTH = 4096
 
 CANCEL_KEYS = ("esc", "q", "ctrl-c", None)
 
+# Page widths: the masthead bands, and the picker/panel frame.
+HEADER_WIDTH = 60
+MENU_WIDTH = 46
+FIELD_WIDTH = 10
+
 
 # ---------------------------------------------------------------------------
 # Input and rendering helpers (all through tui)
@@ -64,11 +71,6 @@ def read_key():
 	if key and len(key) == 1 and key.isalpha():
 		return key.lower()
 	return key
-
-
-def glyphs(cap):
-	"""Box glyphs this stream can encode (ASCII fallback included)."""
-	return tui.table.glyphs_for(cap)
 
 
 def marker_for(stream, cap):
@@ -88,39 +90,47 @@ def marker_for(stream, cap):
 	return "\u25b6"
 
 
-def border(text, cap):
-	"""Border-coloured span; the palette owns the colour, not this module."""
-	return tui.style(text, fg="border", cap=cap)
+def draw_header(stream, cap, subtitle=None):
+	"""House masthead: themed bands and border rule, `HEADER_WIDTH` wide."""
+	stream.write(tui.chrome.header("KEYGEN", subtitle, width=HEADER_WIDTH,
+								   cap=cap) + "\n")
 
 
-def draw_banner(stream, cap):
-	"""House banner: tui owns the box, the glyphs and the title style."""
-	stream.write(tui.banner("KEYGEN", width=60, cap=cap) + "\n")
+def repaint(stream, cap):
+	"""Clear the page and paint the theme background.
+
+	`Screen.fill()` is a no-op at colour level "none" (an escape-only paint has
+	nothing to show), so the monochrome run keeps the plain clear it needs to
+	stop frames stacking.
+	"""
+	if cap.level == "none":
+		stream.clear()
+	else:
+		stream.fill()
+
+
+def draw_menu(stream, items, selected, title, cap):
+	"""One chrome menu: numbered rows with the accent bar on `selected`."""
+	stream.write(tui.chrome.menu(items, selected=selected, title=title,
+								 width=MENU_WIDTH, cap=cap) + "\n")
 
 
 def choose_algorithm(stream, cap, selected_idx):
 	"""Render the algorithm picker and return the chosen index, or None if cancelled."""
-	box = glyphs(cap)
-	marker = marker_for(stream, cap)
+	items = ["{:<16} {}".format(name, desc) for name, desc, _ in ALGORITHMS]
 	while True:
-		stream.write(tui.screen.CLEAR_HOME)
-		draw_banner(stream, cap)
-		stream.write("\n{} {}\n\n".format(
-			tui.style("Select an algorithm", fg="header", bold=True, cap=cap),
-			tui.style("(UP/DOWN to move, ENTER to confirm, ESC/Q to quit)",
-					  fg="muted", cap=cap)))
-
-		width = 46
-		stream.write(border(box["tl"] + box["h"] * width + box["tr"], cap) + "\n")
-		for i, (name, desc, _) in enumerate(ALGORITHMS):
-			text = " {} {:<16} {}".format(marker if i == selected_idx else " ",
-										  name, desc)
-			text += " " * (width - len(text))
-			# The selected row is reversed rather than recoloured, so it stays
-			# readable under every theme and colour level.
-			row = tui.style(text, reverse=True, cap=cap) if i == selected_idx else text
-			stream.write(border(box["v"], cap) + row + border(box["v"], cap) + "\n")
-		stream.write(border(box["bl"] + box["h"] * width + box["br"], cap) + "\n")
+		# fill() clears and repaints the page with the theme background, so the
+		# whole screen (not just the frame) carries the active theme.
+		repaint(stream, cap)
+		draw_header(stream, cap, "Choose the character set")
+		stream.write("\n")
+		draw_menu(stream, items, selected_idx, "Select an algorithm", cap)
+		stream.write(tui.chrome.field(
+			"current", marker_for(stream, cap) + " "
+			+ ALGORITHMS[selected_idx][0], cap=cap) + "\n")
+		stream.write(tui.chrome.status(
+			"info", "UP/DOWN to move, ENTER to confirm, ESC/Q to quit",
+			cap=cap) + "\n")
 		stream.flush()
 
 		key = read_key()
@@ -143,13 +153,14 @@ def prompt_length(stream, cap, default=DEFAULT_LENGTH):
 	"""
 	buffer = ""
 	while True:
-		stream.write(tui.screen.CLEAR_HOME)
-		draw_banner(stream, cap)
-		stream.write("\n{} {} [{}]: {}".format(
-			tui.style("Key length", fg="header", bold=True, cap=cap),
-			tui.style("(digits, ENTER to confirm, ESC/Q to cancel)",
-					  fg="muted", cap=cap),
-			default, buffer))
+		repaint(stream, cap)
+		draw_header(stream, cap, "Key length")
+		stream.write("\n")
+		stream.write(tui.chrome.field("length", buffer or str(default),
+									  width=FIELD_WIDTH, cap=cap) + "\n")
+		stream.write(tui.chrome.status(
+			"info", "digits, ENTER to confirm, ESC/Q to cancel",
+			cap=cap) + "\n")
 		stream.flush()
 
 		key = read_key()
@@ -194,38 +205,36 @@ def show_key(stream, cap, algo_idx, length):
 		bits = entropy_bits(len(alphabet), length)
 		shown_len = length
 
-	box = glyphs(cap)
-	stream.write(tui.screen.CLEAR_HOME)
-	draw_banner(stream, cap)
+	repaint(stream, cap)
+	draw_header(stream, cap, "{} / {}".format(name, length))
 	stream.write("\n")
 	length_text = "{} chars{}".format(shown_len,
 									  " (fixed)" if alphabet is None else "")
 	for label, value in (
-			("Algorithm:", name),
-			("Length:   ", length_text),
-			("Entropy:  ", "~{} bits".format(int(round(bits))))):
-		stream.write("  {} {}\n".format(
-			tui.style(label, fg="muted", cap=cap),
-			tui.style(value, fg="fg", bold=True, cap=cap)))
+			("Algorithm", name),
+			("Length", length_text),
+			("Entropy", "~{} bits".format(int(round(bits))))):
+		stream.write(tui.chrome.field(label, value, width=FIELD_WIDTH,
+									  cap=cap) + "\n")
 	stream.write("\n")
 
-	# Wrap the key across a few lines so long keys stay readable
+	# Wrap the key across a few lines so long keys stay readable. The panel
+	# frame is the shared one; each line is padded and styled as one accent
+	# span so the whole cell (padding included) sits on the surface.
 	wrap = 64
 	lines = [key[i:i + wrap] for i in range(0, len(key), wrap)] or [""]
-	inner = max(len(line) for line in lines) + 4
-	stream.write(border(box["tl"] + box["h"] * inner + box["tr"], cap) + "\n")
-	for line in lines:
-		stream.write(border(box["v"], cap) + "  "
-					 + tui.style("{:<{}}".format(line, inner - 4), fg="accent",
-								 bold=True, cap=cap)
-					 + "  " + border(box["v"], cap) + "\n")
-	stream.write(border(box["bl"] + box["h"] * inner + box["br"], cap) + "\n")
+	cell = max(tui.display_width(line) for line in lines)
+	body = [tui.style(tui.pad(line, cell), fg="accent", bg="surface",
+					  bold=True, cap=cap) for line in lines]
+	stream.write(tui.chrome.panel("Generated key", body, padding=1,
+								  cap=cap) + "\n")
 	stream.write("\n")
-	hint = (tui.style("[ENTER]", bold=True, cap=cap) + " new key   "
-			+ tui.style("[A]", bold=True, cap=cap) + " algorithm   ")
+	hint = (tui.style("[ENTER]", fg="accent", bold=True, cap=cap) + " new key   "
+			+ tui.style("[A]", fg="accent", bold=True, cap=cap) + " algorithm   ")
 	if alphabet is not None:
-		hint += tui.style("[L]", bold=True, cap=cap) + " length   "
-	hint += tui.style("[ESC/Q]", bold=True, cap=cap) + " quit"
+		hint += (tui.style("[L]", fg="accent", bold=True, cap=cap)
+				 + " length   ")
+	hint += tui.style("[ESC/Q]", fg="accent", bold=True, cap=cap) + " quit"
 	stream.write(hint + "\n")
 	stream.flush()
 
