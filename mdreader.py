@@ -32,6 +32,8 @@ import platform
 import argparse
 import re
 
+import tui
+
 # Enable ANSI escape sequences on Windows
 if platform.system().lower() == "windows":
     os.system("color")
@@ -253,62 +255,39 @@ def init_cozy_colors(theme_mode=0):
     return
 
 
+# mdreader's three display modes map one-to-one onto the shared theme ids, so
+# the Rich rendering uses the same hexes as every migrated script. The curses
+# colour pairs below stay separate for now (they cannot take hex; group B3 of
+# Phase B rewrites that path).
+THEME_MODES = ("soft", "contrast-light", "contrast-dark")
+
+
 def get_rich_theme(theme_mode=0):
-    """Generates a custom Rich Theme corresponding to the active mode."""
-    if theme_mode == 1:
-        # High Contrast Light
-        return Theme(
-            {
-                "markdown.h1": "bold blue",
-                "markdown.h2": "bold magenta",
-                "markdown.h3": "bold blue",
-                "markdown.code": "black on cyan",
-                "markdown.code_block": "black on cyan",
-                "markdown.block_quote": "blue dim",
-                "markdown.item.bullet": "bold blue",
-                "markdown.item.number": "bold blue",
-                "markdown.table.header": "bold black",
-                "markdown.table.border": "black",
-                "markdown.link": "underline magenta",
-            }
-        )
-    elif theme_mode == 2:
-        # High Contrast Dark
-        return Theme(
-            {
-                "markdown.h1": "bold yellow",
-                "markdown.h2": "bold cyan",
-                "markdown.h3": "bold yellow",
-                "markdown.code": "black on green",
-                "markdown.code_block": "black on green",
-                "markdown.block_quote": "cyan dim",
-                "markdown.item.bullet": "bold yellow",
-                "markdown.item.number": "bold yellow",
-                "markdown.table.header": "bold yellow",
-                "markdown.table.border": "cyan",
-                "markdown.link": "underline cyan",
-            }
-        )
+    """Generates a custom Rich Theme from the shared palette of the active mode."""
+    if 0 <= theme_mode < len(THEME_MODES):
+        theme_id = THEME_MODES[theme_mode]
     else:
-        # Cozy Purple (Mode 0)
-        return Theme(
-            {
-                "markdown.h1": "bold #F5CD68",  # Glowing Gold
-                "markdown.h2": "bold #E09F67",  # Warm Rose Gold / Amber
-                "markdown.h3": "bold #F5CD68",  # Glowing Gold
-                "markdown.h4": "bold #9381B0",  # Muted Purple
-                "markdown.code": "#FCEECB on #292238",  # Pale Cream on Slate
-                "markdown.code_block": "#FCEECB on #292238",
-                "markdown.block_quote": "#9381B0 italic",
-                "markdown.item.bullet": "bold #F5CD68",
-                "markdown.item.number": "bold #F5CD68",
-                "markdown.hr": "#9381B0",
-                "markdown.table.header": "bold #F5CD68 on #292238",  # Gold Table Headers on Darker Slate BG
-                "markdown.table.cell": "default on #292238",  # Cell content on Darker Slate BG
-                "markdown.table.border": "#9381B0",  # Muted Purple borders
-                "markdown.link": "underline #E09F67",
-            }
-        )
+        theme_id = THEME_MODES[0]
+    colours = tui.palette.palette(theme_id)
+    return Theme(
+        {
+            "markdown.h1": "bold " + colours["header"],
+            "markdown.h2": "bold " + colours["warn"],
+            "markdown.h3": "bold " + colours["header"],
+            "markdown.h4": "bold " + colours["muted"],
+            "markdown.code": colours["fg"] + " on " + colours["surface"],
+            "markdown.code_block": colours["fg"] + " on " + colours["surface"],
+            "markdown.block_quote": colours["muted"] + " italic",
+            "markdown.item.bullet": "bold " + colours["header"],
+            "markdown.item.number": "bold " + colours["header"],
+            "markdown.hr": colours["muted"],
+            "markdown.table.header": ("bold " + colours["header"] + " on "
+                                      + colours["surface"]),
+            "markdown.table.cell": colours["fg"] + " on " + colours["surface"],
+            "markdown.table.border": colours["border"],
+            "markdown.link": "underline " + colours["warn"],
+        }
+    )
 
 
 def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
