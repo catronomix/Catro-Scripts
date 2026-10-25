@@ -79,10 +79,10 @@ class CountRainbowTest(unittest.TestCase):
 class NoPrivateAnsiTest(unittest.TestCase):
 	"""The gate: migrated scripts only style through tui."""
 
-	# Phase A scripts migrated so far; screensaver.py joins this list with its
-	# own migration.
+	# Phase A scripts migrated onto tui/; Phase B scripts (keygen, mdreader, ...)
+	# join this list when they migrate.
 	MIGRATED = ("list.py", "help.py", "action.py", "count.py",
-				"opencode.py", "sanitize.py")
+				"opencode.py", "sanitize.py", "screensaver.py")
 
 	def test_migrated_scripts_have_no_private_ansi(self):
 		for name in self.MIGRATED:
