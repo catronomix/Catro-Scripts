@@ -189,12 +189,27 @@ class NonPipeFailureTests(unittest.TestCase):
 		self.assertIn("Error scanning directory:", result.stdout.decode("utf-8", "replace"))
 
 	def test_encode_failure_is_not_silent(self):
-		# Box-drawing characters cannot be encoded as cp1252 -> rc must be
-		# non-zero; an encode problem is not a dead reader.
-		result = run_script(
-			"list.py", [], child_env(PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+		# A console that cannot encode box glyphs now degrades to ASCII boxes
+		# (see test_crossplatform.test_legacy_console_degrades_to_ascii_boxes),
+		# so the loud-failure case is narrower: text even ASCII cannot encode.
+		code = (
+			"import importlib.util, sys\n"
+			"spec = importlib.util.spec_from_file_location('listmod', sys.argv[1])\n"
+			"mod = importlib.util.module_from_spec(spec)\n"
+			"spec.loader.exec_module(mod)\n"
+			"mod.get_description = lambda _path: 'caf\\u00e9 unencodable'\n"
+			"mod.list_scripts()\n"
+		)
+		result = subprocess.run(
+			[sys.executable, "-c", code, str(REPO / "list.py")],
+			cwd=str(REPO),
+			env=child_env(PYTHONIOENCODING="ascii", PYTHONUTF8="0"),
+			stdin=subprocess.DEVNULL,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
 		)
 		self.assertNotEqual(result.returncode, 0)
+		self.assertIn(b"UnicodeEncodeError", result.stderr)
 
 
 if __name__ == "__main__":

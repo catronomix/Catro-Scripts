@@ -24,7 +24,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 WRAPPER = REPO / "catro-scripts.sh"
 TIMEOUT = 60
-BOX_HORIZONTAL = "\u2500"
+# Piped `list` output is one TAB-separated record per line (the tui contract's
+# plain mode), so the header line - not a box glyph - proves the wrapper
+# reached list.py.
+LIST_HEADER = "ID\tScript Name\tSize\tDescription"
 
 
 def bash():
@@ -104,7 +107,7 @@ class SymlinkInstallTest(unittest.TestCase):
 						 "symlinked wrapper exited {}\n{}".format(
 							 proc.returncode, detail(proc)))
 		out = proc.stdout.decode("utf-8")
-		self.assertIn(BOX_HORIZONTAL, out,
+		self.assertIn(LIST_HEADER, out,
 					  "the symlinked wrapper did not reach list.py:\n" + out[:400])
 
 	def test_cs_dispatcher_through_a_symlink(self):
@@ -114,7 +117,7 @@ class SymlinkInstallTest(unittest.TestCase):
 		self.assertEqual(proc.returncode, 0,
 						 "symlinked cs exited {}\n{}".format(
 							 proc.returncode, detail(proc)))
-		self.assertIn(BOX_HORIZONTAL, proc.stdout.decode("utf-8"),
+		self.assertIn(LIST_HEADER, proc.stdout.decode("utf-8"),
 					  "the symlinked cs did not reach catro-scripts.sh:\n" + detail(proc))
 
 
