@@ -23,6 +23,8 @@ import argparse
 import urllib.request
 import warnings
 
+import tui
+
 # URL for a community-maintained mapping (from pipreqs)
 MAPPING_URL = "https://raw.githubusercontent.com/bndr/pipreqs/master/pipreqs/mapping"
 
@@ -45,16 +47,17 @@ if sys.platform.startswith("win"):
 	MANUAL_MAPPING["curses"] = "windows-curses"
 
 
-def ensure_pip():
+def ensure_pip(cap):
 	# Checks if pip is available and bootstraps it if missing.
 	try:
 		import pip
 	except ImportError:
-		print("Pip not found. Attempting to install pip...")
+		print(tui.style("Pip not found. Attempting to install pip...",
+						fg="warn", cap=cap))
 		try:
 			subprocess.check_call([sys.executable, "-m", "ensurepip", "--default-pip"])
 		except Exception as e:
-			print(f"Failed to bootstrap pip: {e}")
+			print(tui.style(f"Failed to bootstrap pip: {e}", fg="error", cap=cap))
 			sys.exit(1)
 
 
@@ -63,7 +66,7 @@ def get_script_directory():
 	return os.path.dirname(os.path.abspath(__file__))
 
 
-def get_imports_from_file(filepath):
+def get_imports_from_file(filepath, cap):
 	"""Parses a Python file to find all top-level imports."""
 	imports = set()
 	try:
@@ -81,7 +84,7 @@ def get_imports_from_file(filepath):
 				if node.module:
 					imports.add(node.module.split(".")[0])
 	except Exception as e:
-		print(f"Error parsing {filepath}: {e}")
+		print(tui.style(f"Error parsing {filepath}: {e}", fg="error", cap=cap))
 	return imports
 
 
@@ -105,7 +108,7 @@ def is_module_available(module_name):
 		return False
 
 
-def fetch_package_mapping():
+def fetch_package_mapping(cap):
 	"""Fetches the import-to-package mapping from a public source."""
 	print("Fetching package name mappings...")
 	try:
@@ -119,13 +122,13 @@ def fetch_package_mapping():
 					mapping[imp.strip()] = pkg.strip()
 			return mapping
 	except Exception as e:
-		print(
-			f"Warning: Could not fetch online mapping ({e}). Falling back to manual mappings."
-		)
+		print(tui.style(
+			f"Warning: Could not fetch online mapping ({e}). Falling back to manual mappings.",
+			fg="warn", cap=cap))
 		return {}
 
 
-def install_package(package_name):
+def install_package(package_name, cap):
 	"""
 	Attempts to install a package via pip.
 	Returns True on success, False on failure without raising unhandled exceptions.
@@ -139,12 +142,14 @@ def install_package(package_name):
 		)
 		return True
 	except subprocess.CalledProcessError as e:
-		print(
-			f"Warning: Failed to install '{package_name}' (exit code {e.returncode}). Moving to next dependency..."
-		)
+		print(tui.style(
+			f"Warning: Failed to install '{package_name}' (exit code {e.returncode}). Moving to next dependency...",
+			fg="warn", cap=cap))
 		return False
 	except Exception as e:
-		print(f"Unexpected error installing '{package_name}': {e}. Continuing...")
+		print(tui.style(
+			f"Unexpected error installing '{package_name}': {e}. Continuing...",
+			fg="error", cap=cap))
 		return False
 
 
@@ -196,8 +201,12 @@ def parse_arguments():
 
 
 def main():
+	# One capability record for the whole run.
+	tui.init_ansi()
+	cap = tui.detect()
+
 	args = parse_arguments()
-	ensure_pip()
+	ensure_pip(cap)
 
 	# Combine positional and flag-based explicitly requested packages
 	explicit_packages = set()
@@ -217,10 +226,10 @@ def main():
 				target_dir = os.getcwd()
 			else:
 				target_dir = os.path.abspath(args.workdir)
-			print(f"Scanning directory: {target_dir}")
+			print(tui.style(f"Scanning directory: {target_dir}", fg="fg", cap=cap))
 		else:
 			target_dir = get_script_directory()
-			print(f"Scanning directory: {target_dir}")
+			print(tui.style(f"Scanning directory: {target_dir}", fg="fg", cap=cap))
 
 		current_name = os.path.basename(__file__)
 		valid_extensions = (".py", ".screensaver")
@@ -232,10 +241,11 @@ def main():
 					and filename != current_name
 				):
 					file_path = os.path.join(target_dir, filename)
-					file_imports = get_imports_from_file(file_path)
+					file_imports = get_imports_from_file(file_path, cap)
 					scanned_imports.update(file_imports)
 		else:
-			print(f"Warning: Directory '{target_dir}' does not exist.")
+			print(tui.style(f"Warning: Directory '{target_dir}' does not exist.",
+							fg="warn", cap=cap))
 
 	# Filter scanned imports to only those missing locally
 	missing_scanned = [
@@ -250,7 +260,7 @@ def main():
 		return
 
 	# Resolve package mappings for missing modules
-	mapping = fetch_package_mapping()
+	mapping = fetch_package_mapping(cap)
 	mapping.update(MANUAL_MAPPING)
 
 	failed_packages = []
@@ -260,26 +270,29 @@ def main():
 		# Map import name to PyPI package name if available
 		package_to_install = mapping.get(target, target)
 
-		success = install_package(package_to_install)
+		success = install_package(package_to_install, cap)
 		if success:
 			successful_packages.append(package_to_install)
 		else:
 			failed_packages.append(package_to_install)
 
-	print("\n" + "=" * 40)
-	print("INSTALLATION SUMMARY")
-	print("=" * 40)
+	print()
+	print(tui.banner("INSTALLATION SUMMARY", cap=cap))
+	summary = []
 	if successful_packages:
-		print(
-			f"Successfully processed ({len(successful_packages)}): {', '.join(successful_packages)}"
-		)
+		summary.append((f"Successfully processed ({len(successful_packages)})",
+						", ".join(successful_packages)))
 	if failed_packages:
-		print(
-			f"Failed to install ({len(failed_packages)}): {', '.join(failed_packages)}"
-		)
-		print("Continuing execution despite missing packages...")
+		summary.append((f"Failed to install ({len(failed_packages)})",
+						", ".join(failed_packages)))
+	if summary:
+		print(tui.key_values(None, summary, cap=cap))
+	if failed_packages:
+		print(tui.style("Continuing execution despite missing packages...",
+						fg="warn", cap=cap))
 	else:
-		print("All dependencies were processed successfully.")
+		print(tui.style("All dependencies were processed successfully.",
+						fg="success", cap=cap))
 
 
 if __name__ == "__main__":

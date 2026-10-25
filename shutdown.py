@@ -35,6 +35,8 @@ import shutil
 import sys
 import subprocess
 
+import tui
+
 # Directories that hold `shutdown` on Unix but are not always on the PATH a
 # wrapper inherits (minimal shells, services). POSIX-only: never read on Windows.
 SBIN_DIRS = ("/sbin", "/usr/sbin")
@@ -94,7 +96,7 @@ def find_windows_shutdown():
 	candidate = os.path.join(system_root, "System32", "shutdown.exe")
 	return candidate if os.path.isfile(candidate) else "shutdown"
 
-def schedule_shutdown(seconds):
+def schedule_shutdown(seconds, cap=None):
 	"""
 	Executes platform-specific shutdown commands.
 
@@ -102,6 +104,7 @@ def schedule_shutdown(seconds):
 	one diagnosis and returns False, so main() can exit non-zero instead of
 	reporting success for a shutdown that was never scheduled.
 	"""
+	cap = cap or tui.detect()
 	system = platform.system().lower()
 	minutes = max(1, round(seconds / 60))
 
@@ -115,8 +118,9 @@ def schedule_shutdown(seconds):
 		# Unix-like systems usually take minutes for +m
 		program = find_posix_program("shutdown")
 		if program is None:
-			print("\n[Error] 'shutdown' was not found on this system "
-				  f"(looked on PATH, {', '.join(SBIN_DIRS)}).")
+			print(tui.style(
+				"\n[Error] 'shutdown' was not found on this system "
+				f"(looked on PATH, {', '.join(SBIN_DIRS)}).", fg="error", cap=cap))
 			return False
 
 		argv = [program, "-h", f"+{minutes}"]
@@ -127,16 +131,20 @@ def schedule_shutdown(seconds):
 		else:
 			sudo = shutil.which("sudo")
 			if sudo is None:
-				print("\n[Error] 'sudo' is required but not installed, and this "
-					  "process is not root; cannot schedule a shutdown.")
+				print(tui.style(
+					"\n[Error] 'sudo' is required but not installed, and this "
+					"process is not root; cannot schedule a shutdown.",
+					fg="error", cap=cap))
 				return False
 			argv.insert(0, sudo)
-			print(f"\n[Note] Scheduling for {minutes} minute(s). System may prompt for password.")
+			print(tui.style(
+				f"\n[Note] Scheduling for {minutes} minute(s). System may prompt for password.",
+				fg="muted", cap=cap))
 
 		success = f"\n[Success] Shutdown scheduled in {minutes} minute(s)."
 		cancel_hint = "To cancel, type: sudo shutdown -c"
 	else:
-		print(f"Unsupported operating system: {system}")
+		print(tui.style(f"Unsupported operating system: {system}", fg="error", cap=cap))
 		return False
 
 	try:
@@ -145,32 +153,40 @@ def schedule_shutdown(seconds):
 		# One handler, two distinct diagnoses: the program never launched
 		# (missing binary) versus it ran and refused (permissions/returncode).
 		if isinstance(exc, FileNotFoundError):
-			print(f"\n[Error] '{argv[0]}' was not found on this system "
-				  f"(argv: {' '.join(argv)}).")
+			print(tui.style(
+				f"\n[Error] '{argv[0]}' was not found on this system "
+				f"(argv: {' '.join(argv)}).", fg="error", cap=cap))
 		else:
 			returncode = getattr(exc, "returncode", None)
 			reason = ("insufficient permissions"
 					  if isinstance(exc, PermissionError)
 					  else f"returncode {returncode}")
-			print(f"\n[Error] '{argv[0]}' failed with {reason} "
-				  f"(argv: {' '.join(argv)}).")
+			print(tui.style(
+				f"\n[Error] '{argv[0]}' failed with {reason} "
+				f"(argv: {' '.join(argv)}).", fg="error", cap=cap))
 		return False
 
-	print(success)
-	print(cancel_hint)
+	print(tui.style(success, fg="success", cap=cap))
+	print(tui.style(cancel_hint, fg="muted", cap=cap))
 	return True
 
 def main():
-	print("=== Cross-Platform Shutdown Timer ===")
+	tui.init_ansi()
+	cap = tui.detect()
+
+	print(tui.banner("Cross-Platform Shutdown Timer", cap=cap))
 	print("Examples of valid time formats:")
 	print("  - 2h30m (2 hours, 30 minutes)")
 	print("  - 1d5h  (1 day, 5 hours)")
 	print("  - 45m   (45 minutes)")
 	print("  - 90    (90 minutes - default unit)")
-	print("=====================================")
 
 	while True:
-		user_input = input("\nEnter shutdown delay (or 'q' to quit): ").strip()
+		# The free-text delay stays on input(): tui.ask_text() cannot tell a
+		# closed stdin (EOF) from a blank entry, and this loop has to end.
+		user_input = input(
+			tui.style("\nEnter shutdown delay (or 'q' to quit): ",
+					  fg="header", bold=True, cap=cap)).strip()
 		
 		if user_input.lower() == 'q':
 			break
@@ -178,9 +194,9 @@ def main():
 		seconds = parse_duration(user_input)
 		
 		if seconds is not None and seconds > 0:
-			confirm = input(f"Confirm shutdown in approx. {seconds // 60} minutes? (y/n): ")
+			confirm = tui.ask_text(f"Confirm shutdown in approx. {seconds // 60} minutes? (y/n): ")
 			if confirm.lower() == 'y':
-				if not schedule_shutdown(seconds):
+				if not schedule_shutdown(seconds, cap=cap):
 					# A failed schedule must not look like success to the
 					# wrapper or to any script chaining off this one.
 					sys.exit(1)
@@ -188,7 +204,8 @@ def main():
 			else:
 				print("Cancelled.")
 		else:
-			print("Invalid format. Please use units like d, h, m, or s (e.g., 1h30m).")
+			print(tui.style("Invalid format. Please use units like d, h, m, or s (e.g., 1h30m).",
+							fg="warn", cap=cap))
 
 if __name__ == "__main__":
 	main()

@@ -66,6 +66,11 @@ class MissingBinaryTests(unittest.TestCase):
             # this "both binaries missing" case non-hermetic.
             script = Path(tmp) / "getaudio.py"
             shutil.copy2(SCRIPT, script)
+            # getaudio.py renders through the sibling `tui` package, so the
+            # copy carries its own sibling library instead of borrowing the
+            # checkout's.
+            shutil.copytree(REPO / "tui", Path(tmp) / "tui",
+                            ignore=shutil.ignore_patterns("__pycache__"))
             proc = run(["clip.mp4", "-c"], tmp, child_env(), script=script)
 
         combined = proc.stdout + proc.stderr
