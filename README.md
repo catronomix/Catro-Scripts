@@ -12,7 +12,7 @@
 
 - **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience/personalization
 
-- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI.
+- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI. Extra args are quoted per platform, so spaces, `;|&`, `$`, backticks and globs arrive literally; known limitation on Windows: `%VAR%` still expands even inside quotes.
 
 - **`audiosplit`**: Splits multi-channel audio files into individual mono tracks. Supports multiple formats (MP3, WAV, FLAC, AAC, OGG, M4A, etc.) with batch processing, wildcard filtering, and interactive options.
 
