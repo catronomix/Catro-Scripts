@@ -121,11 +121,15 @@ class ListNoColorTest(unittest.TestCase):
 		def fileno(self):
 			raise io.UnsupportedOperation("no file descriptor")
 
-	def render(self, tty):
+	def render(self, tty, environ=None):
 		import importlib
 		list_module = importlib.import_module("list")
 		stream = self.Stream(tty)
-		with mock.patch.dict(os.environ, {"NO_COLOR": "1"}, clear=False), \
+		env = {key: value for key, value in os.environ.items()
+			   if key not in ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE",
+							  "CATRO_COLOR", "TERM", "COLORTERM")}
+		env.update(environ or {"NO_COLOR": "1"})
+		with mock.patch.dict(os.environ, env, clear=True), \
 				mock.patch.object(tui, "init_ansi"), \
 				mock.patch.object(sys, "stdout", stream):
 			list_module.list_scripts()
@@ -139,6 +143,24 @@ class ListNoColorTest(unittest.TestCase):
 		self.assertNotIn("\x1b", out, "NO_COLOR output still carries escapes")
 		self.assertNotIn("\t", out, "a tty degraded to TAB records")
 		self.assertIn("Total scripts found:", out)
+
+	def test_no_color_zero_still_disables_colour(self):
+		# no-color.org: any non-empty value means no colour, "0" included.
+		out = self.render(tty=True, environ={"NO_COLOR": "0"})
+		self.assertNotIn("\x1b", out)
+		self.assertIn("\u250c", out)
+
+	def test_forced_colour_pipe_keeps_tabs_and_adds_ansi(self):
+		# Contract invariant 2: forcing colour on a pipe is deliberate. TAB
+		# records and no box glyphs (machine-readable), escapes present.
+		out = self.render(tty=False, environ={"FORCE_COLOR": "3"})
+		self.assertIn("\x1b", out, "FORCE_COLOR on a pipe lost its escapes")
+		self.assertIn("ID\tScript Name\tSize\tDescription", out)
+		self.assertNotIn("\t\t", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+		record = out.split("ID\tScript Name\tSize\tDescription\n", 1)[1].splitlines()[0]
+		self.assertEqual(len(record.split("\t")), 4)
 
 	def test_no_color_pipe_stays_tab_separated(self):
 		out = self.render(tty=False)

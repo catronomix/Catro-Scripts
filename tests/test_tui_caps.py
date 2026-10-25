@@ -144,11 +144,20 @@ class CapabilityTests(unittest.TestCase):
 				self.assertEqual((cap.level, cap.plain, cap.isatty),
 								 ("none", False, True))
 
-	def test_forced_color_on_a_pipe_keeps_plain_layout(self):
-		# `plain` follows the contract's literal definition (not a tty), while
-		# style() still emits codes when FORCE_COLOR raises the level.
-		cap = self.detect({"FORCE_COLOR": "1"}, tty=False)
-		self.assertEqual((cap.level, cap.plain), ("16", True))
+	def test_no_color_disables_colour_for_any_non_empty_value(self):
+		# no-color.org semantics: the value does not matter, only its presence.
+		for value in ("0", "false", "no", "off", "1", "anything"):
+			with self.subTest(value=value):
+				cap = self.detect({"NO_COLOR": value, "COLORTERM": "truecolor"})
+				self.assertEqual((cap.level, cap.reason), ("none", "NO_COLOR"))
+
+	def test_forced_color_on_a_pipe_keeps_the_tab_layout_and_adds_ansi(self):
+		# Contract invariant 2 (amended): forcing colour on a pipe is deliberate.
+		# The layout stays machine-readable (TAB records, no box glyphs) and the
+		# escapes come back, so `FORCE_COLOR=3 list.py | cat` is greppable and
+		# coloured.
+		cap = self.detect({"FORCE_COLOR": "3"}, tty=False)
+		self.assertEqual((cap.level, cap.plain), ("true", True))
 
 	def test_legacy_windows_console_beats_colorterm(self):
 		cap = self.detect({"COLORTERM": "truecolor"}, windows=True)

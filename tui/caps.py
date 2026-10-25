@@ -81,7 +81,9 @@ def require_tty(name):
 
 def _forced(env):
 	"""Explicit overrides and config; (None, "") when autodetect should decide."""
-	if _truthy(env.get("NO_COLOR")):
+	# no-color.org: NO_COLOR disables colour when present and non-empty,
+	# whatever its value - "0" and "false" included.
+	if str(env.get("NO_COLOR", "")) != "":
 		return "none", "NO_COLOR"
 	forced = env.get("FORCE_COLOR") if _truthy(env.get("FORCE_COLOR")) else None
 	if forced is None and _truthy(env.get("CLICOLOR_FORCE")):
