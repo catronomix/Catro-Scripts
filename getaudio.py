@@ -20,7 +20,12 @@ Flags:
 Note: If audio files are provided as input, the -c flag is automatically implied.
 
 Requirements:
-	- ffmpeg must be installed and available in the system PATH.
+	- ffmpeg and ffprobe must be available: in the system PATH, or placed next
+	  to this script (getaudio.py).
+
+Exit status:
+	0 = every requested file was processed.
+	1 = a required binary is missing, or at least one file failed.
 """
 
 import os
@@ -34,36 +39,94 @@ VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m
 AUDIO_EXTENSIONS = {'.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg', '.opus', '.wma'}
 ALL_EXTENSIONS = VIDEO_EXTENSIONS.union(AUDIO_EXTENSIONS)
 
+def get_bin_path(name):
+    """Returns the path to a binary, prioritizing the script's directory."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_path = os.path.join(script_dir, name)
+    if os.name == 'nt' and not local_path.lower().endswith('.exe'):
+        local_path += '.exe'
+    if os.path.exists(local_path) and os.access(local_path, os.X_OK):
+        return local_path
+    return name
+
+FFMPEG_BIN = get_bin_path('ffmpeg')
+FFPROBE_BIN = get_bin_path('ffprobe')
+
+def check_bin(binary):
+    """Checks if a binary is available in the system path or program dir."""
+    try:
+        subprocess.run([binary, '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
+
+def check_requirements():
+    """Preflights ffmpeg/ffprobe; returns False and reports what is missing."""
+    missing = [name for name, binary in (('ffmpeg', FFMPEG_BIN), ('ffprobe', FFPROBE_BIN))
+               if not check_bin(binary)]
+    if not missing:
+        return True
+    print(f"Error: {' and '.join(missing)} not installed or not found. "
+          "Place the binary in the script folder or add it to PATH.", file=sys.stderr)
+    return False
+
+def _error_tail(stderr, fallback):
+    """Returns the last non-empty stderr line, or fallback when there is none."""
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode('utf-8', 'replace')
+    lines = [line.strip() for line in (stderr or '').splitlines() if line.strip()]
+    return lines[-1] if lines else fallback
+
+def _unknown_info():
+    """Safe probe defaults used when ffprobe cannot describe the file."""
+    return {'codec': 'unknown', 'sample_rate': '44100', 'bit_rate': '128000', 'channels': 2}
+
 def get_audio_info(filepath):
     """Probes the file using ffprobe to get current audio properties."""
     # Use -select_streams a to get any audio stream, and include format info
     cmd = [
-        'ffprobe', '-v', 'quiet', '-print_format', 'json', 
+        FFPROBE_BIN, '-v', 'quiet', '-print_format', 'json', 
         '-show_streams', '-show_format', '-select_streams', 'a', filepath
     ]
+    # A probe fault must not be confused with "this file has no audio": report it
+    # once on stderr and hand the caller opaque defaults so it still tries to
+    # process the file instead of skipping it.
     try:
-        result = subprocess.check_output(cmd).decode('utf-8')
-        data = json.loads(result)
-        
-        # Priority 1: Use stream data
-        if 'streams' in data and len(data['streams']) > 0:
-            s = data['streams'][0]
-            return {
-                'codec': s.get('codec_name', 'unknown'),
-                'sample_rate': s.get('sample_rate', '44100'),
-                'bit_rate': s.get('bit_rate') or data.get('format', {}).get('bit_rate') or '128000',
-                'channels': s.get('channels', 2)
-            }
-        # Priority 2: Use format data if streams are obscured
-        elif 'format' in data:
-            return {
-                'codec': 'unknown',
-                'sample_rate': '44100',
-                'bit_rate': data['format'].get('bit_rate', '128000'),
-                'channels': 2
-            }
-    except Exception:
-        pass
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as exc:
+        print(f"Warning: could not run {os.path.basename(FFPROBE_BIN)}: "
+              f"{_error_tail(getattr(exc, 'stderr', None), exc)}", file=sys.stderr)
+        return _unknown_info()
+
+    if result.returncode != 0:
+        print(f"Warning: {os.path.basename(FFPROBE_BIN)} could not probe {os.path.basename(filepath)}: "
+              f"{_error_tail(result.stderr, f'exit status {result.returncode}')}", file=sys.stderr)
+        return _unknown_info()
+
+    try:
+        data = json.loads(result.stdout.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError):
+        print(f"Warning: could not read {os.path.basename(FFPROBE_BIN)} output for {os.path.basename(filepath)}",
+              file=sys.stderr)
+        return _unknown_info()
+
+    # Priority 1: Use stream data
+    if 'streams' in data and len(data['streams']) > 0:
+        s = data['streams'][0]
+        return {
+            'codec': s.get('codec_name', 'unknown'),
+            'sample_rate': s.get('sample_rate', '44100'),
+            'bit_rate': s.get('bit_rate') or data.get('format', {}).get('bit_rate') or '128000',
+            'channels': s.get('channels', 2)
+        }
+    # Priority 2: Use format data if streams are obscured
+    elif 'format' in data:
+        return {
+            'codec': 'unknown',
+            'sample_rate': '44100',
+            'bit_rate': data['format'].get('bit_rate', '128000'),
+            'channels': 2
+        }
     return None
 
 def get_unique_filename(base_path):
@@ -128,12 +191,13 @@ def prompt_codec_settings(defaults):
     }
 
 def process_file(file_path, args, codec_settings, index=0):
+    """Extracts or converts one file; True when handled (processed or skipped)."""
     info = get_audio_info(file_path)
     
     # If we aren't re-encoding and can't find a stream, we must skip
     if not info and not codec_settings:
         print(f"[Skip] Could not find audio stream in: {file_path}")
-        return
+        return True
 
     # Determine base output name
     if args.output:
@@ -161,7 +225,7 @@ def process_file(file_path, args, codec_settings, index=0):
 
     out_path = get_unique_filename(out_path)
 
-    cmd = ['ffmpeg', '-i', file_path, '-vn']
+    cmd = [FFMPEG_BIN, '-i', file_path, '-vn']
     
     if codec_settings:
         cmd += ['-acodec', codec_settings['codec'], '-ar', codec_settings['sample_rate']]
@@ -176,15 +240,28 @@ def process_file(file_path, args, codec_settings, index=0):
     print(f"[Processing] {os.path.basename(file_path)} -> {os.path.basename(out_path)}")
     try:
         subprocess.run(cmd, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-    except subprocess.CalledProcessError:
-        if not codec_settings:
-            print("  - Stream copy failed. Falling back to AAC re-encoding...")
-            out_path = os.path.splitext(out_path)[0] + ".m4a"
-            out_path = get_unique_filename(out_path)
-            cmd = ['ffmpeg', '-i', file_path, '-vn', '-acodec', 'aac', out_path]
-            subprocess.run(cmd, check=True, stderr=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, OSError) as exc:
+        encode_error = _error_tail(getattr(exc, 'stderr', None), exc)
 
-def main():
+    # Only a stream copy gets a second chance; an explicit codec choice is final.
+    if codec_settings:
+        print(f"  - Error: could not convert {os.path.basename(file_path)}: {encode_error}", file=sys.stderr)
+        return False
+
+    print("  - Stream copy failed. Falling back to AAC re-encoding...")
+    out_path = os.path.splitext(out_path)[0] + ".m4a"
+    out_path = get_unique_filename(out_path)
+    cmd = [FFMPEG_BIN, '-i', file_path, '-vn', '-acodec', 'aac', out_path]
+    try:
+        subprocess.run(cmd, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f"  - Error: could not extract audio from {os.path.basename(file_path)}: "
+              f"{_error_tail(getattr(exc, 'stderr', None), exc)}", file=sys.stderr)
+        return False
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Extract or convert audio.")
     parser.add_argument('files', nargs='*', help="List of files to process.")
     parser.add_argument('-a', '--all', action='store_true', help="Process all supported files in working directory.")
@@ -195,7 +272,7 @@ def main():
     parser.add_argument('-p', '--prefix', help="Prefix for output.")
     parser.add_argument('-s', '--suffix', help="Suffix for output.")
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     files_to_process = []
     has_audio_input = False
 
@@ -231,7 +308,11 @@ def main():
 
     if not files_to_process:
         print("No valid files found to process.")
-        return
+        return 0
+
+    # Nothing below can work without both binaries, so fail once and clearly.
+    if not check_requirements():
+        return 1
 
     # Automatically imply -c if audio files are present
     if has_audio_input and not args.codec:
@@ -246,10 +327,16 @@ def main():
 
     print(f"Found {len(files_to_process)} file(s). Starting...")
 
+    failures = 0
     for i, file_path in enumerate(files_to_process):
-        process_file(file_path, args, codec_settings, index=i)
+        if not process_file(file_path, args, codec_settings, index=i):
+            failures += 1
 
     print("\nDone.")
+    if failures:
+        print(f"{failures} file(s) failed.", file=sys.stderr)
+        return 1
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
