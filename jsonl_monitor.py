@@ -20,8 +20,9 @@ Features:
 This script keeps its own span/diff rendering engine (contract non-goal): the
 tail/diff/span maths, the line accounting, the filtering and the file-following
 loop are unchanged. Everything terminal-facing - capability detection, colour
-codes, box glyphs, the legend chrome, the alternate screen, cursor moves and key
-input - now comes from the shared `tui` package, so no escape code lives here.
+codes, box glyphs, the page background, the legend/footer chrome, the alternate
+screen, cursor moves and key input - now comes from the shared `tui` package, so
+no escape code and no private palette lives here.
 
 Disclaimer: This script was generated with Gemini 3.1 Pro.
 """
@@ -33,6 +34,7 @@ import json
 import re
 import glob
 import argparse
+import dataclasses
 import traceback
 
 import tui
@@ -106,6 +108,30 @@ def _shade(colour, amount):
 def _marker(cap):
     """Recency glyph: solid block where Unicode is safe, ASCII elsewhere."""
     return "\u2588" if cap.unicode else "#"
+
+
+def _layout_cap(cap):
+    """`cap` with pipe mode off, for the shared chrome helpers.
+
+    The monitor never writes to a pipe (`require_tty` refuses first), so a
+    "plain" capability set here only ever means "the colour-off tests use a
+    non-tty stream". Chrome's plain mode would drop the footer frame and its
+    padding with it; the full-screen view must keep its layout and only lose
+    the escapes, which is exactly what level "none" on a tty does.
+    """
+    return dataclasses.replace(cap, plain=False)
+
+
+def _repaint(screen, cap):
+    """Clear and paint the theme background between two full-screen views.
+
+    `Screen.fill()` is a no-op at colour level "none", so a monochrome run keeps
+    the plain clear that stops the previous view from bleeding through.
+    """
+    if cap.level == "none":
+        screen.clear()
+    else:
+        screen.fill()
 
 
 class Span:
@@ -656,7 +682,7 @@ def _legend_heading(text, cap):
 def _legend_frame(title, sections, cap):
     """One closed box: top rule, title, separators, samples, bottom rule.
 
-    The old legend was a single `┌ ├ └` frame; the shared banner helper returns
+    The old legend was a single `Ã¢â€Å’ Ã¢â€Å“ Ã¢â€â€` frame; the shared banner helper returns
     a three-line block of its own, so stacking it produced a box that closed
     under the title. Compose the frame here instead, from the capability's own
     glyph set, so it stays one box at every level and in ASCII mode.
@@ -747,19 +773,20 @@ def _centre(text, width):
 
 
 def _bar(text, cols, cap, fg="fg", bg="surface", bold=False, align="center"):
-    """One full-width chrome bar, fitted to `cols` cells and aligned inside it."""
+    """One full-width chrome bar, fitted to `cols` cells and aligned inside it.
+
+    The plain case is `chrome.fill()` (same truncate/pad/background rules). The
+    bold case - the full-view header - cannot go through `fill()`, which has no
+    bold attribute, so it composes the same band from `palette.prefix()`.
+    """
     if align == "center":
         body = _centre(text, cols)
     else:
         body = tui.pad(tui.truncate(text, cols), cols)
-    return (tui.prefix(fg=fg, bg=bg, bold=bold, cap=cap)
-            + body + _reset(cap))
-
-
-def _rule_row(glyphs, cols, left, right, cap, fg="border"):
-    """A horizontal rule of the right width, in the capability's glyph set."""
-    return (tui.prefix(fg=fg, cap=cap) + glyphs[left]
-            + glyphs["h"] * max(1, cols - 2) + glyphs[right] + _reset(cap))
+    if bold:
+        return (tui.prefix(fg=fg, bg=bg, bold=True, cap=cap)
+                + body + _reset(cap))
+    return tui.chrome.fill(body, cols, bg=bg, fg=fg, cap=_layout_cap(cap))
 
 
 def render_ui(monitor, last_rendered_rows, screen, cap):
@@ -927,21 +954,15 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
         f"{marker} <5s", f"{fresh_block} <5s"
     ).replace(f"{marker} >2m", f"{cold_block} >2m")
 
-    box_top = _rule_row(glyphs, cols, "tl", "tr", cap)
-    box_bot = _rule_row(glyphs, cols, "bl", "br", cap)
-    border = tui.prefix(fg="border", cap=cap)
-    text_style = tui.prefix(fg="fg", cap=cap)
-
-    box_mid_1 = border + glyphs["v"] + text_style + padded_line_1 + border + glyphs["v"] + reset
-    box_mid_2 = border + glyphs["v"] + colored_line_2 + border + glyphs["v"] + reset
-
-    bottom_rows = (
-        (rows - 3, box_top),
-        (rows - 2, box_mid_1),
-        (rows - 1, box_mid_2),
-        (rows, box_bot),
-    )
-    for row_number, row_text in bottom_rows:
+    # The footer is one shared panel: themed frame, `surface` interior, the two
+    # status lines as its body. `padding=0` keeps the rows exactly `cols` wide,
+    # so the panel cannot spill past the terminal edge.
+    footer_rows = tui.chrome.panel(
+        "", [padded_line_1, colored_line_2], width=cols, padding=0,
+        cap=_layout_cap(cap)
+    ).split("\n")
+    for index, row_text in enumerate(footer_rows):
+        row_number = rows - 3 + index
         cache_key = f"bottom_{row_number}"
         if last_rendered_rows.get(cache_key) != row_text:
             screen.move(0, row_number - 1)
@@ -1126,7 +1147,10 @@ def run_loop(screen, cap, args):
                         monitor.mode = "fullscreen"
                         monitor.fullscreen_file = active_file
                         monitor.fullscreen_scroll_y = 0
-                        screen.clear()  # Clear screen for view transition
+                        # Repaint: the theme background replaces the old view,
+                        # so the transition does not leave stale rows on the
+                        # terminal's own background colour.
+                        _repaint(screen, cap)
                         last_rendered_rows.clear()
                     elif key == "h":
                         toggle_collapse(monitor)
@@ -1147,7 +1171,7 @@ def run_loop(screen, cap, args):
 
                 if key in ("esc", "q", "enter", "b"):
                     monitor.mode = "main"
-                    screen.clear()
+                    _repaint(screen, cap)
                     last_rendered_rows.clear()
                 elif key == "up":
                     monitor.fullscreen_scroll_y = max(
@@ -1203,7 +1227,7 @@ def run_loop(screen, cap, args):
 
         # Check terminal resize
         if screen.poll_resize():
-            screen.clear()
+            _repaint(screen, cap)
             last_rendered_rows.clear()
 
         # 3. Render Active Mode View
@@ -1242,6 +1266,10 @@ def main():
 
     screen = tui.Screen(sys.stdout)
     screen.enter()
+    # Paint the whole page with the theme background before the first frame:
+    # every later diff assumes that backdrop (it is only re-painted on a mode
+    # change or a resize).
+    screen.fill()
     try:
         with tui.keys.raw_mode(sys.stdin):
             run_loop(screen, cap, args)
