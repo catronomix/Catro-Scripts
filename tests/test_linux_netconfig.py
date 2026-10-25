@@ -186,6 +186,10 @@ class ActionsFileTests(unittest.TestCase):
 		self.tmp = tempfile.TemporaryDirectory()
 		self.dir = Path(self.tmp.name)
 		shutil.copy2(str(REPO / "action.py"), str(self.dir / "action.py"))
+		# action.py now renders through the sibling `tui` package, so a copy
+		# taken out of the checkout has to carry the library with it.
+		shutil.copytree(REPO / "tui", self.dir / "tui",
+						ignore=shutil.ignore_patterns("__pycache__"))
 
 	def tearDown(self):
 		self.tmp.cleanup()
@@ -197,8 +201,8 @@ class ActionsFileTests(unittest.TestCase):
 		return path
 
 	def run_action(self, *args):
-		# Force UTF-8 so the box-drawing table does not depend on the console
-		# code page; the wrappers set the same mode in real use.
+		# Force UTF-8 so the table does not depend on the console code page;
+		# the wrappers set the same mode in real use.
 		env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
 		return subprocess.run(
 			[sys.executable, "action.py"] + list(args),

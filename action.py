@@ -27,22 +27,13 @@ import json
 import subprocess
 import shlex
 
-# Enable ANSI colors on Windows consoles
-if os.name == "nt":
-    os.system("")
+import tui
 
-
-# ANSI Color Codes (TrueColor support matching catro-scripts palette)
-class Colors:
-    PURPLE = "\033[38;2;170;0;255m"
-    LIGHT_BLUE = "\033[38;2;173;216;230m"  # Light Blue foreground
-    GREEN = "\033[38;2;80;250;123m"  # Accent Green
-    RED = "\033[38;2;255;85;85m"  # Accent Red
-    YELLOW = "\033[38;2;241;250;140m"  # Accent Yellow
-    BG_BLACK = "\033[48;2;0;0;0m"  # Black background
-    BG_GREY = "\033[48;2;45;45;45m"  # Dark Grey background
-    BOLD = "\033[1m"
-    END = "\033[0m"
+# Fixed table layout. The widths and the truncation rule are the ones the
+# hand-built table used, so the terminal output keeps its exact shape.
+COLUMN_WIDTHS = [2, 13, 30, 34]
+COMMAND_WIDTH = 30
+DESCRIPTION_WIDTH = 34
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -67,8 +58,9 @@ def warn_malformed(actions):
     for name, details in actions.items():
         if not isinstance(details, dict):
             print(
-                f"{Colors.YELLOW}Warning: action '{name}' is not an object with "
-                f"'command' and 'description'; it will be skipped.{Colors.END}",
+                tui.style(f"Warning: action '{name}' is not an object with "
+                          f"'command' and 'description'; it will be skipped.",
+                          fg="warn"),
                 file=sys.stderr,
             )
             continue
@@ -79,8 +71,8 @@ def warn_malformed(actions):
         ]
         if missing:
             print(
-                f"{Colors.YELLOW}Warning: action '{name}' is missing "
-                f"{', '.join(missing)}.{Colors.END}",
+                tui.style(f"Warning: action '{name}' is missing "
+                          f"{', '.join(missing)}.", fg="warn"),
                 file=sys.stderr,
             )
 
@@ -103,15 +95,16 @@ def load_actions():
             actions = json.load(f)
     except (OSError, ValueError) as e:
         print(
-            f"{Colors.RED}Error: cannot read '{ACTIONS_FILE}': {e}{Colors.END}",
+            tui.style(f"Error: cannot read '{ACTIONS_FILE}': {e}", fg="error"),
             file=sys.stderr,
         )
         sys.exit(1)
 
     if not isinstance(actions, dict):
         print(
-            f"{Colors.RED}Error: '{ACTIONS_FILE}' must contain a JSON object "
-            f"mapping action names to {{command, description}}.{Colors.END}",
+            tui.style(f"Error: '{ACTIONS_FILE}' must contain a JSON object "
+                      f"mapping action names to {{command, description}}.",
+                      fg="error"),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -127,7 +120,7 @@ def save_actions(actions):
             json.dump(actions, f, indent=4, ensure_ascii=False)
         return True
     except Exception as e:
-        print(f"{Colors.RED}Error saving actions to file: {e}{Colors.END}")
+        print(tui.style(f"Error saving actions to file: {e}", fg="error"))
         return False
 
 
@@ -176,10 +169,12 @@ def run_action(action_name, extra_args):
 
     if action_name not in actions:
         print(
-            f"{Colors.RED}Error: Action '{action_name}' not found in actions.json.{Colors.END}"
+            tui.style(f"Error: Action '{action_name}' not found in actions.json.",
+                      fg="error")
         )
         print(
-            f"Use {Colors.PURPLE}python action.py list{Colors.END} to view available macros."
+            "Use {} to view available macros.".format(
+                tui.style("python action.py list", fg="border"))
         )
         sys.exit(1)
 
@@ -187,9 +182,10 @@ def run_action(action_name, extra_args):
     base_command = entry.get("command") if isinstance(entry, dict) else None
     if not isinstance(base_command, str) or not base_command.strip():
         print(
-            f"{Colors.RED}Error: Action '{action_name}' has no command. "
-            f"Fix it with {Colors.PURPLE}python action.py add {action_name}{Colors.RED}."
-            f"{Colors.END}"
+            tui.style(f"Error: Action '{action_name}' has no command. ", fg="error")
+            + "Fix it with "
+            + tui.style(f"python action.py add {action_name}", fg="border")
+            + tui.style(".", fg="error")
         )
         sys.exit(1)
     base_command = base_command.strip()
@@ -203,101 +199,75 @@ def run_action(action_name, extra_args):
     else:
         full_command = base_command
 
-    print(
-        f"\n{Colors.PURPLE}{Colors.BOLD}--- EXECUTING MACRO: {action_name} ---{Colors.END}"
-    )
-    print(f"{Colors.LIGHT_BLUE}Command:{Colors.END} {full_command}\n")
+    print()
+    print(tui.style(f"--- EXECUTING MACRO: {action_name} ---",
+                    fg="header", bold=True))
+    print("{} {}\n".format(tui.style("Command:", fg="fg"), full_command))
 
     try:
         # Run the command in the active shell environment
         result = subprocess.run(full_command, shell=True)
-        print(
-            f"\n{Colors.PURPLE}--- MACRO FINISHED (Exit Code: {result.returncode}) ---{Colors.END}\n"
-        )
+        print()
+        print(tui.style(f"--- MACRO FINISHED (Exit Code: {result.returncode}) ---",
+                        fg="border"))
+        print()
         sys.exit(result.returncode)
     except KeyboardInterrupt:
-        print(f"\n{Colors.YELLOW}[Macro execution interrupted by user]{Colors.END}")
+        print()
+        print(tui.style("[Macro execution interrupted by user]", fg="warn"))
         sys.exit(130)
     except Exception as e:
-        print(f"{Colors.RED}Execution error: {e}{Colors.END}")
+        print(tui.style(f"Execution error: {e}", fg="error"))
         sys.exit(1)
 
 
 def list_actions():
-    """Displays all saved macros in a catro-scripts styled ASCII box table."""
+    """Displays all saved macros in the house table."""
     actions = load_actions()
+    cap = tui.detect()
 
-    print(
-        f"\n{Colors.PURPLE}{Colors.BOLD}--- ACTION MACRO DIRECTORY SCAN ---{Colors.END}"
-    )
-    print(f"{Colors.PURPLE}Storage File:{Colors.END} {ACTIONS_FILE}\n")
+    print()
+    print(tui.style("--- ACTION MACRO DIRECTORY SCAN ---",
+                    fg="header", bold=True, cap=cap))
+    print("{} {}\n".format(tui.style("Storage File:", fg="border", cap=cap),
+                           ACTIONS_FILE))
 
     if not actions:
-        print(
-            f"{Colors.PURPLE}No actions currently stored in actions.json.{Colors.END}"
-        )
-        print(
-            f"Run {Colors.LIGHT_BLUE}python action.py add{Colors.END} to create your first macro.\n"
-        )
+        print(tui.style("No actions currently stored in actions.json.",
+                        fg="border", cap=cap))
+        print("Run {} to create your first macro.\n".format(
+            tui.style("python action.py add", fg="fg", cap=cap)))
         return
 
-    # Column widths
-    w_id = 2
-    w_name = 13
-    w_cmd = 30
-    w_desc = 34
-
-    # Box Drawing Characters
-    tl, tr, bl, br = "┌", "┐", "└", "┘"
-    h, v = "─", "│"
-    t_join, b_join, l_join, r_join, cross = "┬", "┴", "├", "┤", "┼"
-
-    def make_divider(left, mid, right, cross_char):
-        return (
-            f"{Colors.PURPLE}{left}{h * (w_id + 2)}{cross_char}{h * (w_name + 2)}{cross_char}"
-            f"{h * (w_cmd + 2)}{cross_char}{h * (w_desc + 2)}{right}{Colors.END}"
-        )
-
-    top_border = make_divider(tl, t_join, tr, t_join)
-    mid_border = make_divider(l_join, cross, r_join, cross)
-    bot_border = make_divider(bl, b_join, br, b_join)
-
-    print(top_border)
-    header = (
-        f"{Colors.PURPLE}{v}{Colors.BOLD} {'ID':<{w_id}} {v} {'Action Name':<{w_name}} {v} "
-        f"{'Command':<{w_cmd}} {v} {'Description':<{w_desc}} {v}{Colors.END}"
-    )
-    print(header)
-    print(mid_border)
-
+    rows = []
     for i, (name, details) in enumerate(actions.items(), 1):
         # A malformed entry still lists; load_actions() already warned about it.
         entry = details if isinstance(details, dict) else {}
         cmd = entry.get("command", "") or ""
         desc = entry.get("description", "") or "No description"
 
-        # Truncate long strings for tabular layout
-        cmd_disp = (cmd[: w_cmd - 2] + "..") if len(cmd) > w_cmd else cmd
-        desc_disp = (desc[: w_desc - 2] + "..") if len(desc) > w_desc else desc
+        # Truncate long strings for tabular layout. This is the table's own
+        # rule, so the renderer must not truncate the cells a second time.
+        cmd_disp = (cmd[: COMMAND_WIDTH - 2] + "..") if len(cmd) > COMMAND_WIDTH else cmd
+        desc_disp = ((desc[: DESCRIPTION_WIDTH - 2] + "..")
+                     if len(desc) > DESCRIPTION_WIDTH else desc)
 
-        bg = Colors.BG_BLACK if i % 2 != 0 else Colors.BG_GREY
-        row_style = Colors.LIGHT_BLUE + bg
+        rows.append((i, name, cmd_disp, desc_disp))
 
-        row = (
-            f"{Colors.PURPLE}{v}{row_style} {i:<{w_id}} {Colors.PURPLE}{v}{row_style} {name:<{w_name}} "
-            f"{Colors.PURPLE}{v}{row_style} {cmd_disp:<{w_cmd}} {Colors.PURPLE}{v}{row_style} {desc_disp:<{w_desc}} "
-            f"{Colors.END}{Colors.PURPLE}{v}{Colors.END}"
-        )
-        print(row)
-
-    print(bot_border)
-    print(
-        f"{Colors.PURPLE}{Colors.BOLD}Total macros saved:{Colors.END} {len(actions)}\n"
-    )
+    tui.print_table(["ID", "Action Name", "Command", "Description"], rows,
+                    widths=COLUMN_WIDTHS, truncate=False, cap=cap)
+    print(tui.style("Total macros saved:", fg="header", bold=True, cap=cap),
+          len(actions))
+    print()
 
 
 def prompt_input_with_default(prompt_str, default_value=""):
-    """Helper for mini-TUI to allow editing existing values or keeping default."""
+    """Helper for mini-TUI to allow editing existing values or keeping default.
+
+    Deliberately not tui.ask_text(): the readline branch pre-fills the editing
+    buffer with the current value, and ask_text has no equivalent, so replacing
+    it would change what an operator sees and can edit.
+    """
     if default_value:
         # Try using GNU readline if available for pre-filled buffer on Linux/macOS
         try:
@@ -310,7 +280,8 @@ def prompt_input_with_default(prompt_str, default_value=""):
                 readline.set_startup_hook()
         except ImportError:
             # Fallback prompt showing current value for Windows/systems without readline
-            disp_prompt = f"{prompt_str} [{Colors.YELLOW}{default_value}{Colors.END}]: "
+            disp_prompt = "{} [{}]: ".format(
+                prompt_str, tui.style(default_value, fg="warn"))
             val = input(disp_prompt).strip()
             return val if val else default_value
     else:
@@ -320,19 +291,21 @@ def prompt_input_with_default(prompt_str, default_value=""):
 def interactive_add(target_name=None):
     """Mini-TUI interface to add a new action or edit an existing one."""
     actions = load_actions()
+    cap = tui.detect()
 
-    print(
-        f"\n{Colors.PURPLE}{Colors.BOLD}=== ACTION MACRO MANAGER: ADD / EDIT ==={Colors.END}"
-    )
+    print()
+    print(tui.style("=== ACTION MACRO MANAGER: ADD / EDIT ===",
+                    fg="header", bold=True, cap=cap))
 
     # Determine action name
     if not target_name:
         target_name = input(
-            f"{Colors.LIGHT_BLUE}Enter action name (ID key): {Colors.END}"
+            tui.style("Enter action name (ID key): ", fg="fg", cap=cap)
         ).strip()
 
     if not target_name:
-        print(f"{Colors.RED}Action name cannot be empty. Cancelled.{Colors.END}\n")
+        print(tui.style("Action name cannot be empty. Cancelled.\n", fg="error",
+                        cap=cap))
         return
 
     is_edit = target_name in actions
@@ -342,26 +315,30 @@ def interactive_add(target_name=None):
     existing_desc = existing.get("description", "") or ""
 
     if is_edit:
-        print(
-            f"{Colors.YELLOW}Editing existing macro '{target_name}'... (Press Enter to keep current values){Colors.END}"
-        )
+        print(tui.style(
+            f"Editing existing macro '{target_name}'... "
+            f"(Press Enter to keep current values)", fg="warn", cap=cap))
     else:
-        print(f"{Colors.GREEN}Creating new macro '{target_name}'...{Colors.END}")
+        print(tui.style(f"Creating new macro '{target_name}'...", fg="success",
+                        cap=cap))
 
     # Command input
-    print(f"\n{Colors.PURPLE}Executable Command String:{Colors.END}")
+    print()
+    print(tui.style("Executable Command String:", fg="border", cap=cap))
     cmd = prompt_input_with_default(
-        f"{Colors.LIGHT_BLUE}Command > {Colors.END}", existing_cmd
+        tui.style("Command > ", fg="fg", cap=cap), existing_cmd
     )
 
     if not cmd:
-        print(f"{Colors.RED}Command string cannot be empty. Cancelled.{Colors.END}\n")
+        print(tui.style("Command string cannot be empty. Cancelled.\n", fg="error",
+                        cap=cap))
         return
 
     # Description input
-    print(f"\n{Colors.PURPLE}Description:{Colors.END}")
+    print()
+    print(tui.style("Description:", fg="border", cap=cap))
     desc = prompt_input_with_default(
-        f"{Colors.LIGHT_BLUE}Description > {Colors.END}", existing_desc
+        tui.style("Description > ", fg="fg", cap=cap), existing_desc
     )
 
     # Save updated action
@@ -372,27 +349,29 @@ def interactive_add(target_name=None):
 
     if save_actions(actions):
         status = "updated" if is_edit else "added"
-        print(
-            f"\n{Colors.GREEN}[Success] Action '{target_name}' successfully {status}!{Colors.END}\n"
-        )
+        print()
+        print(tui.style(f"[Success] Action '{target_name}' successfully {status}!\n",
+                        fg="success", cap=cap))
 
 
 def interactive_remove(target_name=None):
     """Mini-TUI interface to delete an existing action."""
     actions = load_actions()
+    cap = tui.detect()
 
     if not actions:
-        print(f"{Colors.RED}No actions available to remove.{Colors.END}\n")
+        print(tui.style("No actions available to remove.\n", fg="error", cap=cap))
         return
 
-    print(
-        f"\n{Colors.PURPLE}{Colors.BOLD}=== ACTION MACRO MANAGER: REMOVE ==={Colors.END}"
-    )
+    print()
+    print(tui.style("=== ACTION MACRO MANAGER: REMOVE ===",
+                    fg="header", bold=True, cap=cap))
 
     if not target_name:
         list_actions()
         target_name = input(
-            f"{Colors.LIGHT_BLUE}Enter action name to delete (or 'q' to cancel): {Colors.END}"
+            tui.style("Enter action name to delete (or 'q' to cancel): ",
+                      fg="fg", cap=cap)
         ).strip()
 
     if target_name.lower() == "q" or not target_name:
@@ -400,12 +379,14 @@ def interactive_remove(target_name=None):
         return
 
     if target_name not in actions:
-        print(f"{Colors.RED}Action '{target_name}' does not exist.{Colors.END}\n")
+        print(tui.style(f"Action '{target_name}' does not exist.\n", fg="error",
+                        cap=cap))
         return
 
     confirm = (
         input(
-            f"{Colors.YELLOW}Are you sure you want to delete '{target_name}'? (y/N): {Colors.END}"
+            tui.style(f"Are you sure you want to delete '{target_name}'? (y/N): ",
+                      fg="warn", cap=cap)
         )
         .strip()
         .lower()
@@ -414,9 +395,9 @@ def interactive_remove(target_name=None):
     if confirm == "y":
         del actions[target_name]
         if save_actions(actions):
-            print(
-                f"\n{Colors.GREEN}[Success] Action '{target_name}' has been deleted.{Colors.END}\n"
-            )
+            print()
+            print(tui.style(f"[Success] Action '{target_name}' has been deleted.\n",
+                            fg="success", cap=cap))
     else:
         print("Cancelled deletion.")
 
@@ -444,7 +425,8 @@ def main():
     elif subcommand == "run":
         if len(args) < 2:
             print(
-                f"{Colors.RED}Usage: python action.py run <action_name> [optional flags/args]{Colors.END}"
+                tui.style("Usage: python action.py run <action_name> "
+                          "[optional flags/args]", fg="error")
             )
             sys.exit(1)
         action_name = args[1]
