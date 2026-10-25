@@ -32,10 +32,10 @@ def child_env(path=""):
     return env
 
 
-def run(args, cwd, env):
-    """Runs getaudio.py as a child process and returns the completed process."""
+def run(args, cwd, env, script=SCRIPT):
+    """Runs getaudio.py (or a copy of it) and returns the completed process."""
     return subprocess.run(
-        [sys.executable, str(SCRIPT), *args],
+        [sys.executable, str(script), *args],
         cwd=str(cwd),
         env=env,
         stdin=subprocess.DEVNULL,
@@ -61,7 +61,12 @@ class MissingBinaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clip = Path(tmp) / "clip.mp4"
             clip.write_bytes(b"not really a video")
-            proc = run(["clip.mp4", "-c"], tmp, child_env())
+            # Run a copy of the script: get_bin_path() also looks next to the
+            # script, so an operator's local ffmpeg.exe would otherwise make
+            # this "both binaries missing" case non-hermetic.
+            script = Path(tmp) / "getaudio.py"
+            shutil.copy2(SCRIPT, script)
+            proc = run(["clip.mp4", "-c"], tmp, child_env(), script=script)
 
         combined = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 1, combined)
