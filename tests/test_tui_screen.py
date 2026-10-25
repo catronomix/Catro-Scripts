@@ -175,6 +175,39 @@ class CanvasTests(unittest.TestCase):
 		self.assertEqual(canvas._colors[0][0], "\033[7m")
 
 
+class FillTests(unittest.TestCase):
+	"""`Screen.fill()` paints the page background, or writes nothing at all."""
+
+	def run_fill(self, level="true", tty=True, size=(6, 3), role="bg"):
+		stream = FakeStream(tty)
+		cap = screen.caps.Capabilities(level=level, unicode=True, width=None,
+									   isatty=tty, plain=False, reason="test")
+		with mock.patch.object(screen.caps, "detect", return_value=cap), \
+				mock.patch.object(screen, "terminal_size", lambda stream=None: size):
+			lifecycle = screen.Screen(stream)
+			result = lifecycle.fill(role)
+		self.assertIs(result, lifecycle)
+		return stream.getvalue()
+
+	def test_every_row_is_painted_with_the_background(self):
+		row = "\033[48;2;27;23;38m" + " " * 6 + "\033[0m"
+		self.assertEqual(self.run_fill(), screen.CLEAR_HOME + "\n".join([row] * 3))
+
+	def test_role_is_a_palette_key(self):
+		self.assertIn("\033[48;2;41;34;56m", self.run_fill(role="surface"))
+
+	def test_nothing_is_written_off_a_tty(self):
+		self.assertEqual(self.run_fill(tty=False), "")
+
+	def test_nothing_is_written_at_level_none(self):
+		self.assertEqual(self.run_fill(level="none"), "")
+
+	def test_level_sixteen_uses_the_basic_background_code(self):
+		out = self.run_fill(level="16")
+		self.assertIn("\033[40m", out)
+		self.assertNotIn("48;2", out)
+
+
 class TerminalRendererTests(unittest.TestCase):
 	def test_old_screensaver_api_is_kept(self):
 		renderer = screen.TerminalRenderer(stream=FakeStream(True))

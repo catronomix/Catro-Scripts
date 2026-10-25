@@ -18,6 +18,8 @@ import os
 import shutil
 import sys
 
+from . import caps, palette
+
 ALT_SCREEN_ON = "\033[?1049h"
 ALT_SCREEN_OFF = "\033[?1049l"
 CURSOR_HIDE = "\033[?25l"
@@ -85,6 +87,26 @@ class Screen:
 
 	def clear(self):
 		self.write(CLEAR_HOME)
+		return self
+
+	def fill(self, role="bg"):
+		"""Clear the screen and paint every row with the theme background.
+
+		`role` is a palette key (or an explicit colour) - `bg` is the page
+		background. Off a tty nothing is written; at colour level "none" there
+		is nothing to paint, so nothing is written either (not even the clear,
+		which is itself an escape). Returns `self` for chaining.
+		"""
+		if not _isatty(self.stream):
+			return self
+		cap = caps.detect(self.stream)
+		if cap.level == "none":
+			return self
+		width, height = self.size()
+		row = (palette.prefix(bg=role, cap=cap) + " " * width
+			   + palette.RESET)
+		self.write(CLEAR_HOME + "\n".join([row] * height))
+		self.flush()
 		return self
 
 	def home(self):
