@@ -199,6 +199,33 @@ class MdreaderPreflightTests(unittest.TestCase):
             self.assertTrue(0 <= fg <= 255)
             self.assertTrue(0 <= bg <= 255)
 
+    def test_chrome_pairs_are_palette_roles(self):
+        """Background, frame and both bars come from the shared palette keys.
+
+        The reader keeps its own curses renderer, so the gate is the pair map:
+        the window fill is `bg`, the frame `border`, the status bar
+        `header`-on-`surface` and the shortcut bar `fg`-on-`zebra_bg`, which is
+        the same vocabulary `tui.chrome` uses for a page.
+        """
+        expected = {
+            "window": ("fg", "bg"),
+            "frame": ("border", "bg"),
+            "thumb": ("header", "surface"),
+            "status": ("header", "surface"),
+            "shortcuts": ("fg", "zebra_bg"),
+        }
+        roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
+        self.assertEqual(
+            {name: roles[pair] for name, pair in mdreader.CHROME_PAIRS.items()},
+            expected,
+        )
+        for theme in mdreader.THEME_MODES:
+            colours = mdreader.tui.palette.palette(theme)
+            for fg, bg in expected.values():
+                with self.subTest(theme=theme, fg=fg, bg=bg):
+                    self.assertIn(fg, colours)
+                    self.assertIn(bg, colours)
+
     def test_each_mode_paints_its_own_palette(self):
         fake = _FakeCurses()
         fake.COLORS = 256
