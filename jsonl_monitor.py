@@ -573,30 +573,93 @@ def build_fullscreen_rendered_lines(events, cols):
 
 
 # ---------------------------------------------------------------------------
-# Legend (chrome from tui.banner/section, samples from tui.prefix)
+# Legend (one framed block: rules/glyphs from tui.table, samples from tui.prefix)
 # ---------------------------------------------------------------------------
-LEGEND_WIDTH = 44
+# Total visible cells of the legend, side borders included. The popup is centred
+# on this same number, so the frame and its placement cannot drift apart.
+LEGEND_WIDTH = 46
+LEGEND_INNER = LEGEND_WIDTH - 2
 
 
-def _legend_line(segments, cap):
-    """One legend strip: coloured samples on the palette surface, padded out."""
-    body = ""
-    width = 0
-    for label, fg, bg in segments:
-        body += tui.prefix(fg=fg, bg=bg, cap=cap) + label + _reset(cap)
-        width += len(label)
-    body += tui.prefix(bg="surface", cap=cap) + " " * max(0, LEGEND_WIDTH - width)
-    return (tui.prefix(fg="fg", bg="surface", cap=cap) + body
+def _legend_rule(glyphs, left, right, cap):
+    """A horizontal legend rule, exactly LEGEND_WIDTH cells wide."""
+    border = tui.prefix(fg="border", cap=cap)
+    return (border + glyphs[left] + glyphs["h"] * LEGEND_INNER
+            + glyphs[right] + _reset(cap))
+
+
+def _legend_row(content, glyphs, cap):
+    """One framed row: side borders around exactly LEGEND_INNER cells."""
+    border = tui.prefix(fg="border", cap=cap)
+    return (border + glyphs["v"] + content + border + glyphs["v"]
             + _reset(cap))
 
 
+def _legend_body(segments, cap):
+    """LEGEND_INNER cells of samples on the palette surface.
+
+    Every sample re-asserts the base style after its own reset, so the padding
+    after a coloured sample stays on the surface colour and the row keeps its
+    width whatever the sample lengths are.
+    """
+    base = tui.prefix(fg="fg", bg="surface", cap=cap)
+    body = " "  # one cell of gutter, as the old box had
+    used = 1
+    for label, fg, bg in segments:
+        room = LEGEND_INNER - used
+        if room <= 0:
+            break
+        label = tui.truncate(label, room)
+        span_bg = "surface" if bg is None else bg
+        body += (tui.prefix(fg=fg, bg=span_bg, cap=cap) + label
+                 + _reset(cap) + base)
+        used += tui.display_width(label)
+    return base + body + " " * max(0, LEGEND_INNER - used)
+
+
+def _legend_title(title, cap):
+    """The centred, bold title row content."""
+    base = tui.prefix(fg="fg", bg="surface", cap=cap)
+    lead = tui.prefix(fg="header", bg="surface", bold=True, cap=cap)
+    title = tui.truncate(title, LEGEND_INNER)
+    used = tui.display_width(title)
+    left = max(0, (LEGEND_INNER - used) // 2)
+    right = max(0, LEGEND_INNER - used - left)
+    return (base + " " * left + lead + title + _reset(cap) + base
+            + " " * right)
+
+
+def _legend_heading(text, cap):
+    """A section heading row content."""
+    base = tui.prefix(fg="fg", bg="surface", cap=cap)
+    lead = tui.prefix(fg="header", bg="surface", bold=True, cap=cap)
+    text = tui.truncate(text, LEGEND_INNER)
+    used = tui.display_width(text)
+    return (base + lead + text + _reset(cap) + base
+            + " " * max(0, LEGEND_INNER - used))
+
+
 def _legend_frame(title, sections, cap):
-    """Banner + one section heading per group + the sample strips."""
-    lines = tui.banner(title, width=LEGEND_WIDTH, cap=cap).split("\n")
-    for heading, strips in sections:
-        lines.append(tui.section(heading, cap=cap))
-        lines.extend(_legend_line(strip, cap) for strip in strips)
-    lines.append(tui.banner("", width=LEGEND_WIDTH, cap=cap).split("\n")[-1])
+    """One closed box: top rule, title, separators, samples, bottom rule.
+
+    The old legend was a single `┌ ├ └` frame; the shared banner helper returns
+    a three-line block of its own, so stacking it produced a box that closed
+    under the title. Compose the frame here instead, from the capability's own
+    glyph set, so it stays one box at every level and in ASCII mode.
+    """
+    glyphs = tui.table.glyphs_for(cap)
+    lines = [
+        _legend_rule(glyphs, "tl", "tr", cap),
+        _legend_row(_legend_title(title, cap), glyphs, cap),
+        _legend_rule(glyphs, "ml", "mr", cap),
+    ]
+    for index, (heading, strips) in enumerate(sections):
+        if index:
+            lines.append(_legend_rule(glyphs, "ml", "mr", cap))
+        lines.append(_legend_row(_legend_heading(heading, cap), glyphs, cap))
+        lines.extend(_legend_row(_legend_body(strip, cap), glyphs, cap)
+                     for strip in strips)
+    lines.append(_legend_rule(glyphs, "bl", "br", cap))
     return lines
 
 
@@ -656,11 +719,27 @@ def legend_lines(parser_name, cap):
 # ---------------------------------------------------------------------------
 # UI Rendering
 # ---------------------------------------------------------------------------
-def _bar(text, cols, cap, fg="fg", bg="surface", bold=False):
-    """One full-width chrome bar, padded to the terminal width."""
-    text = text[:cols]
+def _centre(text, width):
+    """Centre `text` in exactly `width` cells, truncating instead of spilling.
+
+    `.center()` measures code points, not cells, and leaves an over-long string
+    untouched; both would let a long status line push the enclosing box past the
+    terminal edge. Truncate first, then pad by display width.
+    """
+    text = tui.truncate(text, width)
+    space = max(0, width - tui.display_width(text))
+    left = space // 2
+    return " " * left + text + " " * (space - left)
+
+
+def _bar(text, cols, cap, fg="fg", bg="surface", bold=False, align="center"):
+    """One full-width chrome bar, fitted to `cols` cells and aligned inside it."""
+    if align == "center":
+        body = _centre(text, cols)
+    else:
+        body = tui.pad(tui.truncate(text, cols), cols)
     return (tui.prefix(fg=fg, bg=bg, bold=bold, cap=cap)
-            + text.ljust(cols) + _reset(cap))
+            + body + _reset(cap))
 
 
 def _rule_row(glyphs, cols, left, right, cap, fg="border"):
@@ -676,7 +755,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
     reset = _reset(cap)
     colours = tui.palette.palette(cap=cap)
 
-    popup_width = 46
+    popup_width = LEGEND_WIDTH
     popup_lines = []
     if monitor.show_legend:
         popup_lines = legend_lines(monitor.parser_name, cap)
@@ -684,6 +763,10 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
     popup_height = len(popup_lines) if monitor.show_legend else 0
     popup_start_x = max(1, (cols - popup_width) // 2)
     popup_start_y = max(1, (max_visible_lines - popup_height) // 2)
+    if popup_lines:
+        # A terminal narrower than the legend: clip rather than wrap.
+        room = max(1, cols - popup_start_x)
+        popup_lines = [tui.truncate(line, room) for line in popup_lines]
 
     # Adjust scroll_top_index to keep selected_index in view
     if monitor.selected_index < monitor.scroll_top_index:
@@ -712,7 +795,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
             base_bg = tui.prefix(bg="surface" if ui_row % 2 == 1 else "bg", cap=cap)
             shade = ZEBRA_SHADE if ui_row % 2 == 1 else 0
 
-            fname_disp = state.filename[: left_col_width - 1]
+            fname_disp = tui.truncate(state.filename, left_col_width - 1)
             if state.scroll_offset > 0:
                 prefix_char = ">"
                 prefix_color = tui.prefix(fg="error", cap=cap)
@@ -735,7 +818,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
                 + prefix_color
                 + prefix_char
                 + fname_color
-                + fname_disp.ljust(left_col_width - 1)
+                + tui.pad(fname_disp, left_col_width - 1)
                 + reset
                 + base_bg
             )
@@ -762,8 +845,15 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
                     cbg = base_bg
 
                 disp_text = sp.text.replace("\n", " ")
+                room = content_width - chars_rendered
+                if room <= 0:
+                    break
+                if tui.display_width(disp_text) > room:
+                    # A wide/combining glyph would otherwise push the row past
+                    # the terminal edge (line wrap is not disabled).
+                    disp_text = tui.truncate(disp_text, room)
                 content_str += f"{cfg}{cbg}{disp_text}{reset}{base_bg}"
-                chars_rendered += len(disp_text)
+                chars_rendered += tui.display_width(disp_text)
 
             padding = " " * max(0, content_width - chars_rendered)
             content_str += padding
@@ -817,8 +907,10 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
     raw_status_line_2 = f" Freshness: {marker} <5s ... {marker} >2m "
 
     inner = max(1, cols - 2)
-    padded_line_1 = raw_status_line_1.center(inner)
-    padded_line_2 = raw_status_line_2.center(inner)
+    # Truncate before centring: at 80 columns the full hint line is ~120 cells
+    # and .center() would return it unchanged, spilling onto the footer row.
+    padded_line_1 = _centre(raw_status_line_1, inner)
+    padded_line_2 = _centre(raw_status_line_2, inner)
 
     fresh_block = tui.prefix(fg=get_recency_color(0, colours), cap=cap) + marker + reset
     cold_block = (tui.prefix(fg=get_recency_color(200, colours), cap=cap)
@@ -886,7 +978,8 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
         f" FULL VIEW: {state.filename} | Entry {curr_event_idx + 1}/{total_events}"
         f" | Line {scroll_y + 1}/{total_lines} "
     )
-    header_str = _bar(header_text, cols, cap, fg="bg", bg="accent", bold=True)
+    header_str = _bar(header_text, cols, cap, fg="bg", bg="accent", bold=True,
+                      align="left")
 
     if last_rendered_rows.get("fs_header") != header_str:
         screen.move(0, 0)
@@ -914,8 +1007,14 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
                 else:
                     cbg = base_bg
 
-                line_str += f"{cfg}{cbg}{sp.text}{reset}{base_bg}"
-                chars_rendered += len(sp.text)
+                text = sp.text
+                room = cols - chars_rendered
+                if room <= 0:
+                    break
+                if tui.display_width(text) > room:
+                    text = tui.truncate(text, room)
+                line_str += f"{cfg}{cbg}{text}{reset}{base_bg}"
+                chars_rendered += tui.display_width(text)
 
             padding = " " * max(0, cols - chars_rendered)
             full_row_str = f"{base_bg}{line_str}{padding}{reset}"
@@ -930,11 +1029,13 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
 
     # 3. Popup Legend Overlay
     if monitor.show_legend:
-        popup_width = 46
+        popup_width = LEGEND_WIDTH
         popup_lines = legend_lines(monitor.parser_name, cap)
         popup_height = len(popup_lines)
         popup_start_x = max(1, (cols - popup_width) // 2)
         popup_start_y = max(1, (viewport_height - popup_height) // 2 + 1)
+        room = max(1, cols - popup_start_x)
+        popup_lines = [tui.truncate(line, room) for line in popup_lines]
 
         for i, line_str in enumerate(popup_lines):
             popup_y = popup_start_y + i
