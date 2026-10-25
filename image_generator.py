@@ -27,42 +27,36 @@ import random
 import argparse
 from datetime import datetime, timedelta
 
+import tui
+
 # Optional dependency, imported on demand inside main() so that --help works
 # without pillow installed.
 Image = None
 
-def require_tty():
-	if sys.stdin.isatty() and sys.stdout.isatty():
-		return
-	sys.stderr.write("[Error] image_generator needs an interactive terminal "
-					 "(stdin/stdout is not a tty).\n")
-	raise SystemExit(2)
+# Sanity bound for the batch size prompt: a typo would otherwise run for hours.
+MAX_IMAGES = 100000
 
-def generate_colored_images():
-	# User Inputs
-	hex_input = input("Enter RGB hex color (e.g., 3498db): ").strip().lstrip('#')
-	
+def generate_colored_images(cap):
+	# User Inputs; tui.prompts strips the text, applies the default and turns a
+	# closed stdin into the default instead of a traceback.
+	hex_input = tui.ask_text("Enter RGB hex color (e.g., 3498db): ").lstrip('#')
+
 	try:
 		rgb = tuple(int(hex_input[i:i+2], 16) for i in (0, 2, 4))
 	except (ValueError, IndexError):
-		print("Error: Invalid hex color format. Please use 6 characters (e.g., FF5733).")
+		print(tui.style("Error: Invalid hex color format. Please use 6 characters (e.g., FF5733).",
+						fg="error", cap=cap))
 		return
 
-	try:
-		count_input = input("Enter number of images (X): ").strip()
-		count = int(count_input)
-		if count <= 0:
-			print("Error: Amount must be greater than 0.")
-			return
-	except ValueError:
-		print("Error: Amount must be an integer.")
+	count = tui.ask_int("Enter number of images", 1, MAX_IMAGES)
+	if count is None:
+		print(tui.style("Error: Amount must be an integer.", fg="error", cap=cap))
 		return
 
-	name_prefix = input("Enter image name prefix (e.g., texture): ").strip()
-	if not name_prefix:
-		name_prefix = "image"
+	name_prefix = tui.ask_text("Enter image name prefix (e.g., texture): ",
+							   default="image")
 
-	date_str = input("Enter date (YYYY-MM-DD): ").strip()
+	date_str = tui.ask_text("Enter date (YYYY-MM-DD): ")
 	
 	try:
 		# Define the time window for image timestamps
@@ -76,13 +70,14 @@ def generate_colored_images():
 		folder_name = f"{folder_date_part}{random_hour:02d}{random_minute:02d}"
 		
 	except ValueError:
-		print("Error: Invalid date format. Use YYYY-MM-DD.")
+		print(tui.style("Error: Invalid date format. Use YYYY-MM-DD.",
+						fg="error", cap=cap))
 		return
 
 	# Create the directory
 	if not os.path.exists(folder_name):
 		os.makedirs(folder_name)
-		print(f"Created directory: {folder_name}")
+		print(tui.style(f"Created directory: {folder_name}", fg="success", cap=cap))
 
 	# Image constants
 	res = 512
@@ -135,7 +130,9 @@ def generate_colored_images():
 
 		print(f"Created {file_path} | Timestamp: {target_dt.strftime('%H:%M:%S')}")
 
-	print(f"\nProcess complete. Files are in: {os.path.abspath(folder_name)}")
+	print()
+	print(tui.style(f"Process complete. Files are in: {os.path.abspath(folder_name)}",
+					fg="success", bold=True, cap=cap))
 
 def main():
 	# parse_args() first so --help works without pillow or a terminal.
@@ -146,18 +143,23 @@ def main():
 
 	# Refuse a non-terminal before anything else: the dependency check below
 	# would otherwise print to a pipe and hide the real problem.
-	require_tty()
+	tui.require_tty("image_generator")
+
+	# Capabilities are resolved once: every message in the run shares them.
+	tui.init_ansi()
+	cap = tui.detect()
 
 	# Pillow is only needed for an actual run.
 	global Image
 	try:
 		from PIL import Image
 	except ImportError:
-		print("Error: 'pillow' library is not installed.")
+		print(tui.style("Error: 'pillow' library is not installed.",
+						fg="error", cap=cap))
 		print("Please install it using: pip install pillow")
 		sys.exit(1)
 
-	generate_colored_images()
+	generate_colored_images(cap)
 
 if __name__ == "__main__":
 	main()

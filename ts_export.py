@@ -28,23 +28,18 @@ import re
 import sys
 import stat
 
-# ANSI Colors
-C_PURPLE = '\033[38;2;170;0;255m'
-C_CYAN = '\033[96m'
-C_GREEN = '\033[92m'
-C_RED = '\033[91m'
-C_YELLOW = '\033[93m'
-C_BOLD = '\033[1m'
-C_RESET = '\033[0m'
+import tui
 
-def print_step(message):
-    print(f"{C_CYAN}{C_BOLD}>>{C_RESET} {message}")
 
-def print_success(message):
-    print(f"{C_GREEN}{C_BOLD}✓{C_RESET} {message}")
+def print_step(message, cap=None):
+    """One progress line: the `>>` marker carries the accent colour."""
+    print("{} {}".format(tui.style(">>", fg="accent", bold=True, cap=cap), message))
 
-def print_error(message):
-    print(f"{C_RED}{C_BOLD}Error:{C_RESET} {message}")
+def print_success(message, cap=None):
+    print("{} {}".format(tui.style("✓", fg="success", bold=True, cap=cap), message))
+
+def print_error(message, cap=None):
+    print("{} {}".format(tui.style("Error:", fg="error", bold=True, cap=cap), message))
 
 def remove_readonly(func, path, excinfo):
     """
@@ -84,12 +79,18 @@ def check_project():
     return True, ""
 
 def main():
-    print(f"\n{C_PURPLE}{C_BOLD}--- TypeScript Project Export ---{C_RESET}\n")
+    # One detection per run, threaded through every helper: the colour level,
+    # Unicode decision and plain mode must not change mid-run.
+    cap = tui.detect()
+
+    print()
+    print(tui.section("--- TypeScript Project Export ---", cap=cap))
+    print()
 
     # 1. Validation
     is_valid, err = check_project()
     if not is_valid:
-        print_error(err)
+        print_error(err, cap)
         return
 
     # 2. Setup Export Directory
@@ -99,11 +100,11 @@ def main():
             # Use the readonly handler to avoid common Windows permission errors
             remove_tree(export_dir)
         except Exception as e:
-            print_error(f"Could not clear '{export_dir}' directory. Please ensure no files are open in other programs.\nDetails: {e}")
+            print_error(f"Could not clear '{export_dir}' directory. Please ensure no files are open in other programs.\nDetails: {e}", cap)
             return
             
     os.makedirs(export_dir)
-    print_step(f"Created clean '{export_dir}' directory.")
+    print_step(f"Created clean '{export_dir}' directory.", cap)
 
     # 3. Locate Binaries
     # Use .cmd on Windows, direct path on Unix
@@ -112,7 +113,7 @@ def main():
     esbuild_bin = os.path.join('node_modules', '.bin', f'esbuild{ext}')
 
     if not os.path.exists(tsc_bin):
-        print_error("TypeScript compiler (tsc) not found in node_modules.")
+        print_error("TypeScript compiler (tsc) not found in node_modules.", cap)
         return
 
     # 4. Compilation / Bundling
@@ -127,7 +128,7 @@ def main():
     os.makedirs(os.path.dirname(out_js), exist_ok=True)
 
     if os.path.exists(esbuild_bin):
-        print_step("Bundling with esbuild for 'file://' compatibility...")
+        print_step("Bundling with esbuild for 'file://' compatibility...", cap)
         try:
             subprocess.check_call([
                 esbuild_bin, main_ts, 
@@ -137,22 +138,22 @@ def main():
                 '--platform=browser',
                 '--target=es6'
             ], shell=(os.name == 'nt'))
-            print_success("Bundled JavaScript successfully.")
+            print_success("Bundled JavaScript successfully.", cap)
         except subprocess.CalledProcessError:
-            print_error("Bundling failed.")
+            print_error("Bundling failed.", cap)
             return
     else:
-        print_step("esbuild not found, falling back to standard tsc...")
+        print_step("esbuild not found, falling back to standard tsc...", cap)
         try:
             # Simple compile - might still have module issues if multi-file
             subprocess.check_call([tsc_bin, '--outDir', export_dir, '--target', 'ES6', '--module', 'none'], shell=(os.name == 'nt'))
-            print_success("Compiled JavaScript successfully.")
+            print_success("Compiled JavaScript successfully.", cap)
         except subprocess.CalledProcessError:
-            print_error("Compilation failed.")
+            print_error("Compilation failed.", cap)
             return
 
     # 5. Copy Assets
-    print_step("Copying styles and assets...")
+    print_step("Copying styles and assets...", cap)
     if os.path.exists('styles'):
         shutil.copytree('styles', os.path.join(export_dir, 'styles'))
     
@@ -169,10 +170,13 @@ def main():
         
         with open(os.path.join(export_dir, 'index.html'), 'w', encoding='utf-8') as f:
             f.write(content)
-        print_success("Processed index.html for local loading.")
+        print_success("Processed index.html for local loading.", cap)
 
-    print(f"\n{C_GREEN}{C_BOLD}✨ Export Complete!{C_RESET}")
-    print(f"You can now open {C_YELLOW}'{export_dir}/index.html'{C_RESET} directly in your browser.")
+    print()
+    print(tui.style("✨ Export Complete!", fg="success", bold=True, cap=cap))
+    print("You can now open {} directly in your browser.".format(
+        tui.style("'{}/index.html'".format(export_dir), fg="warn", cap=cap)))
 
 if __name__ == "__main__":
+    tui.init_ansi()
     main()

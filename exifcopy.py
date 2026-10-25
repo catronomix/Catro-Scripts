@@ -18,23 +18,32 @@ Disclaimer: This script was generated with Gemini 3
 import sys
 import os
 
+import tui
+
 # Optional dependency: piexif is imported on demand inside copy_exif() so the
 # usage path still works on machines where it is not installed.
 
-def copy_exif(source_path, target_path):
+
+def copy_exif(source_path, target_path, cap=None):
 	"""
 	Copies EXIF metadata from source_path to target_path.
-	
+
+	The caller resolves `cap` once per run; a direct call still gets a probe.
+
 	Args:
 		source_path (str): Path to the image containing the metadata.
 		target_path (str): Path to the image where metadata will be written.
+		cap (Capabilities): Capability record for this run.
 	"""
+	cap = cap or tui.detect()
+
 	# piexif is only needed for an actual copy, so the dependency is checked
 	# here (first use) instead of at import time.
 	try:
 		import piexif
 	except ImportError:
-		print("Error: 'piexif' library is not installed.")
+		print(tui.style("Error: 'piexif' library is not installed.",
+						fg="error", cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install piexif")
 		sys.exit(1)
 
@@ -43,30 +52,39 @@ def copy_exif(source_path, target_path):
 	abs_target = os.path.abspath(target_path)
 
 	if not os.path.exists(abs_source):
-		print(f"Error: Source file '{abs_source}' does not exist.")
+		print(tui.style(f"Error: Source file '{abs_source}' does not exist.",
+						fg="error", cap=cap))
 		sys.exit(1)
 
 	if not os.path.exists(abs_target):
-		print(f"Error: Target file '{abs_target}' does not exist.")
+		print(tui.style(f"Error: Target file '{abs_target}' does not exist.",
+						fg="error", cap=cap))
 		sys.exit(1)
 
 	try:
 		# Load EXIF data from the source image
 		exif_dict = piexif.load(abs_source)
-		
+
 		# Convert the dictionary back into bytes for insertion
 		exif_bytes = piexif.dump(exif_dict)
-		
+
 		# Insert the metadata into the target image
 		piexif.insert(exif_bytes, abs_target)
-		
-		print(f"Successfully copied EXIF data from:\n  {abs_source}\nto:\n  {abs_target}")
-		
+
+		print(tui.section("Successfully copied EXIF data:", cap=cap))
+		print(tui.key_values(None, [("from", abs_source), ("to", abs_target)],
+							 cap=cap))
+
 	except Exception as e:
-		print(f"An error occurred: {e}", file=sys.stderr)
+		print(tui.style(f"An error occurred: {e}", fg="error", cap=cap),
+			  file=sys.stderr)
 		sys.exit(1)
 
-if __name__ == "__main__":
+
+def main():
+	tui.init_ansi()
+	cap = tui.detect()
+
 	# Ensure exactly two arguments are provided (excluding the script name)
 	if len(sys.argv) != 3:
 		print("Usage: python exif_cloner.py <source_image_path> <target_image_path>")
@@ -75,4 +93,8 @@ if __name__ == "__main__":
 	source_img = sys.argv[1]
 	target_img = sys.argv[2]
 
-	copy_exif(source_img, target_img)
+	copy_exif(source_img, target_img, cap=cap)
+
+
+if __name__ == "__main__":
+	main()

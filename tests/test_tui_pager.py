@@ -94,6 +94,10 @@ class PagerTests(unittest.TestCase):
 		timeouts = []
 		posix = mock.Mock(name="os")
 		posix.name = "posix"
+		# `read_key` now takes bytes from the descriptor itself (a buffered
+		# text read used to hide a whole cursor sequence from select()), so the
+		# pretend `os` has to keep a working read().
+		posix.read = os.read
 
 		def fake_select(readers, writers, errors, timeout):
 			timeouts.append(timeout)

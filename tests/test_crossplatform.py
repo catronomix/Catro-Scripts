@@ -53,6 +53,7 @@ LIST_HEADER = "ID\tScript Name\tSize\tDescription"
 TTY_SCRIPTS = (
 	"keygen.py",
 	"screensaver.py",
+	"fakeserver.py",
 	"mdreader.py",
 	"jsonl_monitor.py",
 	"image_generator.py",
@@ -369,6 +370,11 @@ class SmokeTests(unittest.TestCase):
 			# alias.py writes next to itself, so run a copy from a temp dir to
 			# keep the repository untouched.
 			shutil.copy2(str(REPO / "alias.py"), str(target / "alias.py"))
+			# alias.py renders through the sibling `tui` package, so a copy
+			# taken out of the checkout has to carry the library with it.
+			shutil.copytree(REPO / "tui", target / "tui",
+							ignore=shutil.ignore_patterns("__pycache__"))
+
 			proc = run([sys.executable, "alias.py", "smokealias"], cwd=td)
 			self.assertEqual(proc.returncode, 0,
 							 "alias.py exited {}\n{}".format(

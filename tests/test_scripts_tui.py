@@ -36,6 +36,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 	sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tui  # noqa: E402  (import after sys.path setup)
+import keygen  # noqa: E402  (imported for its picker marker)
 from support import clean_env  # noqa: E402  (test helper, not production)
 
 
@@ -84,10 +85,30 @@ class CountRainbowTest(unittest.TestCase):
 class NoPrivateAnsiTest(unittest.TestCase):
 	"""The gate: migrated scripts only style through tui."""
 
-	# Phase A scripts migrated onto tui/; Phase B scripts (keygen, mdreader, ...)
-	# join this list when they migrate.
+	# Phase A scripts plus every Phase B script (seven crunch groups). Adding a
+	# script here is the price of moving it onto tui/: the gate below is what
+	# keeps a private escape sequence from creeping back in.
 	MIGRATED = ("list.py", "help.py", "action.py", "count.py",
-				"opencode.py", "sanitize.py", "screensaver.py")
+				"opencode.py", "sanitize.py", "screensaver.py",
+				# B1 interactive
+				"keygen.py", "fakeserver.py",
+				# B2 jsonl
+				"jsonl_monitor.py",
+				# B3 curses
+				"mdreader.py",
+				# B4 video
+				"videofade.py", "videoframes.py", "videojoin.py",
+				"videoloop.py", "videotweak.py",
+				# B5 media
+				"image_resizer.py", "audiosplit.py", "image_generator.py",
+				"ts_setup.py",
+				# B6 system/net
+				"netconfig.py", "gitpush.py", "ts_export.py",
+				"venvreplicator.py",
+				# B7 file tools
+				"renamer.py", "alias.py", "newfile.py", "getaudio.py",
+				"exifcopy.py", "timecopy.py", "randomsorter.py",
+				"shutdown.py", "installdeps.py")
 
 	def test_migrated_scripts_have_no_private_ansi(self):
 		for name in self.MIGRATED:
@@ -338,6 +359,38 @@ class ScreensaverMenuTest(unittest.TestCase):
 		out = stream.getvalue()
 		self.assertIn(tui.screen.CURSOR_SHOW, out)
 		self.assertIn(tui.screen.ALT_SCREEN_OFF, out)
+
+
+class KeygenMarkerTests(unittest.TestCase):
+	"""The picker pointer must survive a legacy codepage.
+
+	`cap.unicode` only proves the box glyphs encode. cp437/cp850 draw boxes but
+	cannot take U+25B6, so the old unconditional marker raised
+	`UnicodeEncodeError` inside the picker; the ASCII `>` is the fallback.
+	"""
+
+	def cap(self, unicode=True):
+		return mock.Mock(unicode=unicode, plain=False, level="256")
+
+	def test_utf8_stream_keeps_the_pointer(self):
+		stream = mock.Mock(encoding="utf-8")
+		self.assertEqual(keygen.marker_for(stream, self.cap()), "\u25b6")
+
+	def test_legacy_codepage_falls_back_to_ascii(self):
+		stream = mock.Mock(encoding="cp437")
+		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+	def test_no_unicode_capability_falls_back_to_ascii(self):
+		stream = mock.Mock(encoding="utf-8")
+		self.assertEqual(keygen.marker_for(stream, self.cap(unicode=False)), ">")
+
+	def test_unknown_encoding_falls_back_to_ascii(self):
+		stream = mock.Mock(encoding="no-such-codec")
+		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+	def test_stream_without_an_encoding_falls_back_to_ascii(self):
+		stream = mock.Mock(spec=["write"])
+		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
 
 
 if __name__ == "__main__":

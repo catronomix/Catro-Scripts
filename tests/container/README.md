@@ -153,6 +153,30 @@ on the host instead.
 Probes marked `"skip": true` in `manifest.json` are never executed; the flag is
 deliberate data, not a keyword match on the `why` text.
 
+### Real-terminal smoke (pty)
+
+`checks.py` drives everything non-interactively, so it cannot see raw mode,
+keypress timing or the alternate screen. `pty_smoke.py` covers that gap: it
+spawns the interactive surfaces on a real pty and asserts the observable
+contract.
+
+	python tests/container/pty_smoke.py     # inside the Linux container
+
+It runs `screensaver.py`'s menu (ESC and DOWN, then ESC) and `tui.pager.page`
+(`q`, space, pgdown) and checks, for each: exit 0, the alternate screen entered
+and left again, the expected frame content, and ICANON/ECHO identical before
+and after the child exits. It exits 2 (a skip) where `pty` does not exist - a
+Windows host - so the string is reproducible from one command:
+
+	docker run --rm -v "$PWD":/app -w /app --entrypoint python \
+		catro-scripts-test:3.12-base tests/container/pty_smoke.py
+
+The first run of this probe found a real defect: a cursor sequence arriving in
+one flush was decoded as a bare ESC, because the readiness check looked at the
+descriptor while the byte came from Python's buffered text layer. `tui/keys.py`
+now reads the descriptor directly (`5dd287a`), and the pager survives more than
+one key press on a POSIX terminal.
+
 ## Commands behind the wrapper
 
 ```bash

@@ -5,6 +5,12 @@
 Simulates a terminal screensaver with rapid "hacker" typing.
 Generates infinite scrolling text in various styles.
 
+Colour and keyboard input come from the shared `tui` library: the green body
+text is the palette's "success" colour (nothing at all when colour is off) and
+the quit keys are read through `tui.keys`, which also owns the cbreak
+lifecycle. The script is a watcher, so it asks `tui.require_tty()` for a real
+terminal instead of animating into a pipe.
+
 Usage:
 	python fakeserver.py [-s SPEED] [-t {python,cpp,plaintext}]
 
@@ -21,28 +27,8 @@ import sys
 import time
 import random
 import argparse
-import platform
 
-# --- Platform keyboard backend ---
-# The POSIX backend (select/termios/tty) does not exist on Windows, so importing
-# it unconditionally made this module unimportable there (even `--help` died).
-# Bind the names to None when unavailable and pick the backend in main().
-IS_WINDOWS = platform.system().lower().startswith("win")
-
-termios = None
-tty = None
-select = None
-
-if IS_WINDOWS:
-	import msvcrt
-else:
-	try:
-		import select
-		import termios
-		import tty
-	except ImportError:
-		# Partial/non-standard Unix build: fall back to blind sleeps.
-		select = termios = tty = None
+import tui
 
 # --- Vocabularies for different styles ---
 
@@ -191,39 +177,33 @@ def generate_line(style):
 	else:
 		return random.choice(PLAINTEXT_VOCAB)
 
-def check_for_quit(fd, timeout):
+def check_for_quit(timeout):
 	"""
-	Waits up to `timeout` seconds for keyboard input on a terminal.
-	Returns True if ESC, 'q', or Ctrl+C is read.
+	Waits up to `timeout` seconds for a keyboard token.
+	Returns True if ESC, 'q' or Ctrl+C was read.
 	"""
-	if IS_WINDOWS:
-		# msvcrt has no timeout-aware read: poll kbhit() in short slices so the
-		# caller's typing cadence is preserved. Without a console there is no
-		# key to poll, so fall back to a plain sleep like the POSIX path does.
-		if not sys.stdin.isatty():
-			time.sleep(timeout)
-			return False
-		deadline = time.time() + timeout
-		while time.time() < deadline:
-			if msvcrt.kbhit():
-				char = msvcrt.getwch()
-				# 27 = ESC, 3 = Ctrl+C
-				if char in ('\x1b', 'q', 'Q', '\x03'):
-					return True
-			time.sleep(0.02)
+	key = tui.keys.read_key(timeout=timeout)
+	if key is None:
 		return False
+	return key in ("esc", "ctrl-c") or key.lower() == "q"
 
-	if fd is None or select is None:
-		time.sleep(timeout)
-		return False
+def run(style, delay_per_char):
+	"""Type random lines forever until a quit key asks for the exit."""
+	while True:
+		line = generate_line(style)
 
-	rlist, _, _ = select.select([fd], [], [], timeout)
-	if rlist:
-		char = sys.stdin.read(1)
-		# 27 = ESC, 3 = Ctrl+C
-		if char in ('\x1b', 'q', 'Q', '\x03'):
-			return True
-	return False
+		for char in line:
+			sys.stdout.write(char)
+			sys.stdout.flush()
+
+			jitter = random.uniform(0.5, 1.5)
+			if check_for_quit(delay_per_char * jitter):
+				return
+
+		sys.stdout.write('\n')
+		sys.stdout.flush()
+		if check_for_quit(delay_per_char * 10):
+			return
 
 def main():
 	parser = argparse.ArgumentParser(description="Terminal screensaver simulating hacker code.")
@@ -243,52 +223,32 @@ def main():
 
 	args = parser.parse_args()
 
+	# A screensaver needs a watcher and a quit key: refuse a pipe with the one
+	# shared preflight line (exit 2) instead of animating into it.
+	tui.init_ansi()
+	tui.require_tty("fakeserver")
+	cap = tui.detect()
+
 	chars_per_min = args.speed * 5.0
 	delay_per_char = 60.0 / chars_per_min if chars_per_min > 0 else 0
 
-	# Terminal raw mode setup for non-blocking ESC key detection.
-	# cbreak mode is POSIX-only (and pointless without a tty), so guard it.
-	fd = None
-	old_settings = None
-	if termios is not None and tty is not None and sys.stdin.isatty():
-		fd = sys.stdin.fileno()
-		old_settings = termios.tcgetattr(fd)
-		tty.setcbreak(fd)
+	# One styled span for the whole run (the fixed green this script always
+	# had). With colour off, `prefix` is empty and the reset is omitted.
+	colour = tui.prefix(fg="success", cap=cap)
+	reset = tui.RESET if colour else ""
 
-	# Set text color to green
-	sys.stdout.write("\033[32m")
-	sys.stdout.flush()
-
-	try:
-		running = True
-		while running:
-			line = generate_line(args.type)
-			
-			for char in line:
-				sys.stdout.write(char)
-				sys.stdout.flush()
-				
-				jitter = random.uniform(0.5, 1.5)
-				if check_for_quit(fd, delay_per_char * jitter):
-					running = False
-					break
-			
-			if not running:
-				break
-			
-			sys.stdout.write('\n')
-			sys.stdout.flush()
-			if check_for_quit(fd, delay_per_char * 10):
-				break
-
-	except KeyboardInterrupt:
-		pass
-	finally:
-		if fd is not None and old_settings is not None and termios is not None:
-			termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-		sys.stdout.write("\033[0m\n")
+	# raw_mode owns cbreak and restores it on the way out; key polling then
+	# gets its keystrokes without a private termios/msvcrt path.
+	with tui.keys.raw_mode():
+		sys.stdout.write(colour)
 		sys.stdout.flush()
-		sys.exit(0)
+		try:
+			run(args.type, delay_per_char)
+		except KeyboardInterrupt:
+			pass
+		finally:
+			sys.stdout.write(reset + "\n")
+			sys.stdout.flush()
 
 if __name__ == "__main__":
 	main()

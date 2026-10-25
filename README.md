@@ -20,7 +20,7 @@
 
 - **`exifcopy`**: Copies EXIF metadata (camera settings, GPS, timestamps, etc.) from a source image to a target image. Supports JPEG and WebP formats. *Requires: piexif*
 
-- **`fakeserver`**: A terminal screensaver that simulates hacker-style rapid typing with various code styles (Python, C++, or plaintext). Includes adjustable typing speed in WPM and interactive keyboard effects.
+- **`fakeserver`**: A terminal screensaver that simulates hacker-style rapid typing with various code styles (Python, C++, or plaintext). Includes adjustable typing speed in WPM and interactive keyboard effects. Requires an interactive terminal: piping it exits 2 with a one-line message (there is no quit key off a tty), while `--help` still answers on any stream.
 
 - **`getaudio`**: Extracts audio tracks from video files and saves them in various formats. Supports batch processing and format conversion with customizable quality settings.
 
@@ -66,7 +66,7 @@
 
 - **`ts_setup`**: Sets up a Typescript project folder and pre-generates some boilerplate html, ts and css to get started. It also runs commands to setup npm packages (requires node.js to be installed).
 
-- **`venvreplicator`**: Replicates and manages Python virtual environments across different locations or systems. Allows cloning of venv dependencies and configurations for consistent development setups.
+- **`venvreplicator`**: Replicates and manages Python virtual environments across different locations or systems. Allows cloning of venv dependencies and configurations for consistent development setups. `-i` writes `venv_info.txt` as TAB-separated plain records (no colour, no rules) so another tool can read it; the generated `recreate_venv.py` is deliberately plain text because it runs in the target project, outside `catro-scripts`, and cannot import `tui`.
 
 - **`videofade`**: Adds smooth fade-in and fade-out effects to video clips. Supports customizable durations, various interpolation curves (like Ease-In-Out), and an "Append Mode" that freezes the last frame for a hold.
 
