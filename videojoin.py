@@ -104,18 +104,14 @@ def get_codec_choice(cap):
 		("mpeg4", "MPEG-4 (Legacy)"),
 	]
 	print()
-	print(tui.section("--- Select Output Codec ---", cap=cap))
-	for i, (cmd, desc) in enumerate(codecs, 1):
-		print("{} {} - {}".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<12}".format(cmd), bold=True, cap=cap),
-			desc))
+	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in codecs],
+				   selected=None, title="Select Output Codec", cap=cap))
 	while True:
 		choice = input(f"\nChoose (1-{len(codecs)}) [1]: ").strip()
 		if not choice: return codecs[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(codecs):
 			return codecs[int(choice)-1][0]
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 def get_resize_config(cap):
 	print()
@@ -144,12 +140,9 @@ def get_resize_config(cap):
 		("limit", "Limit (Scale proportional within bounds)")
 	]
 	print()
-	print(tui.style("Select Resize Method:", fg="warn", cap=cap))
-	for i, (cmd, desc) in enumerate(methods, 1):
-		print("{} {} - {}".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<8}".format(cmd), bold=True, cap=cap),
-			desc))
+	print(tui.section("Resize Method", cap=cap))
+	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in methods],
+				   selected=None, cap=cap))
 	
 	while True:
 		choice = input(f"\nChoose (1-{len(methods)}) [1]: ").strip()
@@ -159,15 +152,14 @@ def get_resize_config(cap):
 		if choice.isdigit() and 1 <= int(choice) <= len(methods):
 			method = methods[int(choice)-1][0]
 			break
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 	quant = 2
 	if method == "limit":
 		q_opts = [0, 2, 4, 8, 16, 32, 64]
 		print()
-		print(tui.style("Select Edge Quantization (pixels):", fg="warn", cap=cap))
-		print("{} {}".format(tui.style("Options:", fg="accent", cap=cap),
-							 ", ".join(map(str, q_opts))))
+		print(tui.section("Select Edge Quantization (pixels)", cap=cap))
+		print(tui.section("Options: " + ", ".join(map(str, q_opts)), cap=cap))
 		while True:
 			q_in = input(f"Choose quantization [2]: ").strip()
 			if not q_in:
@@ -176,13 +168,13 @@ def get_resize_config(cap):
 			if q_in.isdigit() and int(q_in) in q_opts:
 				quant = int(q_in)
 				break
-			print(tui.style("Invalid choice.", fg="error", cap=cap))
+			print(tui.status("error", "Invalid choice.", cap=cap))
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
 def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_dir="."):
 	if not check_ffmpeg():
-		print(tui.style("Error: FFmpeg not found in PATH or program directory.", fg="error", cap=cap))
+		print(tui.status("error", "FFmpeg not found in PATH or program directory.", cap=cap))
 		return
 
 	# Auto-detect resolution from the first file if no resize provided
@@ -195,16 +187,16 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 			fw = fw if fw % 2 == 0 else fw + 1
 			fh = fh if fh % 2 == 0 else fh + 1
 			resize = {"width": fw, "height": fh, "method": "fit", "quant": 2}
-			print(tui.style(f"Auto-matching resolution to first clip: {fw}x{fh}", fg="accent", cap=cap))
+			print(tui.status("info", f"Auto-matching resolution to first clip: {fw}x{fh}", cap=cap))
 		except Exception as e:
-			print(tui.style("Warning: Could not detect dimensions of first file. FFmpeg might fail if dimensions differ.", fg="warn", cap=cap))
+			print(tui.status("warn", "Could not detect dimensions of first file. FFmpeg might fail if dimensions differ.", cap=cap))
 
 	input_args = []
 	filter_complex = ""
 	any_audio = False
 	
 	print()
-	print(tui.style(f"Analyzing {len(files)} inputs in '{working_dir}'...", fg="success", cap=cap))
+	print(tui.header(f"Analyzing {len(files)} inputs in '{working_dir}'...", cap=cap))
 	
 	try:
 		for i, f in enumerate(files):
@@ -289,19 +281,19 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 		cmd.extend(["-c:v", codec, "-preset", "medium", "-pix_fmt", "yuv420p", output_path])
 
 		print()
-		print(tui.style(f"Executing FFmpeg for {output_name}...", fg="warn", cap=cap))
+		print(tui.status("info", f"Executing FFmpeg for {output_name}...", cap=cap))
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		if result.returncode != 0:
-			print(tui.style("FFmpeg Error Output:", fg="error", cap=cap) + "\n" + result.stderr)
+			print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
 			return False
 			
 		print()
-		print(tui.style(f"[Success] Joined video saved as {output_path}", fg="success", bold=True, cap=cap))
+		print(tui.status("ok", f"Joined video saved as {output_path}", cap=cap))
 		return True
 
 	except Exception as e:
 		print()
-		print(tui.style(f"An error occurred processing {working_dir}: {e}", fg="error", cap=cap))
+		print(tui.status("error", f"An error occurred processing {working_dir}: {e}", cap=cap))
 		return False
 
 def apply_loop_to_list(file_list, loop_count):
@@ -340,7 +332,7 @@ def main():
 	try:
 		from decord import VideoReader
 	except ImportError:
-		print(tui.style("Error: 'decord' library is not installed.", fg="error", cap=cap))
+		print(tui.status("error", "'decord' library is not installed.", cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install decord")
 		sys.exit(1)
 	
@@ -358,10 +350,10 @@ def main():
 	if args.dir:
 		subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
 		if not subdirs:
-			print(tui.style("Error: No subdirectories found in current directory.", fg="error", cap=cap))
+			print(tui.status("error", "No subdirectories found in current directory.", cap=cap))
 			return
 
-		print(tui.section(f"Batch processing {len(subdirs)} directories...", cap=cap))
+		print(tui.header(f"Batch processing {len(subdirs)} directories...", cap=cap))
 		for d in subdirs:
 			found = [f for f in os.listdir(d) if f.lower().endswith(filter_criteria) and os.path.isfile(os.path.join(d, f))]
 			if not found:
@@ -386,18 +378,18 @@ def main():
 	if args.all or args.ext:
 		found = [f for f in os.listdir('.') if f.lower().endswith(filter_criteria) and os.path.isfile(f)]
 		if not found:
-			print(tui.style("Error: No video files found in the current directory matching criteria.", fg="error", cap=cap))
+			print(tui.status("error", "No video files found in the current directory matching criteria.", cap=cap))
 			sys.exit(1)
 		target_files = sorted(found)
 	
 	if not target_files:
-		print(tui.style("No files provided. Provide filenames or use -a, -e, or -d.", fg="error", cap=cap))
+		print(tui.status("error", "No files provided. Provide filenames or use -a, -e, or -d.", cap=cap))
 		parser.print_help()
 		return
 
 	# Apply loop logic to final file list
 	target_files = apply_loop_to_list(target_files, args.loop)
-	print(tui.style(f"Processing {len(target_files)} segments (including loops).", fg="success", cap=cap))
+	print(tui.status("info", f"Processing {len(target_files)} segments (including loops).", cap=cap))
 
 	final_output = base_output_name if base_output_name else "joined_video.mp4"
 	if not final_output.lower().endswith((".mp4", ".mkv", ".webm", ".webp")):

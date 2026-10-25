@@ -95,18 +95,14 @@ def get_codec_choice(cap):
 		("mpeg4", "MPEG-4 (Legacy)"),
 	]
 	print()
-	print(tui.section("--- Select Output Codec ---", cap=cap))
-	for i, (cmd, desc) in enumerate(codecs, 1):
-		print("{} {} - {}".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<12}".format(cmd), bold=True, cap=cap),
-			desc))
+	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in codecs],
+				   selected=None, title="Select Output Codec", cap=cap))
 	while True:
 		choice = input(f"\nChoose (1-{len(codecs)}) [1]: ").strip()
 		if not choice: return codecs[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(codecs):
 			return codecs[int(choice)-1][0]
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 def get_curve_choice(cap):
 	curves = [
@@ -118,18 +114,14 @@ def get_curve_choice(cap):
 		("log", "Logarithmic"),
 	]
 	print()
-	print(tui.section("--- Select Fade Interpolation ---", cap=cap))
-	for i, (cmd, desc) in enumerate(curves, 1):
-		print("{} {} - {}".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<8}".format(cmd), bold=True, cap=cap),
-			desc))
+	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in curves],
+				   selected=None, title="Select Fade Interpolation", cap=cap))
 	while True:
 		choice = input(f"\nChoose (1-{len(curves)}) [1]: ").strip()
 		if not choice: return curves[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(curves):
 			return curves[int(choice)-1][0]
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 def get_resize_config(cap):
 	print()
@@ -157,12 +149,9 @@ def get_resize_config(cap):
 		("limit", "Limit (Scale proportional within bounds)")
 	]
 	print()
-	print(tui.style("Select Resize Method:", fg="warn", cap=cap))
-	for i, (cmd, desc) in enumerate(methods, 1):
-		print("{} {} - {}".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<8}".format(cmd), bold=True, cap=cap),
-			desc))
+	print(tui.section("Resize Method", cap=cap))
+	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in methods],
+				   selected=None, cap=cap))
 	
 	while True:
 		choice = input(f"\nChoose (1-{len(methods)}) [1]: ").strip()
@@ -172,15 +161,14 @@ def get_resize_config(cap):
 		if choice.isdigit() and 1 <= int(choice) <= len(methods):
 			method = methods[int(choice)-1][0]
 			break
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 	quant = 2
 	if method == "limit":
 		q_opts = [0, 2, 4, 8, 16, 32, 64]
 		print()
-		print(tui.style("Select Edge Quantization (pixels):", fg="warn", cap=cap))
-		print("{} {}".format(tui.style("Options:", fg="accent", cap=cap),
-							 ", ".join(map(str, q_opts))))
+		print(tui.section("Select Edge Quantization (pixels)", cap=cap))
+		print(tui.section("Options: " + ", ".join(map(str, q_opts)), cap=cap))
 		while True:
 			q_in = input(f"Choose quantization [2]: ").strip()
 			if not q_in:
@@ -189,13 +177,13 @@ def get_resize_config(cap):
 			if q_in.isdigit() and int(q_in) in q_opts:
 				quant = int(q_in)
 				break
-			print(tui.style("Invalid choice.", fg="error", cap=cap))
+			print(tui.status("error", "Invalid choice.", cap=cap))
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
 def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap):
 	if not check_ffmpeg():
-		print(tui.style("Error: FFmpeg not found.", fg="error", cap=cap))
+		print(tui.status("error", "FFmpeg not found.", cap=cap))
 		return
 
 	base, ext = os.path.splitext(file_path)
@@ -209,13 +197,13 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		audio_present = has_audio(file_path)
 
 		if fade_dur >= duration / 2:
-			print(tui.style(f"Warning: Fade duration is very long for {os.path.basename(file_path)}. Reducing overlap.", fg="warn", cap=cap))
+			print(tui.status("warn", f"Fade duration is very long for {os.path.basename(file_path)}. Reducing overlap.", cap=cap))
 			fade_dur = duration / 4
 
 		loop_duration = duration - fade_dur
 		shift_time = (shift_offset % 1.0) * loop_duration
 
-		print(tui.style(f"Processing: {os.path.basename(file_path)}...", fg="warn", cap=cap))
+		print(tui.status("info", f"Processing: {os.path.basename(file_path)}...", cap=cap))
 		
 		# Build Resizing Filter
 		res_filter = ""
@@ -294,14 +282,14 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		
 		if result.returncode != 0:
 			if "Option 'curve' not found" in result.stderr or "Error applying option 'curve'" in result.stderr:
-				print(tui.style(f"Curve '{curve}' not supported. Retrying with linear...", fg="warn", cap=cap))
+				print(tui.status("warn", f"Curve '{curve}' not supported. Retrying with linear...", cap=cap))
 				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False, resize_config, cap)
-			print(tui.style("FFmpeg Error Output:", fg="error", cap=cap) + "\n" + result.stderr)
+			print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
 		else:
-			print(tui.style(f"[Success] Loop saved as {output_name}", fg="success", cap=cap))
+			print(tui.status("ok", f"Loop saved as {output_name}", cap=cap))
 
 	except Exception as e:
-		print(tui.style(f"Error processing {file_path}: {e}", fg="error", cap=cap))
+		print(tui.status("error", f"Processing {file_path}: {e}", cap=cap))
 
 def main():
 	tui.init_ansi()
@@ -325,7 +313,7 @@ def main():
 	try:
 		from decord import VideoReader
 	except ImportError:
-		print(tui.style("Error: 'decord' library is not installed.", fg="error", cap=cap))
+		print(tui.status("error", "'decord' library is not installed.", cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install decord")
 		sys.exit(1)
 	
@@ -344,7 +332,7 @@ def main():
 		files = [os.path.join(target, f) for f in os.listdir(target) if f.lower().endswith(filter_criteria)]
 	
 	if not files:
-		print(tui.style("No video files found matching criteria.", fg="error", cap=cap))
+		print(tui.status("error", "No video files found matching criteria.", cap=cap))
 		return
 
 	v_major, v_minor = get_ffmpeg_version()
@@ -355,11 +343,12 @@ def main():
 	resize_config = get_resize_config(cap) if args.resize else None
 
 	print()
-	print(tui.key_values("--- LOOP SETTINGS ---", [
-		("Fade Time", f"{args.fade}s"),
-		("Shift", f"{args.shift*100:.0f}%"),
-		("Curve", selected_curve),
-	], cap=cap))
+	print(tui.header("LOOP SETTINGS", cap=cap))
+	for key, value in (
+			("Fade Time", f"{args.fade}s"),
+			("Shift", f"{args.shift*100:.0f}%"),
+			("Curve", selected_curve)):
+		print(tui.field(key, value, width=10, cap=cap))
 	print()
 
 	for f in sorted(files):
