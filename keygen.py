@@ -71,6 +71,23 @@ def glyphs(cap):
 	return tui.table.glyphs_for(cap)
 
 
+def marker_for(stream, cap):
+	"""Picker pointer, but only when the target stream can encode it.
+
+	`cap.unicode` only proves the *box* glyphs encode; a legacy codepage
+	(cp437, cp850) draws boxes and still cannot take U+25B6, so writing it
+	unconditionally would raise `UnicodeEncodeError` mid-picker.
+	"""
+	if not cap.unicode:
+		return ">"
+	encoding = getattr(stream, "encoding", None) or "ascii"
+	try:
+		"\u25b6".encode(encoding)
+	except (LookupError, UnicodeEncodeError):
+		return ">"
+	return "\u25b6"
+
+
 def border(text, cap):
 	"""Border-coloured span; the palette owns the colour, not this module."""
 	return tui.style(text, fg="border", cap=cap)
@@ -84,7 +101,7 @@ def draw_banner(stream, cap):
 def choose_algorithm(stream, cap, selected_idx):
 	"""Render the algorithm picker and return the chosen index, or None if cancelled."""
 	box = glyphs(cap)
-	marker = "\u25b6" if cap.unicode else ">"
+	marker = marker_for(stream, cap)
 	while True:
 		stream.write(tui.screen.CLEAR_HOME)
 		draw_banner(stream, cap)
