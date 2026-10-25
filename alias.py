@@ -23,6 +23,8 @@ import os
 import sys
 import stat
 
+import tui
+
 # Blacklist of reserved system commands to prevent breaking shell functionality
 FORBIDDEN_NAMES = {
 	# Shell built-ins & navigation
@@ -39,7 +41,7 @@ FORBIDDEN_NAMES = {
 	"catro-scripts"
 }
 
-def create_alias(alias_name):
+def create_alias(alias_name, cap):
 	# Get the directory where this script is located
 	script_dir = os.path.dirname(os.path.abspath(__file__))
 	
@@ -79,7 +81,8 @@ def create_alias(alias_name):
 		# so the CRLF above survives verbatim.
 		with open(bat_path, "w", newline="", encoding="utf-8") as f:
 			f.write(bat_content)
-		print(f"[Success] Created Windows alias: {bat_path}")
+		print(tui.style(f"[Success] Created Windows alias: {bat_path}",
+						fg="success", cap=cap))
 
 		# Create Unix .sh. newline="" keeps the LF endings verbatim.
 		with open(sh_path, "w", newline="", encoding="utf-8") as f:
@@ -88,12 +91,18 @@ def create_alias(alias_name):
 		# Make the .sh file executable
 		st = os.stat(sh_path)
 		os.chmod(sh_path, st.st_mode | stat.S_IEXEC)
-		print(f"[Success] Created Unix alias: {sh_path}")
+		print(tui.style(f"[Success] Created Unix alias: {sh_path}",
+						fg="success", cap=cap))
 
 	except Exception as e:
-		print(f"[Error] Failed to create alias files: {e}")
+		print(tui.style(f"[Error] Failed to create alias files: {e}",
+						fg="error", cap=cap), file=sys.stderr)
 
 def main():
+	# One capability record for the run: colour level, glyphs and pipe mode.
+	tui.init_ansi()
+	cap = tui.detect()
+
 	# Strict check for exactly one argument (script name + 1 arg)
 	if len(sys.argv) != 2:
 		print("Usage: python alias.py <alias_name>")
@@ -104,15 +113,17 @@ def main():
 	# Validation for filename characters based on user requirements
 	invalid_chars = '<>:"/\\|?*_.~[](){}` '
 	if any(char in alias_name for char in invalid_chars):
-		print(f"[Error] Invalid alias name (illegal characters): {alias_name}")
+		print(tui.style(f"[Error] Invalid alias name (illegal characters): {alias_name}",
+						fg="error", cap=cap), file=sys.stderr)
 		sys.exit(1)
 
 	# Validate against forbidden system names
 	if alias_name in FORBIDDEN_NAMES:
-		print(f"[Error] '{alias_name}' is a reserved command and cannot be used.")
+		print(tui.style(f"[Error] '{alias_name}' is a reserved command and cannot be used.",
+						fg="error", cap=cap), file=sys.stderr)
 		sys.exit(1)
 
-	create_alias(alias_name)
+	create_alias(alias_name, cap)
 
 if __name__ == "__main__":
 	main()
