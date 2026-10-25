@@ -42,8 +42,8 @@ def copy_exif(source_path, target_path, cap=None):
 	try:
 		import piexif
 	except ImportError:
-		print(tui.style("Error: 'piexif' library is not installed.",
-						fg="error", cap=cap))
+		print(tui.status("error", "Error: 'piexif' library is not installed.",
+						 cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install piexif")
 		sys.exit(1)
 
@@ -52,13 +52,13 @@ def copy_exif(source_path, target_path, cap=None):
 	abs_target = os.path.abspath(target_path)
 
 	if not os.path.exists(abs_source):
-		print(tui.style(f"Error: Source file '{abs_source}' does not exist.",
-						fg="error", cap=cap))
+		print(tui.status("error", f"Error: Source file '{abs_source}' does not exist.",
+						 cap=cap))
 		sys.exit(1)
 
 	if not os.path.exists(abs_target):
-		print(tui.style(f"Error: Target file '{abs_target}' does not exist.",
-						fg="error", cap=cap))
+		print(tui.status("error", f"Error: Target file '{abs_target}' does not exist.",
+						 cap=cap))
 		sys.exit(1)
 
 	try:
@@ -76,7 +76,7 @@ def copy_exif(source_path, target_path, cap=None):
 							 cap=cap))
 
 	except Exception as e:
-		print(tui.style(f"An error occurred: {e}", fg="error", cap=cap),
+		print(tui.status("error", f"An error occurred: {e}", cap=cap),
 			  file=sys.stderr)
 		sys.exit(1)
 
