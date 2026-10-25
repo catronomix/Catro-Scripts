@@ -105,7 +105,7 @@ def create_item(path, is_dir=False, cap=None):
 	"""Helper to create a single file or directory."""
 	cap = cap or tui.detect()
 	if not is_valid_name(path):
-		print(tui.style(f"[Error] Invalid path: {path}", fg="error", cap=cap),
+		print(tui.status("error", f"Invalid path: {path}", cap=cap),
 			  file=sys.stderr)
 		return False
 	try:
@@ -114,7 +114,7 @@ def create_item(path, is_dir=False, cap=None):
 				# Gracefully treat existing directory as if it were just created
 				return True
 			os.makedirs(path, exist_ok=True)
-			print(tui.style(f"[Created] Directory: {path}", fg="success", cap=cap))
+			print(tui.status("ok", f"Created Directory: {path}", cap=cap))
 		else:
 			if os.path.exists(path):
 				# Explicitly skip existing files
@@ -126,10 +126,10 @@ def create_item(path, is_dir=False, cap=None):
 			
 			with open(path, 'a', encoding="utf-8"):
 				os.utime(path, None)
-			print(tui.style(f"[Created] File: {path}", fg="success", cap=cap))
+			print(tui.status("ok", f"Created File: {path}", cap=cap))
 		return True
 	except Exception as e:
-		print(tui.style(f"[Error] Failed to create {path}: {e}", fg="error", cap=cap),
+		print(tui.status("error", f"Failed to create {path}: {e}", cap=cap),
 			  file=sys.stderr)
 		return False
 
@@ -138,7 +138,8 @@ def main():
 	cap = tui.detect()
 
 	if len(sys.argv) < 2:
-		print("Usage: python newfile.py [-d dirs...] [-sd subdirs...] [-f files...]")
+		print(tui.status("error", "Usage: python newfile.py [-d dirs...] [-sd subdirs...] [-f files...]",
+						 cap=cap))
 		return
 
 	# Manual parsing to maintain order of operations
@@ -189,7 +190,7 @@ def main():
 					create_item(path, is_dir=False, cap=cap)
 			# Files do not change the directory context for subsequent flags
 		else:
-			print(tui.style(f"[Warning] Unknown flag: {flag}", fg="warn", cap=cap))
+			print(tui.status("warn", f"Unknown flag: {flag}", cap=cap))
 
 if __name__ == "__main__":
 	main()

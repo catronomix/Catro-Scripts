@@ -32,14 +32,14 @@ import tui
 
 
 def print_step(message, cap=None):
-    """One progress line: the `>>` marker carries the accent colour."""
-    print("{} {}".format(tui.style(">>", fg="accent", bold=True, cap=cap), message))
+    """One progress line through the shared `[info]` status kind."""
+    print(tui.status("info", message, cap=cap))
 
 def print_success(message, cap=None):
-    print("{} {}".format(tui.style("✓", fg="success", bold=True, cap=cap), message))
+    print(tui.status("ok", message, cap=cap))
 
 def print_error(message, cap=None):
-    print("{} {}".format(tui.style("Error:", fg="error", bold=True, cap=cap), message))
+    print(tui.status("error", message, cap=cap))
 
 def remove_readonly(func, path, excinfo):
     """
@@ -84,7 +84,7 @@ def main():
     cap = tui.detect()
 
     print()
-    print(tui.section("--- TypeScript Project Export ---", cap=cap))
+    print(tui.header("TypeScript Project Export", cap=cap))
     print()
 
     # 1. Validation
@@ -173,9 +173,9 @@ def main():
         print_success("Processed index.html for local loading.", cap)
 
     print()
-    print(tui.style("✨ Export Complete!", fg="success", bold=True, cap=cap))
-    print("You can now open {} directly in your browser.".format(
-        tui.style("'{}/index.html'".format(export_dir), fg="warn", cap=cap)))
+    print(tui.status("ok", "✨ Export Complete!", cap=cap))
+    print(tui.status("info", "You can now open '{}/index.html' directly in your browser.".format(
+        export_dir), cap=cap))
 
 if __name__ == "__main__":
     tui.init_ansi()
