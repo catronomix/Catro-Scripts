@@ -7,6 +7,10 @@ Two stages, both non-interactive and bounded:
    same manifest as `.devteam/artifacts/sweep-crossplatform`), each in its own
    temp cwd so the image is never mutated and nothing leaks into the repo.
 
+Classification runs the accepted outcomes (USAGE, DEP, PASS:tty-guard) before
+the blanket `rc == 0` rule, and a run that exits 0 after printing an error line
+is `FAIL:silent`, never PASS: an exit status alone is not evidence of success.
+
 Output contract for tests/container/run.py:
   stderr -> human-readable summary
   stdout -> one line `###JSON###` followed by a JSON document
@@ -30,6 +34,11 @@ JSON_MARK = "###JSON###"
 # Outcomes accepted for a probe: a working path, a documented dependency gap,
 # or the tty preflight refusing to run without a terminal.
 OK_LABELS = {"PASS", "USAGE", "PASS:tty-guard", "DEP", "SKIP"}
+
+# An rc=0 run that still printed an error marker is a silent failure: the
+# script reported a problem and told the caller nothing through its exit status.
+SILENT_ERROR = re.compile(r"^(?:error:)|an error occurred|\[error\]",
+                          re.IGNORECASE | re.MULTILINE)
 
 
 def kill(proc):
@@ -75,18 +84,21 @@ def classify(result):
         return "FAIL:encoding"
     if "Traceback (most recent call last)" in err:
         return "FAIL:crash"
-    if result.get("rc") == 0 and "Error scanning directory" in text:
-        return "FAIL:silent"
-    if result.get("rc") == 0:
-        return "PASS"
+    # Accepted non-pass outcomes are decided before the blanket rc==0 rule, so
+    # a script that prints usage or a dependency message and exits 0 still lands
+    # on USAGE/DEP instead of PASS.
     if result.get("rc") == 2 and "interactive terminal" in text:
         return "PASS:tty-guard"
-    if "python3: command not found" in err or "No such file or directory" in err:
-        return "FAIL:no-python3"
     if "Usage:" in text or "usage:" in text:
         return "USAGE"
     if "not installed" in text:
         return "DEP"
+    if result.get("rc") == 0 and SILENT_ERROR.search(text):
+        return "FAIL:silent"
+    if result.get("rc") == 0:
+        return "PASS"
+    if "python3: command not found" in err or "No such file or directory" in err:
+        return "FAIL:no-python3"
     return "rc{}".format(result.get("rc"))
 
 

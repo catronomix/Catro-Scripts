@@ -136,6 +136,9 @@ def interactive_codec_menu():
 def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=None):
 	"""
 	Splits a single multi-channel audio file into individual mono tracks.
+
+	Returns True when the file was processed (or legitimately skipped), False
+	when an error was reported, so main() can exit non-zero.
 	"""
 	abs_path = os.path.abspath(file_path)
 	filename = os.path.basename(abs_path)
@@ -147,7 +150,7 @@ def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=N
 		channel_count = audio.channels
 		if channel_count <= 1:
 			print(f"File only has {channel_count} channel. Skipping.")
-			return
+			return True
 
 		print(f"Detected {channel_count} channels. Splitting...")
 
@@ -179,6 +182,9 @@ def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=N
 
 	except Exception as e:
 		print(f"{CLR_RED}An error occurred with '{filename}': {e}{CLR_RESET}")
+		return False
+
+	return True
 
 def main():
 	init_ansi()
@@ -210,7 +216,7 @@ def main():
 	if not check_ffmpeg():
 		print(f"\n{CLR_ORANGE}FFmpeg is missing or not found.{CLR_RESET}")
 		print("Pydub requires FFmpeg for audio processing. Place it in the script folder or add to PATH.")
-		return
+		sys.exit(1)
 
 	# Handle configuration selection
 	out_ext, out_codec = (None, None)
@@ -238,14 +244,20 @@ def main():
 
 	if not files_to_process:
 		print("No matching files found.")
-		return
+		sys.exit(1)
 
 	print(f"Targeting {len(files_to_process)} files.")
-	
+
+	failures = 0
 	for file in files_to_process:
-		split_audio_file(file, args.directory, out_ext, out_codec)
+		if not split_audio_file(file, args.directory, out_ext, out_codec):
+			failures += 1
 
 	print(f"\n{CLR_BLUE}Processing complete.{CLR_RESET}")
+	# Any per-file error makes the whole run a failure even though processing
+	# continued to the next file.
+	if failures:
+		sys.exit(1)
 
 if __name__ == "__main__":
 	main()
