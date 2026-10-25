@@ -10,12 +10,15 @@ Usage:
     catro-scripts mdreader [filename.md]
 
 Features:
-    - Markdown rendering powered by 'rich' with custom palettes & table boxes.
+    - Markdown rendering powered by 'rich' with the shared tui palettes and
+      table boxes: soft (mode 0), contrast light (mode 1), contrast dark (2).
     - Pinned 2-line bottom menu and status bar with page percentage.
     - Full scrolling support (Up/Down, PgUp/PgDn, Home/End, Left/Right file navigation).
-    - Viewport border toggle [H] and Contrast theme modes [C].
+    - Viewport border toggle [H] and theme cycling [C].
     - Displays raw URLs for links.
     - Aligned table rendering.
+    - Needs an interactive terminal: a pipe is refused with the tui contract's
+      one-line message and exit 2, before curses starts.
 
 Requirements:
     - python libraries rich, curses
@@ -473,7 +476,7 @@ def initial_theme_mode():
         return 0
 
 
-def render_reader(stdscr, filepath, raw_content):
+def render_reader(stdscr, filepath, raw_content, cap=None):
     """Main TUI loop handling viewport rendering, input events, file switching, and status bar."""
     curses.use_default_colors()
     curses.curs_set(0)
@@ -483,7 +486,7 @@ def render_reader(stdscr, filepath, raw_content):
     theme_mode = initial_theme_mode()
     theme_names = [name.replace("-", " ") for name in THEME_MODES]
 
-    init_theme_colors(theme_mode)
+    init_theme_colors(theme_mode, cap)
     stdscr.bkgd(" ", curses.color_pair(1))
 
     scroll_top = 0
@@ -631,7 +634,7 @@ def render_reader(stdscr, filepath, raw_content):
             stdscr.clear()
         elif key in (ord("c"), ord("C")):
             theme_mode = (theme_mode + 1) % len(THEME_MODES)
-            init_theme_colors(theme_mode)
+            init_theme_colors(theme_mode, cap)
             stdscr.bkgd(" ", curses.color_pair(1))
             stdscr.clear()
         elif key in (ord("["), ord("a"), ord("A"), curses.KEY_SLEFT):
@@ -686,15 +689,6 @@ def render_reader(stdscr, filepath, raw_content):
             stdscr.clear()
 
 
-def require_tty():
-    """Refuse to run when stdin/stdout is redirected: curses needs a terminal."""
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        return
-    sys.stderr.write("[Error] mdreader needs an interactive terminal "
-                     "(stdin/stdout is not a tty).\n")
-    raise SystemExit(2)
-
-
 def missing_dependencies():
     """Returns one install hint per unavailable library (empty when ready)."""
     hints = []
@@ -724,7 +718,11 @@ def main():
     )
     args = parser.parse_args()
 
-    require_tty()
+    # tui owns the refusal: one stderr line with the contract's wording, exit 2,
+    # and it runs before curses (or a file is even opened). The capability
+    # snapshot is taken once per run and carried into the renderer.
+    tui.require_tty("mdreader")
+    cap = tui.detect()
 
     # mdreader never installs anything itself; it only reports what is missing.
     hints = missing_dependencies()
@@ -758,7 +756,7 @@ def main():
         raise SystemExit(1)
 
     try:
-        curses.wrapper(render_reader, filepath, raw_content)
+        curses.wrapper(render_reader, filepath, raw_content, cap)
     except KeyboardInterrupt:
         pass  # Ctrl-C quits cleanly with status 0, like 'q'.
     except Exception as e:

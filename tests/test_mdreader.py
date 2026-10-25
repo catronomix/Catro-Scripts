@@ -48,6 +48,7 @@ class _FakeCurses:
 
     COLORS = 8
     error = _FakeCursesError
+    COLOR_DEFAULT = -1
 
     COLOR_BLACK = 0
     COLOR_RED = 1
@@ -71,6 +72,9 @@ class _FakeCurses:
         raise _FakeCursesError("terminal cannot change colours")
 
     def init_pair(self, pair, fg, bg):
+        if fg == self.COLOR_DEFAULT and bg == self.COLOR_DEFAULT:
+            self.pairs.append((pair, fg, bg))
+            return
         if not 0 <= fg <= self.COLORS - 1 or not 0 <= bg <= self.COLORS - 1:
             raise _FakeCursesError(
                 f"Color number is greater than COLORS-1 ({self.COLORS - 1})"
@@ -107,7 +111,37 @@ class MdreaderPreflightTests(unittest.TestCase):
         proc = run_script()
         self.assertEqual(proc.returncode, 2)
         self.assertEqual(proc.stdout, b"")
-        self.assertIn(b"interactive terminal", proc.stderr)
+        self.assertEqual(
+            proc.stderr.decode("utf-8", "replace").replace("\r\n", "\n"),
+            "[Error] mdreader needs an interactive terminal "
+            "(stdin/stdout is not a tty).\n",
+        )
+
+    def test_markdown_file_on_a_pipe_is_refused_before_reading(self):
+        """Non-tty is one contract line + exit 2, not a plain render."""
+        proc = run_script("README.md")
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(proc.stdout, b"")
+        self.assertEqual(
+            proc.stderr.decode("utf-8", "replace").replace("\r\n", "\n"),
+            "[Error] mdreader needs an interactive terminal "
+            "(stdin/stdout is not a tty).\n",
+        )
+
+    def test_no_color_falls_back_to_terminal_defaults(self):
+        """cap.level "none" keeps the layout and drops every colour."""
+        fake = _FakeCurses()
+        cap = mdreader.tui.caps.Capabilities(
+            level="none", unicode=True, width=80, isatty=True,
+            plain=False, reason="NO_COLOR",
+        )
+        with mock.patch.object(mdreader, "curses", fake):
+            mdreader.init_theme_colors(0, cap)
+        self.assertEqual(
+            fake.pairs,
+            [(pair, fake.COLOR_DEFAULT, fake.COLOR_DEFAULT)
+             for pair, _fg, _bg in mdreader.PAIR_ROLES],
+        )
 
     def test_palette_survives_eight_colours(self):
         fake = _FakeCurses()
@@ -251,7 +285,7 @@ class MdreaderPreflightTests(unittest.TestCase):
     def test_missing_dependency_reports_hint(self):
         with mock.patch.object(mdreader, "curses", None), mock.patch.object(
             mdreader, "Theme", None
-        ), mock.patch.object(mdreader, "require_tty"), mock.patch.object(
+        ), mock.patch.object(mdreader.tui, "require_tty"), mock.patch.object(
             sys, "argv", ["mdreader.py"]
         ), mock.patch(
             "sys.stderr", new_callable=io.StringIO
@@ -268,7 +302,7 @@ class MdreaderPreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             doc = Path(tmp) / "doc.md"
             doc.write_text("# hello\n", encoding="utf-8")
-            with mock.patch.object(mdreader, "require_tty"), mock.patch.object(
+            with mock.patch.object(mdreader.tui, "require_tty"), mock.patch.object(
                 mdreader, "missing_dependencies", return_value=[]
             ), mock.patch.object(
                 mdreader.curses, "wrapper", side_effect=RuntimeError("boom")
@@ -289,7 +323,7 @@ class MdreaderPreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             doc = Path(tmp) / "doc.md"
             doc.write_text("# hello\n", encoding="utf-8")
-            with mock.patch.object(mdreader, "require_tty"), mock.patch.object(
+            with mock.patch.object(mdreader.tui, "require_tty"), mock.patch.object(
                 mdreader, "missing_dependencies", return_value=[]
             ), mock.patch.object(
                 mdreader.curses, "wrapper", side_effect=KeyboardInterrupt
