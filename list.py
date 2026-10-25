@@ -10,7 +10,7 @@ piped.
 Features:
 	- Automatically extracts descriptions from scripts.
 	- Human-readable file sizes.
-	- Alternating row backgrounds (Black/Dark Grey) with Light Blue text.
+	- Alternating row backgrounds (velvet purple / slate purple) with lavender text.
 	- Full box-drawing border and fixed 4/25/10/50 column widths.
 	- Plain TAB-separated output when stdout is not a terminal.
 

@@ -3,7 +3,7 @@
 		TABLE BYTES AND LAYOUT
 		=======================
 Pins the two output modes: the styled Unicode box at a terminal (byte-identical
-dark@true escapes to what `list.py` emits) and TAB-separated plain records for
+soft@true escapes to what `list.py` emits) and TAB-separated plain records for
 pipes. Also covers the ASCII fallback, wide characters, truncation, ragged rows
 and the smaller block helpers.
 """
@@ -23,13 +23,13 @@ if str(REPO) not in sys.path:
 from tui import caps, palette, table  # noqa: E402  (import after sys.path setup)
 from tui.text import display_width  # noqa: E402
 
-# The escape codes the pre-migration `list.py` `Colors` class emitted. They are
-# pinned literally: `list.py` itself renders through `tui` now, so scraping its
-# source would only ever prove that the library agrees with itself.
-PURPLE = "\033[38;2;170;0;255m"
-LIGHT_BLUE = "\033[38;2;173;216;230m"
-BG_BLACK = "\033[48;2;0;0;0m"
-BG_GREY = "\033[48;2;45;45;45m"
+# soft's truecolor codes, pinned literally: `list.py` itself renders through
+# `tui` now, so scraping its source would only ever prove that the library
+# agrees with itself.
+BORDER = "\033[38;2;163;146;192m"
+FG = "\033[38;2;212;200;235m"
+BG = "\033[48;2;27;23;38m"
+SURFACE = "\033[48;2;41;34;56m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -116,35 +116,35 @@ class NoColorLayoutTests(unittest.TestCase):
 
 
 class GoldenBytesTests(unittest.TestCase):
-	"""Rebuild the pre-migration list.py row bytes from the tui primitives."""
+	"""Rebuild soft's list.py row bytes from the tui primitives."""
 
-	def test_border_row_is_one_purple_run(self):
-		out = table.render_table(["A"], [["b"]], cap=TRUE, theme="dark")
+	def test_border_row_is_one_border_run(self):
+		out = table.render_table(["A"], [["b"]], cap=TRUE, theme="soft")
 		border = out.split("\n")[0]
-		self.assertEqual(border, PURPLE + "\u250c" + "\u2500" * 6 + "\u2510" + RESET)
+		self.assertEqual(border, BORDER + "\u250c" + "\u2500" * 6 + "\u2510" + RESET)
 
 	def test_header_row_matches_list_py(self):
-		out = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE, theme="dark")
+		out = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE, theme="soft")
 		header = out.split("\n")[1]
 		# Border colour, leading border, then bold: one span, one reset.
-		expected = PURPLE + "\u2502" + BOLD + " A    \u2502 B    \u2502" + RESET
+		expected = BORDER + "\u2502" + BOLD + " A    \u2502 B    \u2502" + RESET
 		self.assertEqual(header, expected)
 
 	def test_zebra_rows_match_list_py(self):
 		out = table.render_table(["A", "B"], [["x", "y"], ["z", "w"]],
-								 cap=TRUE, theme="dark")
+								 cap=TRUE, theme="soft")
 
 		def expected(first, second, background):
-			cell = LIGHT_BLUE + background
+			cell = FG + background
 			return "".join([
-				PURPLE, "\u2502", cell, " " + first.ljust(4) + " ",
-				PURPLE, "\u2502", cell, " " + second.ljust(4) + " ",
-				RESET, PURPLE, "\u2502", RESET,
+				BORDER, "\u2502", cell, " " + first.ljust(4) + " ",
+				BORDER, "\u2502", cell, " " + second.ljust(4) + " ",
+				RESET, BORDER, "\u2502", RESET,
 			])
 
 		lines = out.split("\n")
-		self.assertEqual(lines[3], expected("x", "y", BG_BLACK))
-		self.assertEqual(lines[4], expected("z", "w", BG_GREY))
+		self.assertEqual(lines[3], expected("x", "y", BG))
+		self.assertEqual(lines[4], expected("z", "w", SURFACE))
 
 	def test_data_row_has_two_resets_only(self):
 		row = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE).split("\n")[3]
@@ -152,8 +152,8 @@ class GoldenBytesTests(unittest.TestCase):
 
 	def test_divider_and_bottom_use_the_border_colour(self):
 		lines = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE).split("\n")
-		self.assertTrue(lines[2].startswith(PURPLE + "\u251c"))
-		self.assertTrue(lines[-1].startswith(PURPLE + "\u2514"))
+		self.assertTrue(lines[2].startswith(BORDER + "\u251c"))
+		self.assertTrue(lines[-1].startswith(BORDER + "\u2514"))
 		self.assertIn("\u253c", lines[2])
 		self.assertIn("\u2534", lines[-1])
 
@@ -173,7 +173,7 @@ class ForcedWidthTests(unittest.TestCase):
 		cap = caps.Capabilities(level="true", unicode=True, width=20,
 								isatty=True, plain=False, reason="test")
 		out = table.render_table(["A", "B"], [["x", "y"]], widths=[10, 10],
-								 cap=cap, theme="dark")
+								 cap=cap, theme="soft")
 		self.assertEqual(len(re.sub(r"\x1b\[[0-9;]*m", "", out.split("\n")[0])),
 						 10 + 10 + 3 * 2 + 1)
 
@@ -197,7 +197,7 @@ class LayoutTests(unittest.TestCase):
 			self.assertNotIn(glyph, out)
 
 	def test_wide_characters_get_two_cells(self):
-		out = table.render_table(["名前"], [["日本"]], cap=TRUE, theme="dark")
+		out = table.render_table(["名前"], [["日本"]], cap=TRUE, theme="soft")
 		lines = out.split("\n")
 		widths = {display_width(re.sub(r"\x1b\[[0-9;]*m", "", line)) for line in lines}
 		self.assertEqual(len(widths), 1)
@@ -207,7 +207,7 @@ class LayoutTests(unittest.TestCase):
 		cap = caps.Capabilities(level="true", unicode=True, width=30,
 								isatty=True, plain=False, reason="test")
 		rows = [("short", "d" * 200)]
-		out = table.render_table(["a", "b"], rows, cap=cap, theme="dark")
+		out = table.render_table(["a", "b"], rows, cap=cap, theme="soft")
 		plain_lines = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in out.split("\n")]
 		for line in plain_lines:
 			self.assertLessEqual(display_width(line), 30, line)
@@ -228,7 +228,7 @@ class LayoutTests(unittest.TestCase):
 		self.assertEqual(table.render_table([], [], cap=TRUE), "")
 
 	def test_borderless_variant_aligns_columns(self):
-		out = table.render_table(["A", "BB"], [["x", "y"]], box=False, cap=TRUE, theme="dark")
+		out = table.render_table(["A", "BB"], [["x", "y"]], box=False, cap=TRUE, theme="soft")
 		self.assertNotIn("\u2502", out)
 		self.assertIn("x", out)
 
@@ -256,26 +256,26 @@ class BlockTests(unittest.TestCase):
 						 "Title\na\t1\nbb\t2")
 
 	def test_key_values_aligned(self):
-		out = table.key_values("T", [("a", 1), ("bbb", 2)], cap=TRUE, theme="dark")
+		out = table.key_values("T", [("a", 1), ("bbb", 2)], cap=TRUE, theme="soft")
 		lines = out.split("\n")
 		self.assertEqual(len(lines), 3)
 		plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
 		self.assertEqual(plain[1].index("1"), plain[2].index("2"))
 
 	def test_banner_is_a_box_when_styled(self):
-		out = table.banner("TITLE", cap=TRUE, theme="dark")
+		out = table.banner("TITLE", cap=TRUE, theme="soft")
 		self.assertEqual(len(out.split("\n")), 3)
 		self.assertIn("TITLE", out)
 		self.assertIn("\u250c", out)
-		self.assertIn(PURPLE, out)
+		self.assertIn(BORDER, out)
 
 	def test_banner_plain_is_the_title(self):
 		self.assertEqual(table.banner("TITLE", cap=PIPE), "TITLE")
 
 	def test_section_plain_and_styled(self):
 		self.assertEqual(table.section("Part", cap=PIPE), "Part")
-		self.assertIn(palette.style("Part", fg="header", bold=True, cap=TRUE, theme="dark"),
-					  table.section("Part", cap=TRUE, theme="dark"))
+		self.assertIn(palette.style("Part", fg="header", bold=True, cap=TRUE, theme="soft"),
+					  table.section("Part", cap=TRUE, theme="soft"))
 
 if __name__ == "__main__":
 	unittest.main()

@@ -3,15 +3,19 @@
 			COLOR PALETTES AND STYLING
 			===========================
 Three hand-authored palettes with identical semantic keys, none derived from
-another (no inversion, no hue rotation). DARK reproduces the bytes the old
-per-script `Colors` class emitted at truecolor; LIGHT and HIGH_CONTRAST are
-adapted from the palettes `mdreader.py` already ships (mode 1, "High Contrast
-Light", and mode 2, "High Contrast Dark"), so the reader and the scripts agree.
+another (no inversion, no hue rotation). SOFT is the default: `mdreader` mode 0,
+"Cozy Purple", with `muted`/`border` nudged from #9381B0 to #A392C0 so every
+foreground clears the WCAG AA gate on both backgrounds. CONTRAST_LIGHT and
+CONTRAST_DARK are `mdreader` modes 1 and 2, so the reader and the scripts agree.
+
+The default is deliberately not the old per-script `Colors` identity (#AA00FF
+on #000000): that palette is gone, and `dark` survives only as an alias input
+for configs written before the theme set changed. The checked-in golden fixture
+pins `soft`'s own bytes, not an equivalence claim against the old renderer.
 
 `style()` is the only place that emits SGR codes. Its emission order is pinned:
-foreground, background, attributes, text, reset. Dark at level "true" therefore
-reproduces `list.py` exactly, and every downgrade (256, 16, none) is
-deterministic: the same hex always resolves to the same code.
+foreground, background, attributes, text, reset. Every downgrade (256, 16, none)
+is deterministic: the same hex always resolves to the same code.
 
 `prefix()` is the same codes without the text and without the reset. It exists
 for callers that must re-assert a style between cells without paying a reset -
@@ -23,21 +27,24 @@ import os
 
 from . import caps, config
 
-DARK = {
-	"bg": "#000000",
-	"surface": "#2D2D2D",
-	"fg": "#ADD8E6",
-	"muted": "#7F8C99",
-	"accent": "#AA00FF",
-	"success": "#50C878",
-	"warn": "#F5CD68",
-	"error": "#FF5F5F",
-	"border": "#AA00FF",
-	"header": "#AA00FF",
-	"zebra_bg": "#2D2D2D",
+# The default: mdreader mode 0, "Cozy Purple". `muted`/`border` sit at #A392C0
+# (not the reader's #9381B0) so both clear 4.5:1 on the zebra row.
+SOFT = {
+	"bg": "#1B1726",
+	"surface": "#292238",
+	"fg": "#D4C8EB",
+	"muted": "#A392C0",
+	"accent": "#F5CD68",
+	"success": "#7FD1A0",
+	"warn": "#E09F67",
+	"error": "#FF6B6B",
+	"border": "#A392C0",
+	"header": "#F5CD68",
+	"zebra_bg": "#352B49",
 }
 
-LIGHT = {
+# mdreader mode 1, "High Contrast Light".
+CONTRAST_LIGHT = {
 	"bg": "#FFFFFF",
 	"surface": "#E8F4F8",
 	"fg": "#000000",
@@ -51,9 +58,9 @@ LIGHT = {
 	"zebra_bg": "#E8F4F8",
 }
 
-# Accessibility theme, not a fallback: selectable like the others, never chosen
-# automatically. Exact contract values, adapted from mdreader mode 2.
-HIGH_CONTRAST = {
+# mdreader mode 2, "High Contrast Dark". Selectable like the others, never
+# chosen automatically.
+CONTRAST_DARK = {
 	"bg": "#000000",
 	"surface": "#0A0A0A",
 	"fg": "#FFFFFF",
@@ -67,17 +74,30 @@ HIGH_CONTRAST = {
 	"zebra_bg": "#1A1A1A",
 }
 
-THEMES = {"dark": DARK, "light": LIGHT, "high-contrast": HIGH_CONTRAST}
+THEMES = {
+	"soft": SOFT,
+	"contrast-light": CONTRAST_LIGHT,
+	"contrast-dark": CONTRAST_DARK,
+}
 
-# Every accepted spelling of a theme name. `theme()` and the `theme` command
-# both go through this one table, so aliases cannot drift apart.
+# Every accepted spelling, folded by `fold()` before lookup. Only the three
+# names in THEMES are real palettes; the rest are inputs, including the legacy
+# names older configs wrote (`dark` was the old default, not a theme now).
 THEME_ALIASES = {
-	"dark": "dark",
-	"light": "light",
-	"high-contrast": "high-contrast",
-	"highcontrast": "high-contrast",
-	"high_contrast": "high-contrast",
-	"hc": "high-contrast",
+	"soft": "soft",
+	"default": "soft",
+	"cozy": "soft",
+	"contrast-light": "contrast-light",
+	"contrastlight": "contrast-light",
+	"light": "contrast-light",
+	"clight": "contrast-light",
+	"contrast-dark": "contrast-dark",
+	"contrastdark": "contrast-dark",
+	"high-contrast": "contrast-dark",
+	"highcontrast": "contrast-dark",
+	"hc": "contrast-dark",
+	"cdark": "contrast-dark",
+	"dark": "soft",
 }
 
 # The only reset this package emits; callers composing their own spans use it
@@ -98,13 +118,18 @@ _XTERM256 = (_BASE16
 _NEAREST = {}
 
 
+def fold(name):
+	"""Fold a spelling before lookup: lowercase, spaces/underscores to "-"."""
+	return "-".join(str(name).strip().lower().replace("_", " ").split())
+
+
 def normalize(name):
-	"""Canonical theme name for any accepted spelling; unknown -> "dark"."""
-	return THEME_ALIASES.get(str(name).strip().lower(), "dark")
+	"""Canonical theme id for any accepted spelling; unknown -> "soft"."""
+	return THEME_ALIASES.get(fold(name), "soft")
 
 
 def theme(override=None):
-	"""Active theme name: override > CATRO_THEME > config.ini > "dark"."""
+	"""Active theme id: override > CATRO_THEME > config.ini > "soft"."""
 	return _theme_name(override)
 
 
@@ -157,7 +182,7 @@ def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
 
 def _theme_name(mode=None):
 	if mode is None or not str(mode).strip():
-		mode = os.environ.get("CATRO_THEME") or config.get("theme", "mode", "dark")
+		mode = os.environ.get("CATRO_THEME") or config.get("theme", "mode", "soft")
 	return normalize(mode)
 
 

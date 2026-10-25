@@ -131,6 +131,28 @@ class MdreaderPreflightTests(unittest.TestCase):
         self.assertEqual(pair_numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9])
         self.assertEqual(fake.pairs[0], (1, 19, 16))
 
+    def test_rich_themes_follow_the_shared_palette(self):
+        """Modes 0/1/2 draw their Rich colours from soft/contrast-* hexes."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        self.assertEqual(mdreader.THEME_MODES,
+                         ("soft", "contrast-light", "contrast-dark"))
+        headers = []
+        for mode, theme_id in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme_id)
+            styles = mdreader.get_rich_theme(mode).styles
+            for spec, key in (("markdown.h1", "header"),
+                              ("markdown.table.border", "border"),
+                              ("markdown.block_quote", "muted")):
+                with self.subTest(mode=mode, style=spec):
+                    self.assertIn(colours[key].lower(), str(styles[spec].color))
+            with self.subTest(mode=mode, style="markdown.code"):
+                self.assertIn(colours["fg"].lower(), str(styles["markdown.code"].color))
+                self.assertIn(colours["surface"].lower(),
+                              str(styles["markdown.code"].bgcolor))
+            headers.append(str(styles["markdown.h1"].color))
+        self.assertEqual(len(set(headers)), 3, "the three modes must differ")
+
     def test_missing_dependency_reports_hint(self):
         with mock.patch.object(mdreader, "curses", None), mock.patch.object(
             mdreader, "Theme", None

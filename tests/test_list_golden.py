@@ -1,11 +1,17 @@
-# Golden fixture for list.py byte identity (contract invariant 1)
+# Golden fixture for list.py's default rendering (contract invariant 1)
 """
 			LIST GOLDEN BYTES
 			=================
-Invariant 1 of the `tui` contract is byte identity: the migrated `list.py` must
-render exactly what it rendered before the extraction. The independent driver in
-`.devteam/artifacts/` proves that against a live checkout, but it is untracked
-tooling and can drift with the working tree. This module is the checked-in net.
+Invariant 1 of the `tui` contract is a regression pin: the migrated `list.py`
+must render exactly the bytes committed under `expected/`, for the default theme
+and for the capability variants. The independent driver in `.devteam/artifacts/`
+proves that against a live checkout, but it is untracked tooling and can drift
+with the working tree. This module is the checked-in net.
+
+The default identity changed when the final theme set landed: `soft` is
+`mdreader`'s cozy purple, not the old purple-on-black, and no hex from the old
+palette reproduces it. These fixtures were regenerated from the code after that
+change, never hand-edited, so they pin `soft`'s own bytes from now on.
 
 A fixed synthetic fixture directory (`tests/fixtures/list_golden/scripts/`, three
 tiny scripts) is materialised into a temporary directory with LF endings so the
@@ -14,8 +20,8 @@ it with a fake tty. The table region - from the line above the header through
 `Total scripts found:` - must equal the committed expected bytes for each
 capability case:
 
-	dark-16.tty      level 16, dark theme, unicode glyphs
-	truecolor.tty    level true, dark theme, unicode glyphs
+	soft-16.tty      level 16, soft theme, unicode glyphs
+	truecolor.tty    level true, soft theme, unicode glyphs
 	unicode-off.tty  level 16, CATRO_ASCII, ASCII box glyphs
 	no-color.tty     NO_COLOR on a tty: box, no escapes
 
@@ -52,11 +58,11 @@ SCRUBBED = ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CATRO_COLOR",
 			"CATRO_ASCII", "CATRO_THEME", "TERM", "COLORTERM", "CLICOLOR")
 
 CASES = {
-	"dark-16.tty": {"CATRO_COLOR": "16", "CATRO_THEME": "dark"},
-	"truecolor.tty": {"FORCE_COLOR": "3", "CATRO_THEME": "dark"},
-	"unicode-off.tty": {"CATRO_COLOR": "16", "CATRO_THEME": "dark",
+	"soft-16.tty": {"CATRO_COLOR": "16", "CATRO_THEME": "soft"},
+	"truecolor.tty": {"FORCE_COLOR": "3", "CATRO_THEME": "soft"},
+	"unicode-off.tty": {"CATRO_COLOR": "16", "CATRO_THEME": "soft",
 						"CATRO_ASCII": "1"},
-	"no-color.tty": {"NO_COLOR": "1", "CATRO_THEME": "dark"},
+	"no-color.tty": {"NO_COLOR": "1", "CATRO_THEME": "soft"},
 }
 
 
@@ -146,8 +152,8 @@ class ListGoldenFixtureTest(unittest.TestCase):
 						 "an absolute path leaked into the golden region")
 		self.assertIn("Total scripts found: 3", tui.strip_ansi(actual))
 
-	def test_dark_16(self):
-		self.check("dark-16.tty")
+	def test_soft_16(self):
+		self.check("soft-16.tty")
 
 	def test_truecolor(self):
 		self.check("truecolor.tty")

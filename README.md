@@ -58,7 +58,7 @@
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. On Linux/macOS it uses `sudo` unless already root, finds `shutdown` on PATH or in `/sbin`/`/usr/sbin`, and exits 1 with one error line when the command is missing or fails.
 
-- **`theme`**: Shows and changes the checkout-local terminal preferences in `config.ini`: `theme` (overview), `theme dark|light|high-contrast|toggle`, `theme set <key> <value>` (`theme.mode`, `color.level`, `table.style`), and `theme palette`. The same commands are available as `python -m tui`. When the file cannot be written it prints one line naming the path and exits 1.
+- **`theme`**: Shows and changes the checkout-local terminal preferences in `config.ini`: `theme` (overview), `theme soft|contrast-light|contrast-dark|toggle`, `theme set <key> <value>` (`theme.mode`, `color.level`, `table.style`), and `theme palette`. The same commands are available as `python -m tui`. When the file cannot be written it prints one line naming the path and exits 1.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems use conventional timestamp modification.
 
@@ -104,9 +104,12 @@ pipe behaviour stay consistent.
 Styling is resolved once per run, in this order: `NO_COLOR`,
 `FORCE_COLOR`/`CLICOLOR_FORCE`, `CATRO_COLOR` (`none|16|256|true`), then
 `config.ini`, then autodetection (terminal type, Windows console age, SSH, tty).
-Three themes are available - `dark` (default), `light` and `high-contrast` -
-each colour is defined once and downgraded to the running colour level, so a
-16-colour terminal and a truecolor one show the same layout.
+Three themes are available - `soft` (default, mdreader's cozy purple),
+`contrast-light` and `contrast-dark`. `list`'s default appearance therefore
+changed from the old purple-on-black to cozy purple; the checked-in golden
+fixture pins the new default. Each colour is defined once and downgraded to the
+running colour level, so a 16-colour terminal and a truecolor one show the same
+layout.
 
 A pipe stays plain by default: no ANSI escapes, no box glyphs, no padding - table
 rows become TAB-separated fields, which keeps `list`, `count`, `action list` and
@@ -123,14 +126,14 @@ Settings live in `config.ini` next to the wrappers (gitignored), managed with th
 
 ```bash
 catro-scripts theme                      # show mode, level, table style, path
-catro-scripts theme light                # or dark / high-contrast / toggle
+catro-scripts theme contrast-light       # or soft / contrast-dark / toggle
 catro-scripts theme set color.level 256  # auto | none | 16 | 256 | true
 catro-scripts theme set table.style ascii
 catro-scripts theme palette              # list the active palette
 ```
 
 `CATRO_ASCII=1` forces ASCII box fallbacks, and
-`CATRO_THEME=dark|light|high-contrast` overrides the file for one run.
+`CATRO_THEME=soft|contrast-light|contrast-dark` overrides the file for one run.
 
 ## Testing
 
