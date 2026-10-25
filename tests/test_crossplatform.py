@@ -53,6 +53,7 @@ LIST_HEADER = "ID\tScript Name\tSize\tDescription"
 TTY_SCRIPTS = (
 	"keygen.py",
 	"screensaver.py",
+	"fakeserver.py",
 	"mdreader.py",
 	"jsonl_monitor.py",
 	"image_generator.py",
