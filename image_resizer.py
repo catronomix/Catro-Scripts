@@ -17,59 +17,23 @@ import sys
 import argparse
 from datetime import datetime
 
+import tui
+
 # Optional dependency, imported on demand inside main() so that --help works
 # without pillow installed.
 Image = None
 
-def require_tty():
-	if sys.stdin.isatty() and sys.stdout.isatty():
-		return
-	sys.stderr.write("[Error] image_resizer needs an interactive terminal "
-					 "(stdin/stdout is not a tty).\n")
-	raise SystemExit(2)
+# Choices offered by the interactive prompts. The order is the numbering the
+# user sees, so it must not be sorted.
+FIT_OPTIONS = ('resize', 'crop', 'pad', 'limit')
+INTERPOLATION_OPTIONS = ('nearest', 'bilinear', 'bicubic', 'lanczos')
 
-# --- ANSI Color Codes for Progress Bar ---
-class Colors:
-	RESET = '\033[0m'
-	# Background colors for the progress bar
-	BG_GREEN = '\033[48;2;0;128;0m' # Dark Green
-	BG_YELLOW = '\033[48;2;255;165;0m' # Orange
-	BG_RED = '\033[48;2;255;0;0m' # Red
-	BG_BLUE = '\033[48;2;0;0;255m' # Blue
-	BG_GRAY = '\033[48;2;100;100;100m' # Gray for empty part
-	TEXT_WHITE = '\033[38;2;255;255;255m' # White text
-
-# --- Helper Functions for User Input ---
-def get_integer_input(prompt, min_val=1):
-	while True:
-		try:
-			value = int(input(prompt).strip())
-			if value >= min_val:
-				return value
-			else:
-				print(f"Error: Please enter a number greater than or equal to {min_val}.")
-		except ValueError:
-			print("Error: Invalid input. Please enter an integer.")
-
-def get_choice_input(prompt, choices_list):
-	"""Prompts the user to select from a numbered list of choices."""
-	while True:
-		print(f"\n{prompt}:")
-		for i, choice in enumerate(choices_list, 1):
-			print(f"  {i}. {choice.capitalize()}")
-		
-		user_input_raw = input("Enter choice number: ").strip()
-		try:
-			user_input_num = int(user_input_raw)
-			if 1 <= user_input_num <= len(choices_list):
-				return choices_list[user_input_num - 1]
-			else:
-				print("Error: Invalid number. Please choose from the options above.")
-		except ValueError:
-			print("Error: Invalid input. Please enter a number.")
+# Sanity bound for the pixel size prompts: anything larger is a typo, not a
+# target resolution.
+MAX_DIMENSION = 32768
 
 # --- Image Resizing Logic ---
-def resize_and_fit_image(image_path, output_path, target_width, target_height, fit_option, interpolation_method):
+def resize_and_fit_image(image_path, output_path, target_width, target_height, fit_option, interpolation_method, cap=None):
 	try:
 		with Image.open(image_path) as img:
 			original_width, original_height = img.size
@@ -123,35 +87,14 @@ def resize_and_fit_image(image_path, output_path, target_width, target_height, f
 			resized_img.save(output_path)
 			return True
 	except Exception as e:
-		print(f"Error processing {os.path.basename(image_path)}: {e}")
+		print(tui.style(f"Error processing {os.path.basename(image_path)}: {e}",
+						fg="error", cap=cap))
 		return False
 
-# --- Progress Bar Function ---
-def print_progress_bar(iteration, total, filename, length=50):
-	percent = ("{0:.1f}").format(100 * (iteration / float(total)))
-	filled_length = int(length * iteration // total)
-	
-	if iteration / total < 0.33:
-		bg_color = Colors.BG_RED
-	elif iteration / total < 0.66:
-		bg_color = Colors.BG_YELLOW
-	else:
-		bg_color = Colors.BG_GREEN
-		
-	bar = bg_color + Colors.TEXT_WHITE + ' ' * filled_length + Colors.BG_GRAY + ' ' * (length - filled_length) + Colors.RESET
-	sys.stdout.write('\r' + ' ' * (length + 100)) 
-	sys.stdout.flush()
-	sys.stdout.write(f'\r{bar} {percent}% | Processing: {filename[:60]}{"..." if len(filename) > 60 else ""}')
-	sys.stdout.flush()
-	if iteration == total:
-		sys.stdout.write('\n')
-
 # --- Main Script Logic ---
-def resize_images_in_folder():
-	if os.name == 'nt':
-		os.system('')
-
-	print("\n--- Image Resizer Script ---")
+def resize_images_in_folder(cap):
+	print()
+	print(tui.banner("Image Resizer Script", cap=cap))
 
 	# Supported image extensions
 	image_extensions = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff')
@@ -161,12 +104,23 @@ def resize_images_in_folder():
 	image_files = [f for f in os.listdir(current_dir) if f.lower().endswith(image_extensions) and os.path.isfile(os.path.join(current_dir, f))]
 	
 	if not image_files:
-		print("No supported image files found in the current directory.")
+		print(tui.style("No supported image files found in the current directory.",
+						fg="warn", cap=cap))
 		return
 
-	target_width = get_integer_input("Enter target width (pixels): ")
-	target_height = get_integer_input("Enter target height (pixels): ")
-	fit_option = get_choice_input("Choose fitting option", ['resize', 'crop', 'pad', 'limit'])
+	# Prompts come from tui.prompts, so validation, cancellation and styling
+	# are shared with the rest of the suite instead of a local input loop.
+	target_width = tui.ask_int("Enter target width (pixels)", 1, MAX_DIMENSION)
+	if target_width is None:
+		return
+	target_height = tui.ask_int("Enter target height (pixels)", 1, MAX_DIMENSION)
+	if target_height is None:
+		return
+
+	fit_index = tui.ask_choice("Choose fitting option", FIT_OPTIONS)
+	if fit_index is None:
+		return
+	fit_option = FIT_OPTIONS[fit_index]
 	
 	interpolation_choices_map = {
 		'nearest': Image.NEAREST,
@@ -174,27 +128,39 @@ def resize_images_in_folder():
 		'bicubic': Image.BICUBIC,
 		'lanczos': Image.LANCZOS
 	}
-	interpolation_method_str = get_choice_input("Choose interpolation method", list(interpolation_choices_map.keys()))
+	method_index = tui.ask_choice("Choose interpolation method",
+								  INTERPOLATION_OPTIONS)
+	if method_index is None:
+		return
+	interpolation_method_str = INTERPOLATION_OPTIONS[method_index]
 
 	output_folder_name = f"Resized_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 	output_path = os.path.join(current_dir, output_folder_name)
 
 	# Create output directory only now that we are ready to process
 	os.makedirs(output_path, exist_ok=True)
-	print(f"Output directory created: {output_path}")
+	print(tui.style(f"Output directory created: {output_path}",
+					fg="success", cap=cap))
 
 	total_images = len(image_files)
 	print(f"Found {total_images} images to process.")
 
 	interpolation_method = interpolation_choices_map[interpolation_method_str]
+
+	# tui.ProgressBar owns the bar layout, the colours and the non-tty
+	# degradation (one final line, never a carriage-return animation).
+	progress = tui.ProgressBar(total_images, cap=cap, label="Resizing")
 	for i, filename in enumerate(image_files):
 		input_filepath = os.path.join(current_dir, filename)
 		output_filepath = os.path.join(output_path, filename)
 
-		print_progress_bar(i + 1, total_images, filename)
-		resize_and_fit_image(input_filepath, output_filepath, target_width, target_height, fit_option, interpolation_method)
+		progress.update(i + 1, label=f"Processing: {filename}")
+		resize_and_fit_image(input_filepath, output_filepath, target_width, target_height, fit_option, interpolation_method, cap=cap)
+	progress.finish()
 
-	print(f"\n\nResizing complete. Resized images are in: {os.path.abspath(output_path)}")
+	print()
+	print(tui.style(f"Resizing complete. Resized images are in: {os.path.abspath(output_path)}",
+					fg="success", bold=True, cap=cap))
 
 def main():
 	# parse_args() first so --help works without pillow or a terminal.
@@ -205,18 +171,24 @@ def main():
 
 	# Refuse a non-terminal before anything else: the dependency check below
 	# would otherwise print to a pipe and hide the real problem.
-	require_tty()
+	tui.require_tty("image_resizer")
+
+	# Capabilities are resolved once: the whole run uses one colour level,
+	# Unicode decision and plain/tty mode.
+	tui.init_ansi()
+	cap = tui.detect()
 
 	# Pillow is only needed for an actual run.
 	global Image
 	try:
 		from PIL import Image
 	except ImportError:
-		print("Error: 'pillow' library is not installed.")
+		print(tui.style("Error: 'pillow' library is not installed.",
+						fg="error", cap=cap))
 		print("Please install it using: pip install pillow")
 		sys.exit(1)
 
-	resize_images_in_folder()
+	resize_images_in_folder(cap)
 
 if __name__ == "__main__":
 	main()
