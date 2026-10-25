@@ -258,7 +258,7 @@ def main(argv=None) -> int:
 
 	print_table("SANITIZE PLAN", [
 		("Repo", str(repo_root)),
-		("Secret", secret),
+		("Secret", "<redacted>"),
 		("Placeholder", placeholder),
 		("Backend", " ".join(filter_repo_cmd)),
 	])
