@@ -105,11 +105,26 @@ Styling is resolved once per run, in this order: `NO_COLOR`,
 `FORCE_COLOR`/`CLICOLOR_FORCE`, `CATRO_COLOR` (`none|16|256|true`), then
 `config.ini`, then autodetection (terminal type, Windows console age, SSH, tty).
 Three themes are available - `soft` (default, mdreader's cozy purple),
-`contrast-light` and `contrast-dark`. `list`'s default appearance therefore
-changed from the old purple-on-black to cozy purple; the checked-in golden
-fixture pins the new default. Each colour is defined once and downgraded to the
-running colour level, so a 16-colour terminal and a truecolor one show the same
-layout.
+`contrast-light` and `contrast-dark` - and every script shares them: the same
+palette keys drive tables, page chrome and the full-screen reader, so switching
+`theme` switches the whole collection, never one script. `list`'s default
+appearance therefore changed from the old purple-on-black to cozy purple; the
+checked-in golden fixture pins the new default. Each colour is defined once and
+downgraded to the running colour level, so a 16-colour terminal and a truecolor
+one show the same layout.
+
+A page is composed from the shared chrome helpers rather than hand-printed
+banners: `tui.header()` (title band plus rule), `tui.panel()` (framed block),
+`tui.rule()`, `tui.field()` (key/value rows), `tui.status()` (`[ok]`/`[warn]`/
+`[error]`/`[info]` lines), `tui.fill()` (a full-width background band) and
+`tui.menu()`, on top of `tui.render_table()`/`print_table()`/`key_values()`/
+`banner()`/`section()`. The frame is `border`, headers and bars sit on
+`surface`, zebra rows and footer bars on `zebra_bg`, so a script that prints a
+page looks like every other script. `mdreader` keeps its curses/rich renderer
+but maps its three display modes onto the same three palettes (mode 0 `soft`,
+mode 1 `contrast-light`, mode 2 `contrast-dark`) and paints its window
+background, frame, status bar and shortcut bar from `bg`, `border`, `surface`
+and `zebra_bg`.
 
 A pipe stays plain by default: no ANSI escapes, no box glyphs, no padding - table
 rows become TAB-separated fields, which keeps `list`, `count`, `action list` and
