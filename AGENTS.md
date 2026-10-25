@@ -40,9 +40,11 @@ This document provides instructions for AI agents working on the `catro-scripts`
       colour (`FORCE_COLOR`/`CLICOLOR_FORCE`/`CATRO_COLOR`), which gets the full
       styled table; `NO_COLOR` still wins. Do not special-case `isatty()` in a
       script: `cap.plain` already encodes this.
-    - **Themes**: `dark`, `light` and `high-contrast` are all first class
-      (`theme dark|light|high-contrast|toggle`); colors come from the palette so
-      every colour level (`16`/`256`/`true`) downgrades automatically.
+    - **Themes**: `soft` (default, cozy purple), `contrast-light` and
+      `contrast-dark` are all first class
+      (`theme soft|contrast-light|contrast-dark|toggle`); colors come from the
+      palette so every colour level (`16`/`256`/`true`) downgrades
+      automatically.
   - **Automation**: When a script needs styled output and the helpers do not
     cover it, add the seam to `tui/` (with a test in `tests/test_tui_*.py`)
     rather than growing a private renderer.
