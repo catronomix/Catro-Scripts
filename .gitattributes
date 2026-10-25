@@ -6,9 +6,8 @@
 
 # The extension-less 'cs' dispatcher is a bash script too, but matches no
 # *.sh pattern, so Windows tooling kept saving it as CRLF and bash choked on
-# the shebang. Pin both the alias and its .sh twin to LF.
+# the shebang. Pin the dispatcher itself to LF.
 cs text eol=lf
-cs.sh text eol=lf
 
 # Explicitly enforce CRLF for Windows batch scripts
 *.bat text eol=crlf
