@@ -11,6 +11,8 @@ Rules this suite keeps:
 	  working directory.
 	- Child processes get a bytecode cache outside the repository
 	  (PYTHONPYCACHEPREFIX), so a run does not litter the tree it tests.
+	- Child environments are built with `support.clean_env()`: colour, theme and
+	  glyph switches never leak in from the developer's shell.
 	- Every child process is bounded by a timeout and gets stdin=DEVNULL unless
 	  the test is specifically about interactive behavior.
 	- Missing platform tooling produces a skip with an explicit reason, never a
@@ -32,17 +34,20 @@ from pathlib import Path
 # directory holding this file. Resolving it from __file__ keeps the suite
 # cwd-independent (see the "run from a different cwd" check in the task spec).
 REPO = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import clean_env  # noqa: E402  (test helper, not production)
 
 # No single smoke run should ever take longer than this.
 TIMEOUT = 60
 
-# A box-drawing horizontal line, the visible proof that the coloured table
-# survived the trip through the wrapper as UTF-8.
-BOX_HORIZONTAL = "\u2500"
+# Every box-drawing glyph the table can emit; plain (piped) output must contain
+# none of them.
+BOX_GLYPHS = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c"
 
-# Minimum plausible table size for `list` output; a wrapper that swallows or
-# mangles the table falls well below this.
-MIN_LIST_OUTPUT = 8000
+# The header line of the plain-mode `list` table; `catro-scripts list | cut -f2`
+# and friends depend on this exact shape.
+LIST_HEADER = "ID\tScript Name\tSize\tDescription"
 
 # Scripts that must refuse a non-interactive terminal with exit code 2.
 TTY_SCRIPTS = (
@@ -77,7 +82,7 @@ def tearDownModule():
 
 def child_env(**overrides):
 	"""Environment for a child process, with the out-of-tree bytecode cache."""
-	env = dict(os.environ)
+	env = clean_env()
 	if _pycache_dir is not None:
 		env["PYTHONPYCACHEPREFIX"] = _pycache_dir.name
 	env.update(overrides)
@@ -218,17 +223,66 @@ class SmokeTests(unittest.TestCase):
 								 "{} crashed instead of refusing:\n{}".format(name, stderr[-1200:]))
 
 	def test_list_encode_failure_is_not_silent(self):
-		"""A UnicodeEncodeError in list.py must reach the caller as a non-zero rc."""
-		# Regression guard: the table used to die silently with exit 0, so the
-		# wrapper looked healthy while printing nothing.
+		"""A non-ASCII cell must still fail loudly on an ASCII stdout.
+
+		The contract narrowed this: a console that cannot encode box glyphs
+		degrades to ASCII boxes, but text that even ASCII cannot encode is still
+		a hard failure, never a silent exit 0.
+		"""
+		code = (
+			"import importlib.util, sys\n"
+			"spec = importlib.util.spec_from_file_location('listmod', sys.argv[1])\n"
+			"mod = importlib.util.module_from_spec(spec)\n"
+			"spec.loader.exec_module(mod)\n"
+			"mod.get_description = lambda _path: 'caf\\u00e9 unencodable'\n"
+			"mod.list_scripts()\n"
+		)
+		env = child_env(PYTHONIOENCODING="ascii", PYTHONUTF8="0")
+		proc = run([sys.executable, "-c", code, str(REPO / "list.py")], env=env)
+		self.assertNotEqual(proc.returncode, 0,
+							"list.py exited 0 after failing to encode a cell:\n{}".format(
+								failure_detail(proc)))
+		self.assertIn("UnicodeEncodeError", text(proc.stderr),
+					  "list.py did not report the encoding failure:\n{}".format(
+						  failure_detail(proc)))
+
+	def test_legacy_console_pipe_still_gets_plain_records(self):
+		"""A cp1252 *pipe* must keep the TAB layout and exit 0, not a traceback.
+
+		This used to assert "ASCII boxes", which passed for the wrong reason:
+		off a tty `list.py` is plain whatever `caps.unicode` says, so no glyph
+		fallback was ever exercised. The structure is what matters at a pipe:
+		the header is one TAB record, every record has four fields, and there
+		are no box glyphs and no escapes. The glyph decision is pinned where
+		unicode is the deciding factor (a tty, in ListNoColorTest).
+		"""
 		env = child_env(PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
 		proc = run([sys.executable, str(REPO / "list.py")], env=env)
-		self.assertNotEqual(proc.returncode, 0,
-							"list.py exited 0 after failing to encode its table:\n{}".format(
-								failure_detail(proc)))
+		self.assertEqual(proc.returncode, 0,
+						 "list.py failed on a cp1252 pipe:\n{}".format(
+							 failure_detail(proc)))
+		try:
+			out = proc.stdout.decode("ascii")
+		except UnicodeDecodeError as error:
+			self.fail("cp1252 pipe output was not pure ASCII: {}".format(error))
+		lines = out.splitlines()
+		self.assertIn(LIST_HEADER, lines,
+					  "cp1252 pipe lost the TAB header:\n" + out[:400])
+		records = lines[lines.index(LIST_HEADER) + 1:]
+		records = [line for line in records if line.strip()]
+		footer = next(index for index, line in enumerate(records)
+					  if line.startswith("Total scripts found:"))
+		records = records[:footer]
+		self.assertTrue(records, "cp1252 pipe listed no scripts")
+		for line in records:
+			self.assertEqual(len(line.split("\t")), 4,
+							 "not a four-field TAB record: {!r}".format(line))
+		for glyph in BOX_GLYPHS:
+			self.assertNotIn(glyph, out, "pipe output carried a box glyph")
+		self.assertNotIn("\x1b", out, "cp1252 output carried ANSI escapes")
 
 	def test_wrapper_list_is_utf8(self):
-		"""The wrapper must force UTF-8 so the table survives a pipe."""
+		"""The wrapper must force UTF-8 so the plain table survives a pipe."""
 		if os.name != "nt" and shutil.which("bash") is None:
 			self.skipTest("bash is not on PATH")
 		with tempfile.TemporaryDirectory() as td:
@@ -240,11 +294,27 @@ class SmokeTests(unittest.TestCase):
 								 proc.returncode, failure_detail(proc)))
 			# decode() raises if the wrapper emitted anything but valid UTF-8.
 			out = proc.stdout.decode("utf-8")
-			self.assertGreater(len(out), MIN_LIST_OUTPUT,
-							   "wrapper list output was only {} chars\n{}".format(
-								   len(out), out[:400]))
-			self.assertIn(BOX_HORIZONTAL, out,
-						  "wrapper list output lost its box-drawing characters")
+			lines = out.splitlines()
+			self.assertIn(LIST_HEADER, lines,
+						  "piped list output lost its header line:\n" + out[:400])
+			records = lines[lines.index(LIST_HEADER) + 1:]
+			records = [line for line in records if line.strip()]
+			# The footer follows the last record and ends the table.
+			footer = next(index for index, line in enumerate(records)
+						  if line.startswith("Total scripts found:"))
+			records = records[:footer]
+			expected = len([path for path in REPO.glob("*.py")
+							if path.name != "list.py"])
+			self.assertEqual(len(records), expected,
+							 "piped list emitted {} records, expected {}\n{}".format(
+								 len(records), expected, out[:400]))
+			for line in records:
+				self.assertEqual(line.count("\t"), 3,
+								 "record is not 4 TAB-separated fields: {!r}".format(line))
+			self.assertNotIn("\x1b", out, "piped list output carried ANSI escapes")
+			for glyph in BOX_GLYPHS:
+				self.assertNotIn(glyph, out,
+								 "piped list output kept the box glyph {!r}".format(glyph))
 
 	def test_wrapper_keeps_many_and_metachar_args(self):
 		"""More than nine arguments and shell metacharacters must pass through."""

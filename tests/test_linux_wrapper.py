@@ -17,14 +17,21 @@ Run from the repo root:
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import clean_env  # noqa: E402  (test helper, not production)
 WRAPPER = REPO / "catro-scripts.sh"
 TIMEOUT = 60
-BOX_HORIZONTAL = "\u2500"
+# Piped `list` output is one TAB-separated record per line (the tui contract's
+# plain mode), so the header line - not a box glyph - proves the wrapper
+# reached list.py.
+LIST_HEADER = "ID\tScript Name\tSize\tDescription"
 
 
 def bash():
@@ -57,10 +64,11 @@ def bash():
 
 
 def run(args, cwd=None):
-	"""Run a child with bounded time, captured bytes, and no stdin."""
+	"""Run a child with bounded time, captured bytes, no stdin and a clean env."""
 	return subprocess.run(
 		args,
 		cwd=str(cwd if cwd is not None else REPO),
+		env=clean_env(),
 		stdin=subprocess.DEVNULL,
 		stdout=subprocess.PIPE,
 		stderr=subprocess.PIPE,
@@ -104,7 +112,7 @@ class SymlinkInstallTest(unittest.TestCase):
 						 "symlinked wrapper exited {}\n{}".format(
 							 proc.returncode, detail(proc)))
 		out = proc.stdout.decode("utf-8")
-		self.assertIn(BOX_HORIZONTAL, out,
+		self.assertIn(LIST_HEADER, out,
 					  "the symlinked wrapper did not reach list.py:\n" + out[:400])
 
 	def test_cs_dispatcher_through_a_symlink(self):
@@ -114,7 +122,7 @@ class SymlinkInstallTest(unittest.TestCase):
 		self.assertEqual(proc.returncode, 0,
 						 "symlinked cs exited {}\n{}".format(
 							 proc.returncode, detail(proc)))
-		self.assertIn(BOX_HORIZONTAL, proc.stdout.decode("utf-8"),
+		self.assertIn(LIST_HEADER, proc.stdout.decode("utf-8"),
 					  "the symlinked cs did not reach catro-scripts.sh:\n" + detail(proc))
 
 

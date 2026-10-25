@@ -14,77 +14,12 @@ Usage:
 import os
 import sys
 import time
-import shutil
 import importlib.util
 import importlib.machinery
-import platform
 import threading
 
-# Enable ANSI escape sequences on Windows
-if platform.system().lower() == "windows":
-	os.system('color')
+import tui
 
-class TerminalRenderer:
-	"""A double-buffered terminal renderer using character grids."""
-	def __init__(self):
-		self.width, self.height = shutil.get_terminal_size()
-		self.buffer = []
-		self.colors = []
-		self._init_buffers()
-
-	def _init_buffers(self):
-		self.buffer = [[' ' for _ in range(self.width)] for _ in range(self.height)]
-		self.colors = [[None for _ in range(self.width)] for _ in range(self.height)]
-
-	def clear(self):
-		"""Clears the buffer and updates dimensions if the terminal resized."""
-		new_w, new_h = shutil.get_terminal_size()
-		if new_w != self.width or new_h != self.height:
-			self.width, self.height = new_w, new_h
-		self._init_buffers()
-
-	def draw_char(self, x, y, char, color=None):
-		"""Draws a single character to the buffer at (x,y) with optional ANSI color."""
-		x, y = int(x), int(y)
-		if 0 <= x < self.width and 0 <= y < self.height:
-			self.buffer[y][x] = str(char)[0]
-			self.colors[y][x] = color
-
-	def draw_text(self, x, y, text, color=None):
-		"""Draws a string of text starting at (x,y)."""
-		for i, char in enumerate(text):
-			self.draw_char(x + i, y, char, color)
-
-	def render(self):
-		"""Flushes the buffer to the terminal using a single print to prevent flicker."""
-		# \033[H moves cursor to top-left (home)
-		out = ["\033[H"]
-		current_color = None
-
-		for y in range(self.height):
-			for x in range(self.width):
-				color = self.colors[y][x]
-				if color != current_color:
-					out.append(color if color else "\033[0m")
-					current_color = color
-				out.append(self.buffer[y][x])
-			
-			if y < self.height - 1:
-				out.append("\n")
-
-		if current_color is not None:
-			out.append("\033[0m")
-
-		sys.stdout.write("".join(out))
-		sys.stdout.flush()
-
-def require_tty():
-	"""Refuse to run when stdin/stdout is redirected: the menu needs a terminal."""
-	if sys.stdin.isatty() and sys.stdout.isatty():
-		return
-	sys.stderr.write("[Error] screensaver needs an interactive terminal "
-					 "(stdin/stdout is not a tty).\n")
-	raise SystemExit(2)
 
 def get_screensavers():
 	"""Scans the program directory for .screensaver files."""
@@ -132,104 +67,104 @@ def listen_for_any_key(stop_event):
 			# Failsafe if not running in a standard TTY
 			pass
 
+def menu_step(count, index, key):
+	"""Apply one key token to the menu; returns (action, index).
+
+	Actions: "move" (redraw at the returned index), "select" (take the index)
+	or "exit" (leave with status 0). Unknown keys redraw in place, so every
+	press gives feedback.
+	"""
+	if key == "up":
+		return "move", (index - 1) % count
+	if key == "down":
+		return "move", (index + 1) % count
+	if key == "enter":
+		return "select", index
+	if key in ("esc", "ctrl-c"):
+		return "exit", index
+	return "move", index
+
+
+def draw_menu(stream, names, selected_idx, cap):
+	"""Paint one menu frame; every write goes to `stream` (test seam)."""
+	def border(text):
+		# The border used to be the old menu's hardcoded magenta SGR (ESC[35m).
+		# It is now the shared palette's "border" key, because the rest of the
+		# house style moved with it: a truecolor accent normally, and ESC[95m
+		# (bright magenta) of the standard 16, so the identity still reads as
+		# magenta without hardcoding a code that 256/truecolor themes cannot
+		# override.
+		return tui.style(text, fg="border", cap=cap)
+
+	stream.write(tui.screen.CLEAR_HOME)
+
+	title = " SCREENSAVERS "
+	width = max(len(title), max(len(n) for n in names) + 8)
+
+	# Draw Top Border
+	stream.write(border("┌" + "─" * width + "┐") + "\n")
+
+	# Draw Title
+	pad_left = (width - len(title)) // 2
+	pad_right = width - len(title) - pad_left
+	stream.write(border("│") + " " * pad_left + title + " " * pad_right
+				 + border("│") + "\n")
+
+	# Draw Divider
+	stream.write(border("├" + "─" * width + "┤") + "\n")
+
+	# Draw Rows
+	for i, name in enumerate(names):
+		prefix = "  > " if i == selected_idx else "    "
+		text = f"{prefix}{name}"
+		pad = width - len(text)
+
+		if i == selected_idx:
+			stream.write(border("│")
+						 + tui.style(text + " " * pad, reverse=True, cap=cap)
+						 + border("│") + "\n")
+		else:
+			stream.write(border("│") + text + " " * pad + border("│") + "\n")
+
+	# Draw Bottom Border
+	stream.write(border("└" + "─" * width + "┘") + "\n")
+	stream.write("Use UP/DOWN arrows to select, ENTER to run.\n")
+	stream.flush()
+
+
 def get_menu_selection(screensavers):
-	"""Displays an interactive styled menu to select a screensaver."""
+	"""Displays an interactive styled menu to select a screensaver.
+
+	Key input goes through `tui.keys.read_key` and the screen lifecycle through
+	`tui.Screen`, so both platforms share the decoder that Phase A extracted
+	instead of a private msvcrt/termios loop. A real POSIX terminal smoke test
+	is still owed; the unit tests drive the decode path with fakes.
+	"""
 	names = [os.path.splitext(os.path.basename(f))[0] for f in screensavers]
 	selected_idx = 0
-	
-	sys.stdout.write("\033[?25l") # Hide cursor
-	sys.stdout.flush()
+	cap = tui.detect()
 
-	def draw_menu():
-		sys.stdout.write("\033[2J\033[H")
-		purple = "\033[35m"
-		reset = "\033[0m"
-		highlight = "\033[7m"
-		
-		title = " SCREENSAVERS "
-		width = max(len(title), max(len(n) for n in names) + 8)
-		
-		# Draw Top Border
-		sys.stdout.write(f"{purple}┌{'─' * width}┐{reset}\n")
-		
-		# Draw Title
-		pad_left = (width - len(title)) // 2
-		pad_right = width - len(title) - pad_left
-		sys.stdout.write(f"{purple}│{reset}{' ' * pad_left}{title}{' ' * pad_right}{purple}│{reset}\n")
-		
-		# Draw Divider
-		sys.stdout.write(f"{purple}├{'─' * width}┤{reset}\n")
-		
-		# Draw Rows
-		for i, name in enumerate(names):
-			prefix = "  > " if i == selected_idx else "    "
-			text = f"{prefix}{name}"
-			pad = width - len(text)
-			
-			if i == selected_idx:
-				sys.stdout.write(f"{purple}│{reset}{highlight}{text}{' ' * pad}{reset}{purple}│{reset}\n")
-			else:
-				sys.stdout.write(f"{purple}│{reset}{text}{' ' * pad}{purple}│{reset}\n")
-				
-		# Draw Bottom Border
-		sys.stdout.write(f"{purple}└{'─' * width}┘{reset}\n")
-		sys.stdout.write("Use UP/DOWN arrows to select, ENTER to run.\n")
-		sys.stdout.flush()
-
-	def exit_menu():
-		sys.stdout.write("\033[?25h\033[0m") # Show cursor, reset colors
-		sys.stdout.flush()
-		sys.exit(0)
-
-	if os.name == 'nt':
-		import msvcrt
+	# Screen owns the alternate screen, cursor hide/show and the reset on the
+	# way out; raw_mode owns cbreak and its restore. sys.exit(0) inside the
+	# blocks still unwinds both context managers, so the cursor comes back.
+	with tui.Screen() as screen, tui.keys.raw_mode():
 		while True:
-			draw_menu()
-			key = msvcrt.getch()
-			if key in (b'\x00', b'\xe0'):
-				arrow = msvcrt.getch()
-				if arrow == b'H': # Up
-					selected_idx = (selected_idx - 1) % len(names)
-				elif arrow == b'P': # Down
-					selected_idx = (selected_idx + 1) % len(names)
-			elif key == b'\r':
+			draw_menu(screen, names, selected_idx, cap)
+			action, selected_idx = menu_step(len(names), selected_idx,
+											 tui.keys.read_key())
+			if action == "select":
 				return screensavers[selected_idx]
-			elif key in (b'\x03', b'\x1b'): # Ctrl+C or ESC
-				exit_menu()
-	else:
-		import tty
-		import termios
-		import select
-		fd = sys.stdin.fileno()
-		old_settings = termios.tcgetattr(fd)
-		try:
-			tty.setcbreak(fd)
-			while True:
-				draw_menu()
-				key = sys.stdin.read(1)
-				if key == '\x1b': # Escape seq start
-					dr, _, _ = select.select([sys.stdin], [], [], 0.1)
-					if dr:
-						seq = sys.stdin.read(2)
-						if seq == '[A': # Up
-							selected_idx = (selected_idx - 1) % len(names)
-						elif seq == '[B': # Down
-							selected_idx = (selected_idx + 1) % len(names)
-					else:
-						exit_menu()
-				elif key in ('\n', '\r'):
-					return screensavers[selected_idx]
-				elif key == '\x03': # Ctrl+C
-					exit_menu()
-		finally:
-			termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+			if action == "exit":
+				sys.exit(0)
 
 def main():
+	tui.init_ansi()
+
 	# No tty (piped stdin, cron, IDE output pane): the menu cannot work.
-	require_tty()
+	tui.require_tty("screensaver")
 
 	# Clear screen initially
-	sys.stdout.write("\033[2J\033[H")
+	sys.stdout.write(tui.screen.CLEAR_HOME)
 	sys.stdout.flush()
 
 	screensavers = get_screensavers()
@@ -241,14 +176,15 @@ def main():
 	try:
 		chosen_file = get_menu_selection(screensavers)
 	except KeyboardInterrupt:
-		sys.stdout.write("\033[?25h\033[0m\033[2J\033[H")
+		sys.stdout.write(tui.screen.CURSOR_SHOW + tui.screen.SGR_RESET
+						 + tui.screen.CLEAR_HOME)
 		sys.exit(0)
 
 	plugin = load_screensaver(chosen_file)
-	renderer = TerminalRenderer()
+	renderer = tui.TerminalRenderer()
 
 	# Hide cursor, clear screen for screensaver
-	sys.stdout.write("\033[?25l\033[2J")
+	sys.stdout.write(tui.screen.CURSOR_HIDE + tui.screen.CLEAR_HOME)
 	sys.stdout.flush()
 
 	plugin.init(renderer)
@@ -278,7 +214,8 @@ def main():
 		pass
 	finally:
 		# Show cursor, reset colors, clear screen
-		sys.stdout.write("\033[?25h\033[0m\033[2J\033[H")
+		sys.stdout.write(tui.screen.CURSOR_SHOW + tui.screen.SGR_RESET
+						 + tui.screen.CLEAR_HOME)
 		sys.stdout.flush()
 
 if __name__ == "__main__":

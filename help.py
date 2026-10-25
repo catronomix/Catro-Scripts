@@ -2,15 +2,16 @@
 """
 			SCRIPT HELP UTILITY
 			===================
-This utility extracts the module-level docstring from a specified script and 
-displays it with color-coding based on indentation levels. It's designed to 
+This utility extracts the module-level docstring from a specified script and
+displays it with color-coding based on indentation levels. It's designed to
 make reading script introductions and usage guides easier in the terminal.
 
 Features:
 	- Extracts raw docstrings using Python's 'ast' module.
 	- Color-codes lines based on tab indentation depth.
 	- Automatic ANSI initialization for Windows.
-	- Displays help in a formatted purple ASCII box.
+	- Displays help in the house purple box.
+	- Plain text when the output is piped.
 	- Specialized header detection and styling.
 	- Smart command aliasing when catro-scripts wrapper is present.
 
@@ -24,17 +25,35 @@ Example:
 import os
 import sys
 import ast
-import platform
 import re
 
-def init_ansi():
-	# Enables ANSI escape sequences on Windows 10+ consoles.
-	if platform.system().lower() == "windows":
-		os.system('color')
-		
+import tui
+
+# Indentation depth -> style data handed to tui.style(). The hexes are the
+# base-ANSI entries on purpose: each old raw code (1;37, 0;36, 0;32, 0;33, 0;31)
+# is exactly what the level-16 downgrade of these colours produces, so a
+# 16-colour terminal keeps the same palette it always had.
+INDENT_STYLES = [
+	{"fg": "#C0C0C0", "bold": True},  # Level 0: bold white
+	{"fg": "#008080"},  # Level 1: cyan
+	{"fg": "#008000"},  # Level 2: green
+	{"fg": "#808000"},  # Level 3: yellow
+	{"fg": "#800000"},  # Level 4: red
+]
+
+# The error colour is the level-4 indentation red, for the same reason.
+ERROR_STYLE = INDENT_STYLES[4]
+
+# Header row of the box: yellow on dark purple.
+HEADER_STYLE = {"fg": "#FFFF00", "bg": "#3C005A"}
+
+BOX_WIDTH_FLOOR = 40
+
+
 def get_script_directory():
 	# Returns the absolute path of the directory where this script is located.
 	return os.path.dirname(os.path.abspath(__file__))
+
 
 def get_docstring(filepath):
 	# Extracts the raw module-level docstring without dedenting it.
@@ -42,37 +61,36 @@ def get_docstring(filepath):
 		with open(filepath, 'r', encoding='utf-8') as f:
 			tree = ast.parse(f.read())
 			# Look for the first expression in the module
-			if (tree.body and 
-				isinstance(tree.body[0], ast.Expr) and 
-				isinstance(tree.body[0].value, ast.Constant) and 
+			if (tree.body and
+				isinstance(tree.body[0], ast.Expr) and
+				isinstance(tree.body[0].value, ast.Constant) and
 				isinstance(tree.body[0].value.value, str)):
 				return tree.body[0].value.value
 		return None
 	except Exception:
 		return None
 
-def print_colored_docstring(docstring):
+
+def print_colored_docstring(docstring, cap=None):
 	# Prints the docstring with colors based on indentation depth.
 	# Assumes scripts use tab characters (\t) for indentation as requested.
-	
-	# ANSI Color codes
-	PURPLE = '\033[38;2;170;0;255m'
-	HEADER_BG = '\033[48;2;60;0;90m'     # Dark Purple Background
-	HEADER_FG = '\033[38;2;255;255;0m'   # Yellow Foreground
-	COLORS = [
-		"\033[1;37m", # Level 0: Bold White
-		"\033[0;36m", # Level 1: Cyan
-		"\033[0;32m", # Level 2: Green
-		"\033[0;33m", # Level 3: Yellow
-		"\033[0;31m", # Level 4: Red
-	]
-	RESET = "\033[0m"
-	BOLD = "\033[1m"
+	cap = cap or tui.detect()
+	glyphs = tui.table.glyphs_for(cap)
 
 	if not docstring:
-		print(f"{PURPLE}┌──────────────────────────────────────────────────┐{RESET}")
-		print(f"{PURPLE}│{RESET} {COLORS[4]}No intro text (docstring) found in this script. {RESET}{PURPLE}│{RESET}")
-		print(f"{PURPLE}└──────────────────────────────────────────────────┘{RESET}")
+		message = "No intro text (docstring) found in this script."
+		if cap.plain:
+			print(tui.style(message, cap=cap, **ERROR_STYLE))
+			return
+		inner = 50
+		border = tui.style(glyphs["tl"] + glyphs["h"] * inner + glyphs["tr"],
+						   fg="border", cap=cap)
+		print(border)
+		print(tui.style(glyphs["v"], fg="border", cap=cap) + " "
+			  + tui.style(message, cap=cap, **ERROR_STYLE) + " "
+			  + tui.style(glyphs["v"], fg="border", cap=cap))
+		print(tui.style(glyphs["bl"] + glyphs["h"] * inner + glyphs["br"],
+						fg="border", cap=cap))
 		return
 
 	# Check for catro-scripts wrapper to allow command aliasing in help text
@@ -85,7 +103,7 @@ def print_colored_docstring(docstring):
 		docstring = re.sub(r'python (\S+)\.py', r'catro-scripts \1', docstring)
 
 	raw_lines = docstring.splitlines()
-	
+
 	# Robust detection of first two content lines
 	has_header = False
 	header_text = ""
@@ -111,29 +129,39 @@ def print_colored_docstring(docstring):
 		start_index = i
 
 	content_lines = raw_lines[start_index:]
-	
+
 	# Calculate box width
 	check_widths = [len(line.replace('\t', '    ')) for line in content_lines]
 	if has_header:
 		check_widths.append(len(header_text))
-	
-	max_w = max(check_widths) if check_widths else 40
+
+	max_w = max(check_widths) if check_widths else BOX_WIDTH_FLOOR
 	box_width = max_w + 2
 
-	# Box Drawing Characters
-	tl, tr, bl, br = '┌', '┐', '└', '┘'
-	h, v = '─', '│'
-	l_join, r_join = '├', '┤'
+	if cap.plain:
+		# Piped output: text only, one line per document line, no box and no
+		# padding. The indentation stays visible as the original spaces.
+		if has_header:
+			print(header_text)
+			print()
+		for line in content_lines:
+			print(line.replace('\t', '    '))
+		return
+
+	tl, tr, bl, br = glyphs["tl"], glyphs["tr"], glyphs["bl"], glyphs["br"]
+	h, v, l_join, r_join = glyphs["h"], glyphs["v"], glyphs["ml"], glyphs["mr"]
 
 	# Top Border
-	print(f"{PURPLE}{tl}{h * box_width}{tr}{RESET}")
+	print(tui.style(tl + h * box_width + tr, fg="border", cap=cap))
 
 	if has_header:
 		# Header Row: Centered Yellow on Dark Purple
 		centered_header = header_text.center(box_width)
-		print(f"{PURPLE}{v}{HEADER_BG}{HEADER_FG}{centered_header}{RESET}{PURPLE}{v}{RESET}")
+		print(tui.style(v, fg="border", cap=cap)
+			  + tui.style(centered_header, cap=cap, **HEADER_STYLE)
+			  + tui.style(v, fg="border", cap=cap))
 		# Divider Row replacing the equal signs
-		print(f"{PURPLE}{l_join}{h * box_width}{r_join}{RESET}")
+		print(tui.style(l_join + h * box_width + r_join, fg="border", cap=cap))
 
 	for line in content_lines:
 		# Count leading tabs for coloring
@@ -143,21 +171,26 @@ def print_colored_docstring(docstring):
 				indent_level += 1
 			else:
 				break
-		
-		# Select color based on depth
-		color = COLORS[indent_level % len(COLORS)]
-		
+
+		# Select style based on depth
+		indent_style = INDENT_STYLES[indent_level % len(INDENT_STYLES)]
+
 		# Expand tabs and calculate padding for alignment
 		display_line = line.replace('\t', '    ')
 		padding = " " * (max_w - len(display_line))
-		
-		print(f"{PURPLE}{v}{RESET} {color}{display_line}{padding} {RESET}{PURPLE}{v}{RESET}")
+
+		print(tui.style(v, fg="border", cap=cap) + " "
+			  + tui.style(display_line + padding, cap=cap, **indent_style) + " "
+			  + tui.style(v, fg="border", cap=cap))
 
 	# Bottom Border
-	print(f"{PURPLE}{bl}{h * box_width}{br}{RESET}")
+	print(tui.style(bl + h * box_width + br, fg="border", cap=cap))
+
 
 def main():
-	init_ansi()
+	tui.init_ansi()
+	cap = tui.detect()
+
 	if len(sys.argv) < 2:
 		print("Usage: python help.py <script_name_without_extension>")
 		sys.exit(1)
@@ -167,17 +200,18 @@ def main():
 	target_path = os.path.join(script_dir, f"{target_name}.py")
 
 	if not os.path.exists(target_path):
-		print(f"\033[0;31mError: Script '{target_name}.py' not found in {script_dir}\033[0m")
+		print(tui.style(f"Error: Script '{target_name}.py' not found in {script_dir}",
+						cap=cap, **ERROR_STYLE))
 		sys.exit(1)
 
-	PURPLE = '\033[38;2;170;0;255m'
-	BOLD = '\033[1m'
-	RESET = '\033[0m'
-
-	print(f"\n{PURPLE}{BOLD}--- Help for {target_name} ---{RESET}\n")
+	print()
+	print(tui.style(f"--- Help for {target_name} ---", fg="border", bold=True,
+					cap=cap))
+	print()
 	doc = get_docstring(target_path)
-	print_colored_docstring(doc)
+	print_colored_docstring(doc, cap)
 	print("")
+
 
 if __name__ == "__main__":
 	try:

@@ -38,7 +38,7 @@
 
 - **`keygen`**: Interactive random-key generator. Opens on a default alphanumeric 32-character key, then lets you switch the algorithm (alphanumeric, uppercase, lowercase, hex, base64, printable ASCII, UUID) or key length via an arrow-key menu. Keys are cryptographically secure and shown with a live entropy readout. ENTER randomizes again; ESC or Q exits.
 
-- **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Features a purple/green color-coded layout.
+- **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Renders through the shared `tui` library, so it follows the configured theme and drops to plain tab-separated output on a pipe unless colour is explicitly forced.
 
 - **`mdreader`**: (New) A lightweight markdown reader/renderer for terminal use. Supports rendering headers, code blocks, lists, and basic formatting for quick previews of README and notes files.
 
@@ -57,6 +57,8 @@
 - **`sanitize`**: Rewrites full git history to replace a leaked secret with a placeholder (file contents + commit messages), then expires reflogs and GCs. Pre-checks history to avoid no-op rewrites and verifies afterwards. *Requires: git + git-filter-repo*
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. On Linux/macOS it uses `sudo` unless already root, finds `shutdown` on PATH or in `/sbin`/`/usr/sbin`, and exits 1 with one error line when the command is missing or fails.
+
+- **`theme`**: Shows and changes the checkout-local terminal preferences in `config.ini`: `theme` (overview), `theme dark|light|high-contrast|toggle`, `theme set <key> <value>` (`theme.mode`, `color.level`, `table.style`), and `theme palette`. The same commands are available as `python -m tui`. When the file cannot be written it prints one line naming the path and exits 1.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems use conventional timestamp modification.
 
@@ -90,6 +92,45 @@ Once installed, you can run any Python script within the `Catro-Scripts` directo
 ```bash
 catro-scripts [script_name] [arguments]
 ```
+
+## Terminal styling (`tui/`)
+
+The `tui/` package is the one place terminal presentation lives: capability
+detection, the house palette, styled text, tables, prompts, screen primitives,
+progress, paging and the frame loop that hosts `.screensaver` plugins. Scripts
+import it instead of carrying their own escape codes, so colours, box glyphs and
+pipe behaviour stay consistent.
+
+Styling is resolved once per run, in this order: `NO_COLOR`,
+`FORCE_COLOR`/`CLICOLOR_FORCE`, `CATRO_COLOR` (`none|16|256|true`), then
+`config.ini`, then autodetection (terminal type, Windows console age, SSH, tty).
+Three themes are available - `dark` (default), `light` and `high-contrast` -
+each colour is defined once and downgraded to the running colour level, so a
+16-colour terminal and a truecolor one show the same layout.
+
+A pipe stays plain by default: no ANSI escapes, no box glyphs, no padding - table
+rows become TAB-separated fields, which keeps `list`, `count`, `action list` and
+friends usable in scripts and `grep`. An explicit colour request on the pipe
+(`FORCE_COLOR`/`CLICOLOR_FORCE`, or a real `CATRO_COLOR` level) turns plain off
+instead: the pipe gets the full styled table - borders, padding, zebra rows and
+escapes - so `FORCE_COLOR=3 list.py | cat` is both coloured and readable.
+`NO_COLOR` still wins over any request. Turning colour off on a real terminal
+(`NO_COLOR`, `TERM=dumb`, `theme set color.level none`) only removes the escapes:
+the table keeps its borders, alignment and truncation.
+
+Settings live in `config.ini` next to the wrappers (gitignored), managed with the
+`theme` command:
+
+```bash
+catro-scripts theme                      # show mode, level, table style, path
+catro-scripts theme light                # or dark / high-contrast / toggle
+catro-scripts theme set color.level 256  # auto | none | 16 | 256 | true
+catro-scripts theme set table.style ascii
+catro-scripts theme palette              # list the active palette
+```
+
+`CATRO_ASCII=1` forces ASCII box fallbacks, and
+`CATRO_THEME=dark|light|high-contrast` overrides the file for one run.
 
 ## Testing
 

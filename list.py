@@ -2,14 +2,17 @@
 """
 			CATRO-SCRIPTS LISTER
 			====================
-This utility scans its directory for all Python (.py) scripts and displays them 
-in a formatted ASCII box-drawing table.
+This utility scans its directory for all Python (.py) scripts and displays them
+in the house table: a box with padded columns on a terminal (coloured according
+to the colour level), one TAB-separated record per line when the output is
+piped.
 
 Features:
 	- Automatically extracts descriptions from scripts.
 	- Human-readable file sizes.
 	- Alternating row backgrounds (Black/Dark Grey) with Light Blue text.
-	- Full box-drawing border.
+	- Full box-drawing border and fixed 4/25/10/50 column widths.
+	- Plain TAB-separated output when stdout is not a terminal.
 
 Usage:
 	python list.py
@@ -18,14 +21,17 @@ Usage:
 import os
 import sys
 
-# ANSI Color Codes (TrueColor support)
-class Colors:
-	PURPLE = '\033[38;2;170;0;255m'
-	LIGHT_BLUE = '\033[38;2;173;216;230m' # Light Blue foreground
-	BG_BLACK = '\033[48;2;0;0;0m'         # Black background
-	BG_GREY = '\033[48;2;45;45;45m'       # Dark Grey background
-	BOLD = '\033[1m'
-	END = '\033[0m'
+import tui
+
+# Fixed column widths. They are handed to the renderer verbatim so it never
+# re-measures or fits the terminal: these are the exact widths the table has
+# always used, and its bytes depend on them.
+COLUMN_WIDTHS = [4, 25, 10, 50]
+
+# `get_description` owns the description truncation (47 characters then ".."),
+# so the renderer must not truncate that cell a second time.
+DESCRIPTION_WIDTH = 47
+
 
 def format_bytes(size):
 	"""Convert bytes to a human-readable format."""
@@ -34,6 +40,7 @@ def format_bytes(size):
 			return f"{size:3.1f} {unit}"
 		size /= 1024.0
 	return f"{size:3.1f} GB"
+
 
 def get_description(filepath):
 	"""Extracts the first non-empty line from a script as its description."""
@@ -44,80 +51,53 @@ def get_description(filepath):
 				if line:
 					# Clean up common script starters
 					clean = line.lstrip('"/#\'').strip()
-					return (clean[:47] + '..') if len(clean) > 50 else clean
+					return (clean[:DESCRIPTION_WIDTH] + '..') if len(clean) > 50 else clean
 	except Exception:
 		pass
 	return "No description found"
 
+
 def list_scripts():
-	# Initialize Windows console for ANSI escape sequences
-	if os.name == 'nt':
-		os.system('')
+	# Capabilities are resolved once: the whole run uses one colour level,
+	# Unicode decision and plain/tty mode.
+	tui.init_ansi()
+	cap = tui.detect()
 
 	script_dir = os.path.dirname(os.path.abspath(__file__))
 	current_script = os.path.basename(__file__)
-	
-	print(f"\n{Colors.PURPLE}{Colors.BOLD}--- SCRIPT DIRECTORY SCAN ---{Colors.END}")
-	print(f"{Colors.PURPLE}Location:{Colors.END} {script_dir}\n")
-	
+
+	print()
+	print(tui.style("--- SCRIPT DIRECTORY SCAN ---", fg="header", bold=True, cap=cap))
+	print("{} {}\n".format(tui.style("Location:", fg="border", cap=cap), script_dir))
+
 	try:
 		files = os.listdir(script_dir)
 		scripts = sorted([f for f in files if f.endswith('.py') and f != current_script])
-		
+
 		if not scripts:
-			print(f"{Colors.PURPLE}No other Python scripts found in this directory.{Colors.END}")
+			print(tui.style("No other Python scripts found in this directory.",
+							fg="border", cap=cap))
 			return
 
-		# Column widths
-		w_id = 4
-		w_name = 25
-		w_size = 10
-		w_desc = 50
-
-		# Box Drawing Characters
-		tl, tr, bl, br = '┌', '┐', '└', '┘'
-		h, v = '─', '│'
-		t_join, b_join, l_join, r_join, cross = '┬', '┴', '├', '┤', '┼'
-
-		# Helper to build rows
-		def make_divider(left, mid, right, cross_char):
-			return (f"{Colors.PURPLE}{left}{h*(w_id+2)}{cross_char}{h*(w_name+2)}{cross_char}"
-					f"{h*(w_size+2)}{cross_char}{h*(w_desc+2)}{right}{Colors.END}")
-
-		# Borders
-		top_border = make_divider(tl, t_join, tr, t_join)
-		mid_border = make_divider(l_join, cross, r_join, cross)
-		bot_border = make_divider(bl, b_join, br, b_join)
-
-		# Print Header
-		print(top_border)
-		header = (f"{Colors.PURPLE}{v}{Colors.BOLD} {'ID':<{w_id}} {v} {'Script Name':<{w_name}} {v} "
-				  f"{'Size':<{w_size}} {v} {'Description':<{w_desc}} {v}{Colors.END}")
-		print(header)
-		print(mid_border)
-
+		# One row per script. The cells are built exactly as the renderer will
+		# print them: sizes are pre-formatted, the description is pre-truncated
+		# and the widths are the fixed ones above.
+		rows = []
 		for i, script in enumerate(scripts, 1):
 			file_path = os.path.join(script_dir, script)
-			size = format_bytes(os.path.getsize(file_path))
-			desc = get_description(file_path)
-			
-			script_name = script[:-3] if script.endswith('.py') else script
-			
-			# Set background and foreground colors for the row
-			bg = Colors.BG_BLACK if i % 2 != 0 else Colors.BG_GREY
-			row_style = Colors.LIGHT_BLUE + bg
-			
-			# Constructing the row. 
-			# We reset the color (Colors.END) before printing the final vertical border 
-			# to ensure the background color doesn't bleed into it.
-			row = (f"{Colors.PURPLE}{v}{row_style} {i:<{w_id}} {Colors.PURPLE}{v}{row_style} {script_name:<{w_name}} "
-				   f"{Colors.PURPLE}{v}{row_style} {size:<{w_size}} {Colors.PURPLE}{v}{row_style} {desc:<{w_desc}} "
-				   f"{Colors.END}{Colors.PURPLE}{v}{Colors.END}")
-			print(row)
+			rows.append((
+				i,
+				script[:-3] if script.endswith('.py') else script,
+				format_bytes(os.path.getsize(file_path)),
+				get_description(file_path),
+			))
 
-		print(bot_border)
-		print(f"{Colors.PURPLE}{Colors.BOLD}Total scripts found:{Colors.END} {len(scripts)}\n")
-		
+		tui.print_table(["ID", "Script Name", "Size", "Description"], rows,
+						widths=COLUMN_WIDTHS, truncate=False, cap=cap)
+		print(tui.style("Total scripts found:", fg="border", bold=True, cap=cap),
+			  len(scripts))
+		print()
+
 	except UnicodeEncodeError:
 		# Do not swallow this one: printing it and exiting 0 would make a
 		# UTF-8 problem look like a successful, empty scan.
@@ -127,7 +107,7 @@ def list_scripts():
 		# printing an error here would write into the same dead pipe.
 		raise
 	except Exception as e:
-		print(f"\033[91mError scanning directory: {e}{Colors.END}")
+		print(tui.style("Error scanning directory: {}".format(e), fg="error", cap=cap))
 		sys.exit(1)
 
 if __name__ == "__main__":

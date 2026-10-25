@@ -20,6 +20,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import clean_env  # noqa: E402  (test helper, not production)
 
 # (script, argv tail) for every command that prints a table.
 PIPE_CASES = [
@@ -31,8 +34,8 @@ PIPE_CASES = [
 
 
 def child_env(**overrides):
-	"""Copy of the environment with output-related variables normalised."""
-	env = dict(os.environ)
+	"""Copy of the environment with colour and output variables normalised."""
+	env = clean_env()
 	for key in ("PYTHONUNBUFFERED", "PYTHONIOENCODING", "PYTHONUTF8"):
 		env.pop(key, None)
 	# The tables use box-drawing characters; a cp1252 console codepage would
@@ -189,12 +192,27 @@ class NonPipeFailureTests(unittest.TestCase):
 		self.assertIn("Error scanning directory:", result.stdout.decode("utf-8", "replace"))
 
 	def test_encode_failure_is_not_silent(self):
-		# Box-drawing characters cannot be encoded as cp1252 -> rc must be
-		# non-zero; an encode problem is not a dead reader.
-		result = run_script(
-			"list.py", [], child_env(PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+		# A console that cannot encode box glyphs now degrades to ASCII boxes
+		# (see test_crossplatform.test_legacy_console_degrades_to_ascii_boxes),
+		# so the loud-failure case is narrower: text even ASCII cannot encode.
+		code = (
+			"import importlib.util, sys\n"
+			"spec = importlib.util.spec_from_file_location('listmod', sys.argv[1])\n"
+			"mod = importlib.util.module_from_spec(spec)\n"
+			"spec.loader.exec_module(mod)\n"
+			"mod.get_description = lambda _path: 'caf\\u00e9 unencodable'\n"
+			"mod.list_scripts()\n"
+		)
+		result = subprocess.run(
+			[sys.executable, "-c", code, str(REPO / "list.py")],
+			cwd=str(REPO),
+			env=child_env(PYTHONIOENCODING="ascii", PYTHONUTF8="0"),
+			stdin=subprocess.DEVNULL,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
 		)
 		self.assertNotEqual(result.returncode, 0)
+		self.assertIn(b"UnicodeEncodeError", result.stderr)
 
 
 if __name__ == "__main__":

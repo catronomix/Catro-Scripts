@@ -4,6 +4,11 @@
 # Explicitly enforce LF for shell scripts (prevents "invalid option / missing file" errors on Linux)
 *.sh text eol=lf
 
+# Python sources are LF everywhere: core.autocrlf=true on Windows kept handing
+# the index CRLF (and once a stray lone CR) for files this branch touched, which
+# turned a small change into a 500-line diff.
+*.py text eol=lf
+
 # The extension-less 'cs' dispatcher is a bash script too, but matches no
 # *.sh pattern, so Windows tooling kept saving it as CRLF and bash choked on
 # the shebang. Pin the dispatcher itself to LF.

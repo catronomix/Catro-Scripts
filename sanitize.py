@@ -12,7 +12,7 @@
 		- Uses git-filter-repo with literal (non-regex) replacement text.
 		- Warns on dirty working trees before rewriting.
 		- Verifies history after rewrite and reports leaks clearly.
-		- Full-color output with box-drawing tables.
+		- House-style key/value blocks; plain TAB output when piped.
 
 	Usage:
 		python sanitize.py "<secret>" "<placeholder>" [--yes]
@@ -42,24 +42,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-
-# House-style palette (standardized on list.py Colors approach).
-class Colors:
-	PURPLE = '\033[38;2;170;0;255m'
-	LIGHT_BLUE = '\033[38;2;173;216;230m'
-	BG_BLACK = '\033[48;2;0;0;0m'
-	BG_GREY = '\033[48;2;45;45;45m'
-	GREEN = '\033[38;2;0;255;0m'
-	YELLOW = '\033[38;2;255;255;0m'
-	RED = '\033[38;2;255;70;70m'
-	BOLD = '\033[1m'
-	END = '\033[0m'
-
-
-def init_ansi():
-	# Enable ANSI escape sequences on Windows consoles.
-	if os.name == 'nt':
-		os.system('')
+import tui
 
 
 def run(cmd, **kwargs):
@@ -74,40 +57,6 @@ def run(cmd, **kwargs):
 def run_bytes(cmd, **kwargs):
 	# Binary-safe variant: needed when scanning blobs that may not be UTF-8.
 	return subprocess.run(cmd, capture_output=True, **kwargs)
-
-
-def _box_chars():
-	# Use Unicode box-drawing per house style, but fall back to ASCII when
-	# the console encoding (e.g. Windows cp1252) cannot render Unicode.
-	try:
-		for ch in "┌┐└┘─│├┤":
-			ch.encode(sys.stdout.encoding or "utf-8")
-		return ('┌', '┐', '└', '┘', '─', '│', '├', '┤')
-	except Exception:
-		return ('+', '+', '+', '+', '-', '|', '+', '+')
-
-
-def print_table(title, rows):
-	# Render key/value rows in a Unicode box table with alternating backgrounds.
-	widths = [len(str(k)) for k, _ in rows]
-	widths += [len(title)]
-	w_key = max(widths) if widths else len(title)
-	w_val = max([len(str(v)) for _, v in rows] + [0])
-	w_key = max(w_key, 8)
-	w_val = max(w_val, 8)
-	total = w_key + w_val + 5
-	tl, tr, bl, br, h, v, l_join, r_join = _box_chars()
-	print(f"{Colors.PURPLE}{tl}{h * total}{tr}{Colors.END}")
-	header = f" {title} ".center(total)
-	print(f"{Colors.PURPLE}{v}{Colors.BOLD}{header}{Colors.END}{Colors.PURPLE}{v}{Colors.END}")
-	print(f"{Colors.PURPLE}{l_join}{h * total}{r_join}{Colors.END}")
-	for i, (k, val) in enumerate(rows):
-		bg = Colors.BG_BLACK if i % 2 == 0 else Colors.BG_GREY
-		style = Colors.LIGHT_BLUE + bg
-		row = (f"{Colors.PURPLE}{v}{style} {str(k):<{w_key}} {v} "
-			   f"{str(val):<{w_val}} {Colors.END}{Colors.PURPLE}{v}{Colors.END}")
-		print(row)
-	print(f"{Colors.PURPLE}{bl}{h * total}{br}{Colors.END}")
 
 
 def parse_args(argv):
@@ -216,8 +165,9 @@ def restore_remotes(saved):
 			continue
 		a = run(["git", "remote", "add", name, fetch_url])
 		if a.returncode != 0:
-			print(f"{Colors.YELLOW}WARNING: could not restore remote "
-				  f"'{name}': {a.stderr.strip()}{Colors.END}", file=sys.stderr)
+			print(tui.style(f"WARNING: could not restore remote "
+							f"'{name}': {a.stderr.strip()}", fg="warn"),
+				  file=sys.stderr)
 			continue
 		push_url = urls.get("push")
 		if push_url and push_url != fetch_url:
@@ -227,23 +177,26 @@ def restore_remotes(saved):
 
 
 def main(argv=None) -> int:
-	init_ansi()
+	tui.init_ansi()
+	cap = tui.detect()
 	args = parse_args(sys.argv[1:] if argv is None else argv)
 	secret, placeholder = args.secret, args.placeholder
 
 	# Validate input: empty secrets or filter-repo delimiter sequences are rejected.
 	if not secret:
-		print(f"{Colors.RED}Error: secret must not be empty.{Colors.END}", file=sys.stderr)
+		print(tui.style("Error: secret must not be empty.", fg="error", cap=cap),
+			  file=sys.stderr)
 		return 2
 	if "\n" in secret or "==>" in secret:
-		print(f"{Colors.RED}Error: secret must not contain a newline or '==>'.{Colors.END}",
+		print(tui.style("Error: secret must not contain a newline or '==>'.",
+						fg="error", cap=cap),
 			  file=sys.stderr)
 		return 2
 
 	# Confirm we are inside a repo before doing anything destructive.
 	repo_root, err = find_repo_root()
 	if repo_root is None:
-		print(f"{Colors.RED}Error: {err}{Colors.END}", file=sys.stderr)
+		print(tui.style(f"Error: {err}", fg="error", cap=cap), file=sys.stderr)
 		if "not inside" in err:
 			print("Hint: cd to the repo root, or run: git init", file=sys.stderr)
 		return 1
@@ -251,29 +204,30 @@ def main(argv=None) -> int:
 	# Confirm the rewrite backend exists before warning or scanning.
 	filter_repo_cmd = find_filter_repo()
 	if filter_repo_cmd is None:
-		print(f"{Colors.RED}Error: git-filter-repo not found. Install it with:{Colors.END}",
+		print(tui.style("Error: git-filter-repo not found. Install it with:",
+						fg="error", cap=cap),
 			  file=sys.stderr)
 		print("    pip install git-filter-repo", file=sys.stderr)
 		return 1
 
-	print_table("SANITIZE PLAN", [
+	print(tui.key_values("SANITIZE PLAN", [
 		("Repo", str(repo_root)),
 		("Secret", "<redacted>"),
 		("Placeholder", placeholder),
 		("Backend", " ".join(filter_repo_cmd)),
-	])
+	], cap=cap))
 
 	# Warn about dirty trees; rewriting with uncommitted work risks losing it.
 	r = run(["git", "status", "--porcelain"])
 	if r.returncode == 0 and r.stdout.strip() and not args.yes:
-		print(f"{Colors.YELLOW}WARNING: working tree has uncommitted changes. "
-			  f"Commit or stash first.{Colors.END}")
+		print(tui.style("WARNING: working tree has uncommitted changes. "
+						"Commit or stash first.", fg="warn", cap=cap))
 		ans = input("Continue anyway? [y/N] ").strip().lower()
 		if ans not in ("y", "yes"):
 			print("Aborted.")
 			return 1
-	print(f"{Colors.YELLOW}WARNING: this rewrites ALL history. Back up first and "
-		  f"force-push afterwards.{Colors.END}")
+	print(tui.style("WARNING: this rewrites ALL history. Back up first and "
+					"force-push afterwards.", fg="warn", cap=cap))
 	if not args.yes:
 		ans = input("Rewrite full history now? [y/N] ").strip().lower()
 		if ans not in ("y", "yes"):
@@ -282,9 +236,10 @@ def main(argv=None) -> int:
 
 	# Pre-check avoids a destructive no-op (filter-repo drops origin, expires
 	# reflogs, GCs) paired with a misleading SUCCESS message.
-	print(f"{Colors.LIGHT_BLUE}Scanning history for secret...{Colors.END}")
+	print(tui.style("Scanning history for secret...", fg="fg", cap=cap))
 	if not secret_in_history(secret):
-		print(f"{Colors.GREEN}Secret not found in repo history. Nothing to do (exit 0).{Colors.END}")
+		print(tui.style("Secret not found in repo history. Nothing to do "
+						"(exit 0).", fg="success", cap=cap))
 		return 0
 
 	# Snapshot remotes: git-filter-repo strips `origin` by design, so save
@@ -306,10 +261,11 @@ def main(argv=None) -> int:
 			"--replace-message", replace_file,
 			"--force",
 		]
-		print(f"{Colors.LIGHT_BLUE}Running: {' '.join(cmd)}{Colors.END}")
+		print(tui.style(f"Running: {' '.join(cmd)}", fg="fg", cap=cap))
 		p = subprocess.run(cmd)
 		if p.returncode != 0:
-			print(f"{Colors.RED}git-filter-repo failed.{Colors.END}", file=sys.stderr)
+			print(tui.style("git-filter-repo failed.", fg="error", cap=cap),
+				  file=sys.stderr)
 			return 1
 
 		# Harden the rewrite: expire reflogs and prune unreachable objects so
@@ -322,12 +278,13 @@ def main(argv=None) -> int:
 		if saved_remotes and restored:
 			detail = ", ".join(
 				n + " -> " + saved_remotes[n].get("fetch", "") for n in restored)
-			print(f"{Colors.LIGHT_BLUE}Restored remote(s): {detail}{Colors.END}")
+			print(tui.style(f"Restored remote(s): {detail}", fg="fg", cap=cap))
 		elif saved_remotes:
-			print(f"{Colors.LIGHT_BLUE}Remotes already present, nothing to restore.{Colors.END}")
+			print(tui.style("Remotes already present, nothing to restore.",
+							fg="fg", cap=cap))
 
 		# Verify the secret is gone: searchable history plus a blob-by-blob scan.
-		print(f"{Colors.LIGHT_BLUE}Verifying rewrite...{Colors.END}")
+		print(tui.style("Verifying rewrite...", fg="fg", cap=cap))
 		v = run(["git", "log", "--all", "-p", "--", "."])
 		g = run(["git", "grep", "-F", secret, "--", "HEAD"])
 		leaks = []
@@ -340,8 +297,8 @@ def main(argv=None) -> int:
 		history_still_has_it = secret in (v.stdout or "")
 		head_has_it = g.returncode == 0 and g.stdout.strip()
 		if history_still_has_it or leaks or head_has_it:
-			print(f"{Colors.RED}WARNING: secret string still found after rewrite!{Colors.END}",
-				  file=sys.stderr)
+			print(tui.style("WARNING: secret string still found after rewrite!",
+							fg="error", cap=cap), file=sys.stderr)
 			print("The secret may exist in untracked files, tags, stash, or "
 				  "filenames (use --path renames for filenames).", file=sys.stderr)
 			if leaks:
@@ -349,13 +306,13 @@ def main(argv=None) -> int:
 			return 1
 
 		# Report success with the force-push / rotation steps that must follow.
-		print(f"{Colors.GREEN}{Colors.BOLD}SUCCESS: secret replaced with "
-			  f"'{placeholder}' in full history.{Colors.END}")
-		print_table("NEXT STEPS", [
+		print(tui.style(f"SUCCESS: secret replaced with '{placeholder}' in full "
+						f"history.", fg="success", bold=True, cap=cap))
+		print(tui.key_values("NEXT STEPS", [
 			("1. Force-push", "git push --force --all && git push --force --tags"),
 			("2. Teammates", "Everyone else must re-clone"),
 			("3. Rotation", "Rotate the leaked secret"),
-		])
+		], cap=cap))
 		return 0
 	finally:
 		# Always remove the temp replacement file; it contains the raw secret.
