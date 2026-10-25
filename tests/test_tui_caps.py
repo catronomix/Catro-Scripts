@@ -151,13 +151,36 @@ class CapabilityTests(unittest.TestCase):
 				cap = self.detect({"NO_COLOR": value, "COLORTERM": "truecolor"})
 				self.assertEqual((cap.level, cap.reason), ("none", "NO_COLOR"))
 
-	def test_forced_color_on_a_pipe_keeps_the_tab_layout_and_adds_ansi(self):
-		# Contract invariant 2 (amended): forcing colour on a pipe is deliberate.
-		# The layout stays machine-readable (TAB records, no box glyphs) and the
-		# escapes come back, so `FORCE_COLOR=3 list.py | cat` is greppable and
-		# coloured.
-		cap = self.detect({"FORCE_COLOR": "3"}, tty=False)
-		self.assertEqual((cap.level, cap.plain), ("true", True))
+	def test_explicit_colour_request_defeats_plain_on_a_pipe(self):
+		# Contract invariant 2 (amended): an explicit request on a pipe turns
+		# plain OFF, so `FORCE_COLOR=3 list.py | cat` gets the full styled table
+		# (borders, padding, zebra) instead of bare TAB records.
+		cases = (
+			({"FORCE_COLOR": "3"}, "true"),
+			({"FORCE_COLOR": "1"}, "16"),
+			({"CLICOLOR_FORCE": "1"}, "16"),
+			({"CATRO_COLOR": "256"}, "256"),
+		)
+		for environ, level in cases:
+			with self.subTest(environ=environ):
+				cap = self.detect(environ, tty=False)
+				self.assertEqual((cap.level, cap.plain, cap.isatty),
+								 (level, False, False))
+
+	def test_no_color_and_config_are_not_explicit_requests(self):
+		# NO_COLOR is a refusal and config.ini a standing default: neither makes
+		# a pipe styled, and NO_COLOR wins over FORCE_COLOR on the same run.
+		cases = ({"NO_COLOR": "1", "FORCE_COLOR": "3"}, {"CATRO_COLOR": "none"})
+		for environ in cases:
+			with self.subTest(environ=environ):
+				cap = self.detect(environ, tty=False)
+				self.assertEqual((cap.level, cap.plain), ("none", True))
+		with tempfile.TemporaryDirectory() as td:
+			config.CONFIG_FILE = Path(td) / "config.ini"
+			config.set("color", "level", "true")
+			cap = self.detect({}, tty=False)
+			self.assertEqual((cap.level, cap.reason, cap.plain),
+							 ("true", "config.ini", True))
 
 	def test_legacy_windows_console_beats_colorterm(self):
 		cap = self.detect({"COLORTERM": "truecolor"}, windows=True)

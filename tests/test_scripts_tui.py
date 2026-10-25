@@ -163,17 +163,30 @@ class ListNoColorTest(unittest.TestCase):
 		self.assertIn("ID", out)
 		self.assertIn("Total scripts found:", out)
 
-	def test_forced_colour_pipe_keeps_tabs_and_adds_ansi(self):
-		# Contract invariant 2: forcing colour on a pipe is deliberate. TAB
-		# records and no box glyphs (machine-readable), escapes present.
+	def test_forced_colour_pipe_gets_the_full_styled_table(self):
+		# Contract invariant 2 (amended): an explicit request on a pipe turns
+		# plain OFF, so the pipe gets borders, padding and zebra rows - not bare
+		# TAB records with a styled banner on top.
 		out = self.render(tty=False, environ={"FORCE_COLOR": "3"})
-		self.assertIn("\x1b", out, "FORCE_COLOR on a pipe lost its escapes")
+		self.assertIn("\x1b[38;2;170;0;255m\u250c", out,
+					  "the top border is missing its accent colour")
+		self.assertIn("\u2502", out)
+		self.assertIn("\x1b[48;2;0;0;0m", out, "the zebra row lost its background")
+		self.assertIn("\x1b[48;2;45;45;45m", out)
+		self.assertIn(" ID   ", out, "the header lost its padding")
+		self.assertNotIn("\t", out, "a forced pipe fell back to TAB records")
+
+	def test_catro_color_16_pipe_is_decorated_with_16_colour_codes(self):
+		out = self.render(tty=False, environ={"CATRO_COLOR": "16"})
+		self.assertIn("\x1b[95m\u250c", out)
+		self.assertNotIn("\x1b[38;2;", out, "16-colour output carried truecolor")
+		self.assertNotIn("\t", out)
+
+	def test_no_color_beats_force_color_on_a_pipe(self):
+		out = self.render(tty=False,
+						  environ={"FORCE_COLOR": "3", "NO_COLOR": "1"})
+		self.assertNotIn("\x1b", out, "NO_COLOR lost to FORCE_COLOR on a pipe")
 		self.assertIn("ID\tScript Name\tSize\tDescription", out)
-		self.assertNotIn("\t\t", out)
-		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
-			self.assertNotIn(glyph, out)
-		record = out.split("ID\tScript Name\tSize\tDescription\n", 1)[1].splitlines()[0]
-		self.assertEqual(len(record.split("\t")), 4)
 
 	def test_no_color_pipe_stays_tab_separated(self):
 		out = self.render(tty=False)

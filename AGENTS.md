@@ -35,9 +35,11 @@ This document provides instructions for AI agents working on the `catro-scripts`
     - **Tables**: Use `tui.render_table()`/`print_table()` (box glyphs, ASCII
       fallback) or `tui.key_values()`/`banner()`/`section()` instead of drawing
       borders by hand. Keep the header/footer structure seen in `list.py`.
-    - **Pipes**: The library already emits plain TAB-separated output when
-      stdout is not a tty - no ANSI, glyphs or padding. Do not special-case
-      `isatty()` in a script.
+    - **Pipes**: stdout that is not a tty gets plain TAB-separated output by
+      default - no ANSI, glyphs or padding - unless the run explicitly asks for
+      colour (`FORCE_COLOR`/`CLICOLOR_FORCE`/`CATRO_COLOR`), which gets the full
+      styled table; `NO_COLOR` still wins. Do not special-case `isatty()` in a
+      script: `cap.plain` already encodes this.
     - **Themes**: `dark`, `light` and `high-contrast` are all first class
       (`theme dark|light|high-contrast|toggle`); colors come from the palette so
       every colour level (`16`/`256`/`true`) downgrades automatically.

@@ -38,7 +38,7 @@
 
 - **`keygen`**: Interactive random-key generator. Opens on a default alphanumeric 32-character key, then lets you switch the algorithm (alphanumeric, uppercase, lowercase, hex, base64, printable ASCII, UUID) or key length via an arrow-key menu. Keys are cryptographically secure and shown with a live entropy readout. ENTER randomizes again; ESC or Q exits.
 
-- **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Renders through the shared `tui` library, so it follows the configured theme and switches to plain tab-separated output when piped.
+- **`list`**: Displays a formatted table of all Python scripts in the directory with file sizes and descriptions. Renders through the shared `tui` library, so it follows the configured theme and drops to plain tab-separated output on a pipe unless colour is explicitly forced.
 
 - **`mdreader`**: (New) A lightweight markdown reader/renderer for terminal use. Supports rendering headers, code blocks, lists, and basic formatting for quick previews of README and notes files.
 
@@ -108,11 +108,15 @@ Three themes are available - `dark` (default), `light` and `high-contrast` -
 each colour is defined once and downgraded to the running colour level, so a
 16-colour terminal and a truecolor one show the same layout.
 
-Anything on a pipe is plain on purpose: no ANSI escapes, no box glyphs, no
-padding - table rows become TAB-separated fields. That makes `list`, `count`,
-`action list` and friends usable in scripts and `grep`. Turning colour off on a
-real terminal (`NO_COLOR`, `TERM=dumb`, `theme set color.level none`) only removes
-the escapes: the table keeps its borders, alignment and truncation.
+A pipe stays plain by default: no ANSI escapes, no box glyphs, no padding - table
+rows become TAB-separated fields, which keeps `list`, `count`, `action list` and
+friends usable in scripts and `grep`. An explicit colour request on the pipe
+(`FORCE_COLOR`/`CLICOLOR_FORCE`, or a real `CATRO_COLOR` level) turns plain off
+instead: the pipe gets the full styled table - borders, padding, zebra rows and
+escapes - so `FORCE_COLOR=3 list.py | cat` is both coloured and readable.
+`NO_COLOR` still wins over any request. Turning colour off on a real terminal
+(`NO_COLOR`, `TERM=dumb`, `theme set color.level none`) only removes the escapes:
+the table keeps its borders, alignment and truncation.
 
 Settings live in `config.ini` next to the wrappers (gitignored), managed with the
 `theme` command:
