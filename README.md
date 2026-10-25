@@ -12,7 +12,7 @@
 
 - **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience/personalization
 
-- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI.
+- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI. Each entry is `{"<name>": {"command": "<shell command>", "description": "<one line>"}}`; a malformed file is reported once with a non-zero exit, and an entry missing `command`/`description` only warns. `actions.json` itself is local and gitignored: `actions-template.json` is the tracked example and the bootstrap defaults written when the file is missing mirror it.
 
 - **`audiosplit`**: Splits multi-channel audio files into individual mono tracks. Supports multiple formats (MP3, WAV, FLAC, AAC, OGG, M4A, etc.) with batch processing, wildcard filtering, and interactive options.
 
@@ -42,7 +42,7 @@
 
 - **`mdreader`**: (New) A lightweight markdown reader/renderer for terminal use. Supports rendering headers, code blocks, lists, and basic formatting for quick previews of README and notes files.
 
-- **`netconfig`**: Cross-platform network interface manager. Seamlessly toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter switching.
+- **`netconfig`**: Network interface manager for **Windows (netsh)** and **Linux with NetworkManager (nmcli)** only. Toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter switching. Unsupported systems exit non-zero, and a missing `nmcli`/`ip` is reported as a failure naming the tool instead of a fake success.
 
 - **`newfile`**: Creates new files with optional content templates and directory structure initialization.
 
