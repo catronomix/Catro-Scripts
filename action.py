@@ -102,17 +102,18 @@ def load_actions(cap=None):
             actions = json.load(f)
     except (OSError, ValueError) as e:
         print(
-            tui.style(f"Error: cannot read '{ACTIONS_FILE}': {e}", fg="error",
-                      cap=cap),
+            tui.status("error", f"Error: cannot read '{ACTIONS_FILE}': {e}",
+                       cap=cap),
             file=sys.stderr,
         )
         sys.exit(1)
 
     if not isinstance(actions, dict):
         print(
-            tui.style(f"Error: '{ACTIONS_FILE}' must contain a JSON object "
-                      f"mapping action names to {{command, description}}.",
-                      fg="error", cap=cap),
+            tui.status("error",
+                       f"Error: '{ACTIONS_FILE}' must contain a JSON object "
+                       f"mapping action names to {{command, description}}.",
+                       cap=cap),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -129,7 +130,7 @@ def save_actions(actions, cap=None):
             json.dump(actions, f, indent=4, ensure_ascii=False)
         return True
     except Exception as e:
-        print(tui.style(f"Error saving actions to file: {e}", fg="error", cap=cap))
+        print(tui.status("error", f"Error saving actions to file: {e}", cap=cap))
         return False
 
 
@@ -179,8 +180,9 @@ def run_action(action_name, extra_args, cap=None):
 
     if action_name not in actions:
         print(
-            tui.style(f"Error: Action '{action_name}' not found in actions.json.",
-                      fg="error", cap=cap)
+            tui.status("error",
+                       f"Error: Action '{action_name}' not found in actions.json.",
+                       cap=cap)
         )
         print(
             "Use {} to view available macros.".format(
@@ -192,11 +194,11 @@ def run_action(action_name, extra_args, cap=None):
     base_command = entry.get("command") if isinstance(entry, dict) else None
     if not isinstance(base_command, str) or not base_command.strip():
         print(
-            tui.style(f"Error: Action '{action_name}' has no command. ", fg="error",
-                      cap=cap)
-            + "Fix it with "
+            tui.status("error", f"Error: Action '{action_name}' has no command.",
+                       cap=cap)
+            + " Fix it with "
             + tui.style(f"python action.py add {action_name}", fg="border", cap=cap)
-            + tui.style(".", fg="error", cap=cap)
+            + "."
         )
         sys.exit(1)
     base_command = base_command.strip()
@@ -211,24 +213,29 @@ def run_action(action_name, extra_args, cap=None):
         full_command = base_command
 
     print()
-    print(tui.style(f"--- EXECUTING MACRO: {action_name} ---",
-                    fg="header", bold=True, cap=cap))
-    print("{} {}\n".format(tui.style("Command:", fg="fg", cap=cap), full_command))
+    print(tui.header(f"--- EXECUTING MACRO: {action_name} ---", cap=cap))
+    # The command line stays a `key value` sentence on a pipe (its bytes are
+    # pinned by test_action_args); a terminal gets the chrome field.
+    if cap.plain:
+        print("Command: {}\n".format(full_command))
+    else:
+        print(tui.field("Command:", full_command, cap=cap))
+        print()
 
     try:
         # Run the command in the active shell environment
         result = subprocess.run(full_command, shell=True)
         print()
-        print(tui.style(f"--- MACRO FINISHED (Exit Code: {result.returncode}) ---",
-                        fg="border", cap=cap))
+        print(tui.section(
+            f"--- MACRO FINISHED (Exit Code: {result.returncode}) ---", cap=cap))
         print()
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         print()
-        print(tui.style("[Macro execution interrupted by user]", fg="warn", cap=cap))
+        print(tui.status("warn", "Macro execution interrupted by user", cap=cap))
         sys.exit(130)
     except Exception as e:
-        print(tui.style(f"Execution error: {e}", fg="error", cap=cap))
+        print(tui.status("error", f"Execution error: {e}", cap=cap))
         sys.exit(1)
 
 
@@ -238,14 +245,13 @@ def list_actions(cap=None):
     actions = load_actions(cap)
 
     print()
-    print(tui.style("--- ACTION MACRO DIRECTORY SCAN ---",
-                    fg="header", bold=True, cap=cap))
-    print("{} {}\n".format(tui.style("Storage File:", fg="border", cap=cap),
-                           ACTIONS_FILE))
+    print(tui.header("--- ACTION MACRO DIRECTORY SCAN ---",
+                     "Storage File: " + ACTIONS_FILE, cap=cap))
+    print()
 
     if not actions:
-        print(tui.style("No actions currently stored in actions.json.",
-                        fg="border", cap=cap))
+        print(tui.status("warn", "No actions currently stored in actions.json.",
+                         cap=cap))
         print("Run {} to create your first macro.\n".format(
             tui.style("python action.py add", fg="fg", cap=cap)))
         return
@@ -267,8 +273,7 @@ def list_actions(cap=None):
 
     tui.print_table(["ID", "Action Name", "Command", "Description"], rows,
                     widths=COLUMN_WIDTHS, truncate=False, cap=cap)
-    print(tui.style("Total macros saved:", fg="header", bold=True, cap=cap),
-          len(actions))
+    print(tui.section("Total macros saved: {}".format(len(actions)), cap=cap))
     print()
 
 
@@ -306,8 +311,7 @@ def interactive_add(target_name=None, cap=None):
     actions = load_actions(cap)
 
     print()
-    print(tui.style("=== ACTION MACRO MANAGER: ADD / EDIT ===",
-                    fg="header", bold=True, cap=cap))
+    print(tui.header("=== ACTION MACRO MANAGER: ADD / EDIT ===", cap=cap))
 
     # Determine action name
     if not target_name:
@@ -316,8 +320,9 @@ def interactive_add(target_name=None, cap=None):
         ).strip()
 
     if not target_name:
-        print(tui.style("Action name cannot be empty. Cancelled.\n", fg="error",
-                        cap=cap))
+        print(tui.status("error", "Action name cannot be empty. Cancelled.",
+                         cap=cap))
+        print()
         return
 
     is_edit = target_name in actions
@@ -327,28 +332,29 @@ def interactive_add(target_name=None, cap=None):
     existing_desc = existing.get("description", "") or ""
 
     if is_edit:
-        print(tui.style(
+        print(tui.status(
+            "warn",
             f"Editing existing macro '{target_name}'... "
-            f"(Press Enter to keep current values)", fg="warn", cap=cap))
+            f"(Press Enter to keep current values)", cap=cap))
     else:
-        print(tui.style(f"Creating new macro '{target_name}'...", fg="success",
-                        cap=cap))
+        print(tui.status("ok", f"Creating new macro '{target_name}'...", cap=cap))
 
     # Command input
     print()
-    print(tui.style("Executable Command String:", fg="border", cap=cap))
+    print(tui.section("Executable Command String:", cap=cap))
     cmd = prompt_input_with_default(
         tui.style("Command > ", fg="fg", cap=cap), existing_cmd, cap
     )
 
     if not cmd:
-        print(tui.style("Command string cannot be empty. Cancelled.\n", fg="error",
-                        cap=cap))
+        print(tui.status("error", "Command string cannot be empty. Cancelled.",
+                         cap=cap))
+        print()
         return
 
     # Description input
     print()
-    print(tui.style("Description:", fg="border", cap=cap))
+    print(tui.section("Description:", cap=cap))
     desc = prompt_input_with_default(
         tui.style("Description > ", fg="fg", cap=cap), existing_desc, cap
     )
@@ -362,8 +368,10 @@ def interactive_add(target_name=None, cap=None):
     if save_actions(actions, cap):
         status = "updated" if is_edit else "added"
         print()
-        print(tui.style(f"[Success] Action '{target_name}' successfully {status}!\n",
-                        fg="success", cap=cap))
+        print(tui.status(
+            "ok",
+            f"Action '{target_name}' successfully {status}!", cap=cap))
+        print()
 
 
 def interactive_remove(target_name=None, cap=None):
@@ -372,12 +380,12 @@ def interactive_remove(target_name=None, cap=None):
     actions = load_actions(cap)
 
     if not actions:
-        print(tui.style("No actions available to remove.\n", fg="error", cap=cap))
+        print(tui.status("error", "No actions available to remove.", cap=cap))
+        print()
         return
 
     print()
-    print(tui.style("=== ACTION MACRO MANAGER: REMOVE ===",
-                    fg="header", bold=True, cap=cap))
+    print(tui.header("=== ACTION MACRO MANAGER: REMOVE ===", cap=cap))
 
     if not target_name:
         list_actions(cap)
@@ -391,8 +399,9 @@ def interactive_remove(target_name=None, cap=None):
         return
 
     if target_name not in actions:
-        print(tui.style(f"Action '{target_name}' does not exist.\n", fg="error",
-                        cap=cap))
+        print(tui.status("error", f"Action '{target_name}' does not exist.",
+                         cap=cap))
+        print()
         return
 
     confirm = (
@@ -408,8 +417,9 @@ def interactive_remove(target_name=None, cap=None):
         del actions[target_name]
         if save_actions(actions):
             print()
-            print(tui.style(f"[Success] Action '{target_name}' has been deleted.\n",
-                            fg="success", cap=cap))
+            print(tui.status(
+                "ok", f"Action '{target_name}' has been deleted.", cap=cap))
+            print()
     else:
         print("Cancelled deletion.")
 
@@ -437,10 +447,10 @@ def main():
         interactive_remove(target, cap)
     elif subcommand == "run":
         if len(args) < 2:
-            print(
-                tui.style("Usage: python action.py run <action_name> "
-                          "[optional flags/args]", fg="error", cap=cap)
-            )
+            print(tui.status(
+                "error",
+                "Usage: python action.py run <action_name> [optional flags/args]",
+                cap=cap))
             sys.exit(1)
         action_name = args[1]
         extra_args = args[2:]
