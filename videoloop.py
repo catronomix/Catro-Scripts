@@ -193,8 +193,7 @@ def get_resize_config(cap):
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
-def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap=None):
-	cap = cap if cap is not None else tui.detect()
+def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap):
 	if not check_ffmpeg():
 		print(tui.style("Error: FFmpeg not found.", fg="error", cap=cap))
 		return

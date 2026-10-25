@@ -180,8 +180,7 @@ def get_resize_config(cap):
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
-def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, working_dir=".", cap=None):
-	cap = cap if cap is not None else tui.detect()
+def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_dir="."):
 	if not check_ffmpeg():
 		print(tui.style("Error: FFmpeg not found in PATH or program directory.", fg="error", cap=cap))
 		return

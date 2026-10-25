@@ -134,8 +134,7 @@ def get_curve_choice(cap):
 			return curves[int(choice)-1][0]
 		print(tui.style("Invalid choice.", fg="error", cap=cap))
 
-def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffix, supports_curve=True, cap=None):
-	cap = cap if cap is not None else tui.detect()
+def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffix, supports_curve, cap):
 	if not check_ffmpeg():
 		print(tui.style("Error: FFmpeg not found.", fg="error", cap=cap))
 		return

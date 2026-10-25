@@ -79,8 +79,7 @@ def get_ffmpeg_instructions(cap):
 		"Decord requires FFmpeg/LibAV. Place ffmpeg in the script folder or add it to PATH.\n"
 	)
 
-def extract_frames(video_path, frame_id=None, use_keyframe=False, interval=None, total=None, cap=None):
-	cap = cap if cap is not None else tui.detect()
+def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=None, total=None):
 	if not os.path.exists(video_path):
 		print(tui.style(f"Error: File '{video_path}' not found.", fg="error", cap=cap))
 		return

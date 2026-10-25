@@ -290,8 +290,7 @@ def get_effect_choice(cap):
 			return int(choice)
 		print(tui.style("Invalid choice.", fg="error", cap=cap))
 
-def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap=None):
-	cap = cap if cap is not None else tui.detect()
+def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap):
 	base_name = os.path.basename(file_path)
 	name_no_ext, ext = os.path.splitext(base_name)
 	
