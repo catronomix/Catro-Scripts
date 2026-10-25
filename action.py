@@ -103,9 +103,24 @@ def quote_extra_arg(arg):
             return '""'
         if not _WINDOWS_SHELL_META.search(arg):
             return arg
-        # cmd.exe has no escape for a quote inside a quoted string; doubling it
-        # is what child processes expect to receive as a single literal quote.
-        return '"' + arg.replace('"', '""') + '"'
+        # Escape like subprocess.list2cmdline: a run of backslashes is literal
+        # unless it precedes a double quote. Before a quote emit 2n+1
+        # backslashes (n literal + the quote's escape), and double the trailing
+        # run so the closing quote is not swallowed. Doubling quotes instead
+        # would hand the child a literal quote char and lose trailing
+        # backslashes - see tests/test_action_args.py.
+        out = []
+        backslashes = 0
+        for char in arg:
+            if char == "\\":
+                backslashes += 1
+                continue
+            if char == '"':
+                out.append("\\" * (backslashes * 2 + 1) + '"')
+            else:
+                out.append("\\" * backslashes + char)
+            backslashes = 0
+        return '"' + "".join(out) + "\\" * (backslashes * 2) + '"'
     return shlex.quote(arg)
 
 

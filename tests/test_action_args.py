@@ -58,6 +58,12 @@ HOSTILE_ARGS = [
     "$(pwd)",
     "`echo INJECTED`",
     "*.md",
+    # Windows quoting must survive backslash runs and embedded quotes: a naive
+    # quoted form turns `a b\` into `a b"` and splits `a\" b` in two.
+    "a b\\",
+    "C:\\Program Files\\My Dir\\",
+    'a "b" c',
+    'a\\"b',
 ]
 
 
