@@ -114,7 +114,7 @@ class PipeRefusalTests(unittest.TestCase):
 
 
 class LegendTests(unittest.TestCase):
-	"""The legend chrome comes from tui.banner/section, not hand-drawn boxes."""
+	"""The legend is one closed frame built from tui glyphs and prefixes."""
 
 	def test_legend_is_escape_free_without_colour(self):
 		cap = no_colour_cap()
@@ -219,6 +219,154 @@ class SourceTests(unittest.TestCase):
 		self.assertNotIn("isatty", source)
 		self.assertNotIn("msvcrt", source)
 		self.assertNotIn("termios", source)
+
+
+class PlainStream:
+	"""A pipe that can still encode box glyphs (probes unicode detection)."""
+
+	encoding = "utf-8"
+
+	def isatty(self):
+		return False
+
+	def write(self, text):
+		pass
+
+	def flush(self):
+		pass
+
+
+class LegendFrameTests(unittest.TestCase):
+	"""One box: one top rule, one bottom rule, borders, one even width."""
+
+	def assert_frame(self, lines, glyphs):
+		self.assertTrue(lines)
+		for line in lines:
+			self.assertEqual(tui.display_width(line),
+							 jsonl_monitor.LEGEND_WIDTH, repr(line))
+		self.assertTrue(lines[0].startswith(glyphs["tl"]), lines[0])
+		self.assertTrue(lines[-1].startswith(glyphs["bl"]), lines[-1])
+		distinct = len({glyphs["tl"], glyphs["ml"], glyphs["bl"]}) == 3
+		if distinct:  # in ASCII every rule starts with the same "+"
+			self.assertEqual(
+				sum(line.startswith(glyphs["tl"]) for line in lines), 1,
+				"legend opened more than once")
+			self.assertEqual(
+				sum(line.startswith(glyphs["bl"]) for line in lines), 1,
+				"legend closed more than once (stray rule after the body?)")
+			self.assertGreaterEqual(
+				sum(line.startswith(glyphs["ml"]) for line in lines), 1,
+				"legend has no section separator")
+		for line in lines[1:-1]:
+			self.assertIn(line[0], (glyphs["v"], glyphs["ml"]), repr(line))
+			self.assertIn(line[-1], (glyphs["v"], glyphs["mr"]), repr(line))
+
+	def test_unicode_frame_at_level_none(self):
+		cap = tui.detect(stream=PlainStream(), environ={"NO_COLOR": "1"})
+		self.assertEqual(cap.level, "none")
+		self.assertTrue(cap.unicode)
+		glyphs = tui.table.glyphs_for(cap)
+		for name in jsonl_monitor.PARSERS:
+			with self.subTest(parser=name):
+				lines = jsonl_monitor.legend_lines(name, cap)
+				self.assert_frame(lines, glyphs)
+				self.assertIn("LEGEND", lines[1])
+
+	def test_ascii_frame_has_no_stray_rule(self):
+		cap = no_colour_cap()
+		glyphs = tui.table.glyphs_for(cap)
+		for name in jsonl_monitor.PARSERS:
+			with self.subTest(parser=name):
+				lines = jsonl_monitor.legend_lines(name, cap)
+				self.assert_frame(lines, glyphs)
+				# In ASCII every rule is "+---+", so identity is checked by
+				# adjacency instead: a second close (or a banner fragment)
+				# always lands next to another rule.
+				rules = [set(line) <= {"+", "-"} and "-" in line
+						 for line in lines]
+				self.assertTrue(rules[0])
+				self.assertTrue(rules[-1])
+				self.assertFalse(rules[-2], "rule stacked before the close")
+				for index in range(1, len(rules) - 1):
+					if rules[index]:
+						self.assertFalse(rules[index - 1],
+										 "two rules stacked at %d" % index)
+
+
+class StatusBarTests(unittest.TestCase):
+	"""Composed chrome never spills past the terminal edge."""
+
+	def render(self, cols):
+		with tempfile.TemporaryDirectory() as directory:
+			write_jsonl(directory)
+			monitor = populated_monitor(directory)
+			screen = FakeScreen(cols=cols, rows=14)
+			cache = {}
+			jsonl_monitor.render_ui(monitor, cache, screen, no_colour_cap())
+		return screen, cache
+
+	def test_no_row_is_wider_than_the_terminal(self):
+		for cols in (80, 100, 120):
+			with self.subTest(cols=cols):
+				screen, _ = self.render(cols)
+				for line in screen.writes:
+					self.assertLessEqual(tui.display_width(line), cols,
+										 repr(line))
+				status = [line for line in screen.writes
+						  if "Parser:" in tui.strip_ansi(line)]
+				self.assertEqual(len(status), 1)
+				self.assertEqual(tui.display_width(status[0]), cols)
+
+	def test_status_line_is_truncated_not_spilled(self):
+		screen, _ = self.render(80)
+		status = [tui.strip_ansi(line) for line in screen.writes
+				  if "Parser:" in tui.strip_ansi(line)][0]
+		self.assertIn("..", status)  # ellipsised to fit, not cut silently
+		self.assertNotIn("Quit", status)
+
+	def test_identical_render_writes_nothing_new(self):
+		with tempfile.TemporaryDirectory() as directory:
+			write_jsonl(directory)
+			monitor = populated_monitor(directory)
+			screen = FakeScreen(cols=100, rows=14)
+			cache = {}
+			jsonl_monitor.render_ui(monitor, cache, screen, no_colour_cap())
+			first = list(screen.writes)
+			jsonl_monitor.render_ui(monitor, cache, screen, no_colour_cap())
+			self.assertEqual(screen.writes, first)
+
+	def test_wide_glyphs_are_clipped_not_wrapped(self):
+		with tempfile.TemporaryDirectory() as directory:
+			write_jsonl(directory)
+			monitor = populated_monitor(directory)
+			active = monitor.sorted_files[0]
+			# Built directly: strip_special() would drop non-ASCII input, so a
+			# span is the only way a wide glyph reaches the painter here.
+			monitor.files_state[active].events = [{
+				"phase": "answer",
+				"spans": [jsonl_monitor.Span("\u65e5" * 60,
+											 fg=(255, 255, 255))],
+			}]
+			monitor.fullscreen_file = active
+			screen = FakeScreen(cols=80, rows=14)
+			jsonl_monitor.render_fullscreen_ui(monitor, {}, screen,
+											   no_colour_cap())
+		for line in screen.writes:
+			self.assertLessEqual(tui.display_width(line), 80, repr(line))
+
+	def test_fullscreen_footer_is_centred(self):
+		with tempfile.TemporaryDirectory() as directory:
+			write_jsonl(directory)
+			monitor = populated_monitor(directory)
+			monitor.fullscreen_file = monitor.sorted_files[0]
+			cache = {}
+			screen = FakeScreen(cols=100, rows=14)
+			jsonl_monitor.render_fullscreen_ui(monitor, cache, screen,
+											   no_colour_cap())
+		footer = tui.strip_ansi(cache["fs_footer"])
+		self.assertEqual(tui.display_width(footer), 100)
+		self.assertTrue(footer.startswith(" "), repr(footer))
+		self.assertTrue(footer.endswith(" "), repr(footer))
 
 
 if __name__ == "__main__":
