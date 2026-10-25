@@ -132,6 +132,40 @@ class EscapeSequenceTests(unittest.TestCase):
 		return keys._read_key_stream(stream, timeout)
 
 
+@unittest.skipIf(os.name == "nt",
+				 "select() only accepts sockets on Windows; pipes are POSIX")
+class BufferedDescriptorTests(unittest.TestCase):
+	"""A cursor sequence that arrives in one flush must stay one token.
+
+	Regression: the first read used the text layer, which prefetches, while the
+	readiness check looks at the descriptor. The whole `ESC [ 6 ~` ended up in
+	the text buffer, the descriptor looked empty, and a real terminal decoded
+	pagedown as a bare ESC - so the pager closed on the first key press.
+	"""
+
+	def test_pagedown_in_one_flush_is_one_token(self):
+		read_fd, write_fd = os.pipe()
+		try:
+			os.write(write_fd, b"\x1b[6~")
+			stream = io.TextIOWrapper(
+				io.BufferedReader(io.FileIO(read_fd, "rb", closefd=False)))
+			self.assertEqual(keys._read_key_stream(stream, 0.5), "pagedown")
+		finally:
+			os.close(read_fd)
+			os.close(write_fd)
+
+	def test_a_printable_key_still_decodes(self):
+		read_fd, write_fd = os.pipe()
+		try:
+			os.write(write_fd, b"q")
+			stream = io.TextIOWrapper(
+				io.BufferedReader(io.FileIO(read_fd, "rb", closefd=False)))
+			self.assertEqual(keys._read_key_stream(stream, 0.5), "q")
+		finally:
+			os.close(read_fd)
+			os.close(write_fd)
+
+
 class RawModeTests(unittest.TestCase):
 	class FakeTermios:
 		TCSADRAIN = "drain"

@@ -142,12 +142,32 @@ class KeyReader:
 def _read_key_stream(stream, timeout):
 	if not _wait(stream, timeout):
 		return None
-	text = stream.read(1)
+	text = _read_byte(stream)
 	if not text:
 		return None
 	if text == "\x1b":
 		return _decode_escape(stream)
 	return decode_key(text)
+
+
+def _read_byte(stream):
+	"""One character, taken from the descriptor itself when there is one.
+
+	`select()` only sees the descriptor, never Python's text buffer, so the two
+	must not be mixed while a cursor sequence is in flight: the first buffered
+	`read(1)` could swallow the whole `\\x1b[6~`, leaving the readiness check
+	with an empty descriptor - a real terminal then decoded pagedown as a bare
+	ESC and the pager closed on the first key. Reading the descriptor directly
+	keeps the bytes and the readiness test looking at the same place.
+	"""
+	fd = _fileno(stream)
+	if fd is None:
+		return stream.read(1) or None
+	try:
+		data = os.read(fd, 1)
+	except OSError:
+		return None
+	return data.decode("utf-8", "replace") or None
 
 
 def _decode_escape(stream):
@@ -171,7 +191,7 @@ def _decode_escape(stream):
 def _read_more(stream):
 	if not _wait(stream, ESCAPE_TIMEOUT):
 		return None
-	return stream.read(1) or None
+	return _read_byte(stream)
 
 
 def _wait(stream, timeout):
