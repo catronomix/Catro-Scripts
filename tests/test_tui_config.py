@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import config, palette  # noqa: E402  (import after sys.path setup)
+from tui import caps, config, palette  # noqa: E402  (import after sys.path setup)
 from tui.__main__ import main, summary  # noqa: E402
 
 
@@ -219,6 +219,20 @@ class ThemeCommandTests(unittest.TestCase):
 		for key in ("bg", "fg", "accent", "zebra_bg"):
 			self.assertIn(key, out)
 
+	def test_palette_swatches_carry_each_keys_own_colour(self):
+		# A terminal page paints the swatch with the key's own palette role and
+		# always prints the hex value, so the row is readable without the swatch.
+		cap = caps.Capabilities(level="true", unicode=True, width=None,
+								isatty=False, plain=False, reason="test")
+		stream = io.StringIO()
+		with mock.patch.object(caps, "detect", return_value=cap), \
+				redirect_stdout(stream):
+			self.assertEqual(main(["palette"]), 0)
+		out = stream.getvalue()
+		for key, value in palette.palette().items():
+			self.assertIn(palette.prefix(fg=key, cap=cap) + "\u25a0", out)
+			self.assertIn(value, out)
+
 	def test_unknown_command_prints_usage(self):
 		code, out = self.run_main(["bogus"])
 		self.assertEqual(code, 2)
@@ -258,8 +272,9 @@ class ThemeScriptTests(unittest.TestCase):
 	def test_script_shows_the_summary_without_writing_anything(self):
 		code, out = self.run_python("theme.py")
 		self.assertEqual(code, 0)
-		self.assertIn("theme.mode   soft", out)
-		self.assertIn("config       {}".format(self.root / "config.ini"), out)
+		# Piped rows are TAB-joined fields (the `field` plain contract).
+		self.assertIn("theme.mode\tsoft", out)
+		self.assertIn("config\t{}".format(self.root / "config.ini"), out)
 		self.assertFalse((self.root / "config.ini").exists())
 		self.assertFalse((REPO / "config.ini").exists())
 
