@@ -1,4 +1,4 @@
-# Regression tests for mdreader.py
+﻿# Regression tests for mdreader.py
 """
     Preflight / dependency behaviour of the terminal Markdown reader.
 
@@ -10,6 +10,7 @@
 
 import contextlib
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -112,24 +113,109 @@ class MdreaderPreflightTests(unittest.TestCase):
         fake = _FakeCurses()
         with mock.patch.object(mdreader, "curses", fake):
             for theme_mode in (0, 1, 2):
-                mdreader.init_cozy_colors(theme_mode)
-        self.assertTrue(fake.pairs)
-        for _pair, fg, bg in fake.pairs:
-            self.assertLessEqual(fg, fake.COLORS - 1)
-            self.assertLessEqual(bg, fake.COLORS - 1)
+                fake.pairs = []
+                mdreader.init_theme_colors(theme_mode)
+                self.assertEqual(
+                    [pair for pair, _fg, _bg in fake.pairs],
+                    [pair for pair, _fg, _bg in mdreader.PAIR_ROLES],
+                )
+                for _pair, fg, bg in fake.pairs:
+                    self.assertLessEqual(fg, fake.COLORS - 1)
+                    self.assertLessEqual(bg, fake.COLORS - 1)
 
-    def test_cozy_palette_kept_on_256_colours(self):
-        """A full-colour terminal still gets the original cozy-purple pairs."""
+    def test_rgb_palette_derived_from_the_house_theme(self):
+        """A redefinable terminal gets the mode's palette in exact RGB slots."""
         fake = _FakeCurses()
         fake.COLORS = 256
         fake.can_change_color = lambda: True
-        fake.init_color = lambda *_args: None
+        calls = []
+
+        def init_color(slot, red, green, blue):
+            calls.append((slot, red, green, blue))
+
+        fake.init_color = init_color
         with mock.patch.object(mdreader, "curses", fake):
-            mdreader.init_cozy_colors(0)
-        # Pair 1 is text-on-background using the RGB palette (16..24).
-        pair_numbers = [pair for pair, _fg, _bg in fake.pairs]
-        self.assertEqual(pair_numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9])
-        self.assertEqual(fake.pairs[0], (1, 19, 16))
+            mdreader.init_theme_colors(0)
+        soft = mdreader.tui.palette.SOFT
+        # Pair 1 is fg on bg, in the first two RGB slots above the base 16.
+        self.assertEqual(fake.pairs[0], (1, 16, 17))
+        self.assertEqual(
+            calls[0],
+            (16,) + tuple(round(c * 1000 / 255)
+                          for c in mdreader.tui.palette.rgb(soft["fg"])),
+        )
+        self.assertEqual(
+            calls[1],
+            (17,) + tuple(round(c * 1000 / 255)
+                          for c in mdreader.tui.palette.rgb(soft["bg"])),
+        )
+
+    def test_init_color_refusal_falls_back_to_nearest_indices(self):
+        """A terminal that claims RGB support and then refuses still gets pairs."""
+        fake = _FakeCurses()
+        fake.COLORS = 256
+        fake.can_change_color = lambda: True
+        with mock.patch.object(mdreader, "curses", fake):
+            mdreader.init_theme_colors(0)
+        self.assertEqual(
+            [pair for pair, _fg, _bg in fake.pairs],
+            [pair for pair, _fg, _bg in mdreader.PAIR_ROLES],
+        )
+        for _pair, fg, bg in fake.pairs:
+            self.assertTrue(0 <= fg <= 255)
+            self.assertTrue(0 <= bg <= 255)
+
+    def test_each_mode_paints_its_own_palette(self):
+        fake = _FakeCurses()
+        fake.COLORS = 256
+        painted = []
+        with mock.patch.object(mdreader, "curses", fake):
+            for theme_mode in range(len(mdreader.THEME_MODES)):
+                fake.pairs = []
+                mdreader.init_theme_colors(theme_mode)
+                painted.append(tuple(fake.pairs))
+        self.assertEqual(len(set(painted)), 3)
+
+    def test_segment_pairs_follow_palette_roles(self):
+        """Every mode classifies the same Rich styles to the same pair roles."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        from rich.style import Style
+
+        for mode, theme in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme)
+            cases = (
+                ("heading", Style(color=colours["header"], bold=True), 2),
+                ("link", Style(color=colours["warn"], underline=True), 3),
+                ("code", Style(color=colours["fg"],
+                               bgcolor=colours["surface"]), 4),
+                ("quote", Style(color=colours["muted"], italic=True), 5),
+                # contrast-light uses the same fill for surface and zebra, so a
+                # zebra row is indistinguishable from a normal cell there.
+                ("zebra", Style(color=colours["fg"],
+                                bgcolor=colours["zebra_bg"]),
+                 7 if colours["zebra_bg"].lower() != colours["surface"].lower()
+                 else 4),
+                ("table header", Style(color=colours["header"],
+                                       bgcolor=colours["surface"]), 9),
+            )
+            for role, style, expected in cases:
+                with self.subTest(mode=mode, role=role):
+                    self.assertEqual(
+                        mdreader.segment_pair(style, colours), expected)
+            with self.subTest(mode=mode, role="body"):
+                self.assertEqual(mdreader.segment_pair(None, colours), 1)
+
+    def test_rendered_document_carries_mode_pairs(self):
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode in range(len(mdreader.THEME_MODES)):
+            with self.subTest(mode=mode):
+                doc = mdreader.process_markdown_rich(
+                    "# Title\n\n> quote\n\n| a |\n|---|\n| b |\n", 40, mode
+                )
+                pairs = {seg.color for line in doc for seg in line.segments}
+                self.assertIn(2, pairs, "the heading keeps the accent pair")
 
     def test_rich_themes_follow_the_shared_palette(self):
         """Modes 0/1/2 draw their Rich colours from soft/contrast-* hexes."""
@@ -152,6 +238,15 @@ class MdreaderPreflightTests(unittest.TestCase):
                               str(styles["markdown.code"].bgcolor))
             headers.append(str(styles["markdown.h1"].color))
         self.assertEqual(len(set(headers)), 3, "the three modes must differ")
+
+    def test_initial_mode_follows_the_configured_theme(self):
+        """The reader opens in the theme `theme`/CATRO_THEME selects."""
+        with mock.patch.dict(os.environ, {"CATRO_THEME": "contrast-dark"}):
+            self.assertEqual(mdreader.initial_theme_mode(), 2)
+        with mock.patch.dict(os.environ, {"CATRO_THEME": "light"}):
+            self.assertEqual(mdreader.initial_theme_mode(), 1)
+        with mock.patch.dict(os.environ, {"CATRO_THEME": "soft"}):
+            self.assertEqual(mdreader.initial_theme_mode(), 0)
 
     def test_missing_dependency_reports_hint(self):
         with mock.patch.object(mdreader, "curses", None), mock.patch.object(
