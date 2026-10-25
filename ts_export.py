@@ -48,10 +48,32 @@ def print_error(message):
 
 def remove_readonly(func, path, excinfo):
     """
-    Error handler for shutil.rmtree to handle read-only files on Windows.
+    Error handler for shutil.rmtree to handle read-only files.
+
+    `stat.S_IWRITE` is only the owner write bit (0o200), so assigning it with
+    os.chmod would replace the whole mode and drop owner read - and execute for
+    directories. OR it onto the mode read back from lstat instead: the retry
+    then works on POSIX and Windows keeps its read-only-flag behaviour.
     """
-    os.chmod(path, stat.S_IWRITE)
+    try:
+        os.chmod(path, stat.S_IMODE(os.lstat(path).st_mode) | stat.S_IWRITE)
+    except OSError:
+        # Let func() surface the real error if the mode could not be changed.
+        pass
     func(path)
+
+def remove_tree(path):
+    """
+    Removes a tree with remove_readonly as the error handler.
+
+    3.11 baseline uses `onerror`; 3.12 deprecated it in favour of `onexc`, so
+    the newer keyword is used only where it exists. The handler keeps its
+    3-argument signature, which both keywords accept.
+    """
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=remove_readonly)
+    else:
+        shutil.rmtree(path, onerror=remove_readonly)
 
 def check_project():
     """Verify if the current directory is a TS project."""
@@ -75,7 +97,7 @@ def main():
     if os.path.exists(export_dir):
         try:
             # Use the readonly handler to avoid common Windows permission errors
-            shutil.rmtree(export_dir, onerror=remove_readonly)
+            remove_tree(export_dir)
         except Exception as e:
             print_error(f"Could not clear '{export_dir}' directory. Please ensure no files are open in other programs.\nDetails: {e}")
             return
