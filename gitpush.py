@@ -36,38 +36,37 @@ def main():
 
 	# Entrypoint
 	if len(sys.argv) != 2:
-		print(tui.style('Usage: gitpush "<commit message>"', fg="error", cap=cap),
+		print(tui.status("error", 'Usage: gitpush "<commit message>"', cap=cap),
 			  file=sys.stderr)
 		sys.exit(1)
 
 	message = sys.argv[1]
 
-	print(tui.style("→ Staging all changes...", fg="accent", cap=cap))
+	print(tui.status("info", "Staging all changes...", cap=cap))
 	run(['git', 'add', '-A'])
 	# Commit only if there is something to commit; otherwise proceed to push.
-	print(tui.style(f"→ Committing: {message}", fg="accent", cap=cap))
+	print(tui.status("info", f"Committing: {message}", cap=cap))
 	commit_result = run(['git', 'commit', '-m', message], check=False)
 	if commit_result.returncode != 0:
 		# Check whether the working tree is clean (nothing to commit).
 		status = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
 		if status.stdout.strip() == '':
-			print(tui.style('  Nothing to commit; skipping commit.', fg="warn", cap=cap))
+			print(tui.status("warn", "Nothing to commit; skipping commit.", cap=cap))
 		else:
 			raise RuntimeError(f"Commit failed ({commit_result.returncode}): git commit -m {message}")
 
 	# If origin is ahead, pull with rebase before pushing to avoid non-fast-forward rejection.
-	print(tui.style("→ Pushing to origin...", fg="accent", cap=cap))
+	print(tui.status("info", "Pushing to origin...", cap=cap))
 	push_result = run(['git', 'push'], check=False)
 	if push_result.returncode != 0:
-		print(tui.style('  Push failed; attempting pull --rebase then retrying push...',
-						fg="warn", cap=cap))
+		print(tui.status("warn", "Push failed; attempting pull --rebase then retrying push...",
+						 cap=cap))
 		run(['git', 'pull', '--rebase'])
 		run(['git', 'push'])
 
-	print(tui.style("✓ Done.", fg="success", cap=cap))
+	print(tui.status("ok", "Done.", cap=cap))
 
 
 if __name__ == "__main__":
 	tui.init_ansi()
 	main()
-

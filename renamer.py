@@ -130,11 +130,11 @@ FORBIDDEN_EXTENSIONS = (
 
 
 class ColoredArgumentParser(argparse.ArgumentParser):
-    """Custom ArgumentParser that outputs errors in the theme's error colour."""
+    """Custom ArgumentParser that reports errors through the shared status line."""
 
     def error(self, message):
         sys.stderr.write(
-            tui.style(f"error: {message}", fg="error", cap=get_cap()) + "\n"
+            tui.status("error", message, cap=get_cap()) + "\n"
         )
         self.print_usage(sys.stderr)
         sys.exit(2)
@@ -148,7 +148,7 @@ def save_undo_data(history):
                 f.write(f"{old}|{new}\n")
     except Exception as e:
         sys.stderr.write(
-            tui.style(f"Could not save undo data: {e}", fg="error", cap=get_cap())
+            tui.status("error", f"Could not save undo data: {e}", cap=get_cap())
             + "\n"
         )
 
@@ -158,7 +158,7 @@ def perform_undo():
     cap = get_cap()
 
     if not os.path.exists(UNDO_FILE):
-        print(tui.style("No undo history found.", fg="error", cap=cap))
+        print(tui.status("error", "No undo history found.", cap=cap))
         return
 
     history = []
@@ -170,39 +170,41 @@ def perform_undo():
                     history.append(parts)
     except Exception as e:
         sys.stderr.write(
-            tui.style(f"Error reading undo file: {e}", fg="error", cap=cap) + "\n"
+            tui.status("error", f"Error reading undo file: {e}", cap=cap) + "\n"
         )
         return
 
     if not history:
-        print("Undo history is empty.")
+        print(tui.status("info", "Undo history is empty.", cap=cap))
         return
 
-    print(f"Undoing last operation ({len(history)} files)...\n")
+    print(tui.status("info", f"Undoing last operation ({len(history)} files)...",
+                     cap=cap))
+    print()
 
     # Reverse history to undo in reverse order
     for old_path, new_path in reversed(history):
         if not os.path.exists(new_path):
-            print(
-                "{} (cannot restore to {})".format(
-                    tui.style(f"Missing: {new_path}", fg="error", cap=cap),
-                    os.path.basename(old_path),
-                )
-            )
+            print(tui.status(
+                "error",
+                "Missing: {} (cannot restore to {})".format(
+                    new_path, os.path.basename(old_path)),
+                cap=cap,
+            ))
             continue
 
         try:
             os.rename(new_path, old_path)
-            print(
+            print(tui.status(
+                "ok",
                 "Restored: {} -> {}".format(
-                    tui.style(os.path.basename(new_path), fg="warn", cap=cap),
-                    tui.style(os.path.basename(old_path), fg="success", cap=cap),
-                )
-            )
+                    os.path.basename(new_path), os.path.basename(old_path)),
+                cap=cap,
+            ))
         except Exception as e:
             sys.stderr.write(
-                tui.style(f"Failed to restore {new_path}: {e}", fg="error", cap=cap)
-                + "\n"
+                tui.status("error", f"Failed to restore {new_path}: {e}",
+                           cap=cap) + "\n"
             )
 
     # Clear history
@@ -210,10 +212,11 @@ def perform_undo():
         os.remove(UNDO_FILE)
     except Exception as e:
         sys.stderr.write(
-            tui.style(f"Failed to clear undo file: {e}", fg="error", cap=cap) + "\n"
+            tui.status("error", f"Failed to clear undo file: {e}", cap=cap) + "\n"
         )
 
-    print("\nUndo complete.")
+    print()
+    print(tui.status("info", "Undo complete.", cap=cap))
 
 
 def get_directories_at_depth(base_dir, target_depth, pattern=None):
@@ -240,9 +243,7 @@ def get_directories_at_depth(base_dir, target_depth, pattern=None):
                     scan_depth(subdir.path, current_depth + 1)
         except OSError as e:
             sys.stderr.write(
-                tui.style(
-                    f"Error scanning {current_path}: {e}", fg="error", cap=get_cap()
-                )
+                tui.status("error", f"Error scanning {current_path}: {e}", cap=get_cap())
                 + "\n"
             )
 
@@ -301,7 +302,7 @@ def get_target_files(
                         items.append(filename)
     except OSError as e:
         sys.stderr.write(
-            tui.style(f"Error accessing directory: {e}", fg="error", cap=get_cap())
+            tui.status("error", f"Error accessing directory: {e}", cap=get_cap())
             + "\n"
         )
         sys.exit(1)
@@ -376,7 +377,9 @@ def rename_files(
     )
 
     if not files:
-        print(f"No matching items found in '{folder_display}'. Nothing to do.")
+        print(tui.status("warn",
+                         f"No matching items found in '{folder_display}'. Nothing to do.",
+                         cap=cap))
         return history
 
     num_files = len(files)
@@ -386,13 +389,15 @@ def rename_files(
     if striponly_str is None:
         if digit_count is None:
             digit_count = required_digits
-            print(f"[{folder_display}] Auto-calculated digit padding: {digit_count}")
+            print(tui.status("info",
+                             f"[{folder_display}] Auto-calculated digit padding: {digit_count}",
+                             cap=cap))
         elif digit_count > 0:
             if digit_count < required_digits:
                 sys.stderr.write(
-                    tui.style(
-                        f"Error: Specified digits ({digit_count}) is too small for {num_files} files in '{folder_display}'.",
-                        fg="error",
+                    tui.status(
+                        "error",
+                        f"Specified digits ({digit_count}) is too small for {num_files} files in '{folder_display}'.",
                         cap=cap,
                     )
                     + "\n"
@@ -401,25 +406,34 @@ def rename_files(
                 sys.exit(1)
         elif digit_count == 0:
             if is_folder_mode:
-                print(
-                    f"[{folder_display}] Numbering disabled. Using original folder names."
-                )
+                print(tui.status(
+                    "info",
+                    f"[{folder_display}] Numbering disabled. Using original folder names.",
+                    cap=cap,
+                ))
             else:
-                print(
-                    f"[{folder_display}] Numbering disabled. Using original filenames."
-                )
+                print(tui.status(
+                    "info",
+                    f"[{folder_display}] Numbering disabled. Using original filenames.",
+                    cap=cap,
+                ))
     else:
         if is_folder_mode:
-            print(
-                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from folder names."
-            )
+            print(tui.status(
+                "info",
+                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from folder names.",
+                cap=cap,
+            ))
         else:
-            print(
-                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from filenames."
-            )
+            print(tui.status(
+                "info",
+                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from filenames.",
+                cap=cap,
+            ))
 
     item_type_str = "folders" if is_folder_mode else "files"
-    print(tui.section(f"Processing {num_files} {item_type_str} in '{folder_display}'...", cap=cap))
+    print(tui.header(f"Processing {num_files} {item_type_str} in '{folder_display}'...",
+                     cap=cap))
     print()
 
     for i, filename in enumerate(files, start=1):
@@ -456,7 +470,7 @@ def rename_files(
 
         # Check if the name hasn't changed at all
         if filename == new_name:
-            print("Skipping: {} (no change)".format(tui.style(filename, fg="warn", cap=cap)))
+            print(tui.status("warn", f"Skipping: {filename} (no change)", cap=cap))
             continue
 
         # Handle collisions with incrementing suffix
@@ -472,9 +486,9 @@ def rename_files(
             final_name = f"{base_new_name}({counter}){extension}"
 
         new_path = os.path.join(folder_path, final_name)
-        # A collision-renamed target is shown in the accent colour, a plain
-        # rename/copy in the success colour.
-        new_fg = "accent" if is_collision else "success"
+        # A collision-renamed target is an info line (accent), a plain
+        # rename/copy an ok line (success).
+        new_kind = "info" if is_collision else "ok"
 
         try:
             if keep:
@@ -482,24 +496,16 @@ def rename_files(
                     shutil.copytree(old_path, new_path)
                 else:
                     shutil.copy2(old_path, new_path)
-                print(
-                    "Copied: {} -> {}".format(
-                        tui.style(filename, fg="warn", cap=cap),
-                        tui.style(final_name, fg=new_fg, cap=cap),
-                    )
-                )
+                print(tui.status(
+                    new_kind, f"Copied: {filename} -> {final_name}", cap=cap))
             else:
                 os.rename(old_path, new_path)
-                print(
-                    "Renamed: {} -> {}".format(
-                        tui.style(filename, fg="warn", cap=cap),
-                        tui.style(final_name, fg=new_fg, cap=cap),
-                    )
-                )
+                print(tui.status(
+                    new_kind, f"Renamed: {filename} -> {final_name}", cap=cap))
                 history.append((os.path.abspath(old_path), os.path.abspath(new_path)))
         except Exception as e:
             sys.stderr.write(
-                tui.style(f"Failed to process {filename}: {e}", fg="error", cap=cap)
+                tui.status("error", f"Failed to process {filename}: {e}", cap=cap)
                 + "\n"
             )
 
@@ -716,13 +722,11 @@ if __name__ == "__main__":
         # closed stdin with the shared one-line preflight instead of letting
         # input() raise EOFError halfway through a destructive run.
         tui.require_tty("renamer --all")
-        print(
-            tui.style(
-                "WARNING: You are using the --all flag. This will process system files and scripts.",
-                fg="error",
-                cap=get_cap(),
-            )
-        )
+        print(tui.status(
+            "error",
+            "WARNING: You are using the --all flag. This will process system files and scripts.",
+            cap=get_cap(),
+        ))
         confirm = tui.ask_text("Are you sure? (y/n): ")
         if confirm.lower() != "y":
             print("Operation cancelled.")

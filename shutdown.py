@@ -112,15 +112,16 @@ def schedule_shutdown(seconds, cap=None):
 		# Windows uses seconds for /t
 		program = find_windows_shutdown()
 		argv = [program, "/s", "/t", str(seconds)]
-		success = f"\n[Success] Shutdown scheduled in {seconds} seconds."
+		success = f"Shutdown scheduled in {seconds} seconds."
 		cancel_hint = "To cancel, type: shutdown /a"
 	elif system == "linux" or system == "darwin": # Darwin is macOS
 		# Unix-like systems usually take minutes for +m
 		program = find_posix_program("shutdown")
 		if program is None:
-			print(tui.style(
-				"\n[Error] 'shutdown' was not found on this system "
-				f"(looked on PATH, {', '.join(SBIN_DIRS)}).", fg="error", cap=cap))
+			print("\n" + tui.status(
+				"error",
+				"'shutdown' was not found on this system "
+				f"(looked on PATH, {', '.join(SBIN_DIRS)}).", cap=cap))
 			return False
 
 		argv = [program, "-h", f"+{minutes}"]
@@ -131,20 +132,22 @@ def schedule_shutdown(seconds, cap=None):
 		else:
 			sudo = shutil.which("sudo")
 			if sudo is None:
-				print(tui.style(
-					"\n[Error] 'sudo' is required but not installed, and this "
+				print("\n" + tui.status(
+					"error",
+					"'sudo' is required but not installed, and this "
 					"process is not root; cannot schedule a shutdown.",
-					fg="error", cap=cap))
+					cap=cap))
 				return False
 			argv.insert(0, sudo)
-			print(tui.style(
-				f"\n[Note] Scheduling for {minutes} minute(s). System may prompt for password.",
-				fg="muted", cap=cap))
+			print("\n" + tui.status(
+				"info",
+				f"Scheduling for {minutes} minute(s). System may prompt for password.",
+				cap=cap))
 
-		success = f"\n[Success] Shutdown scheduled in {minutes} minute(s)."
+		success = f"Shutdown scheduled in {minutes} minute(s)."
 		cancel_hint = "To cancel, type: sudo shutdown -c"
 	else:
-		print(tui.style(f"Unsupported operating system: {system}", fg="error", cap=cap))
+		print(tui.status("error", f"Unsupported operating system: {system}", cap=cap))
 		return False
 
 	try:
@@ -153,28 +156,30 @@ def schedule_shutdown(seconds, cap=None):
 		# One handler, two distinct diagnoses: the program never launched
 		# (missing binary) versus it ran and refused (permissions/returncode).
 		if isinstance(exc, FileNotFoundError):
-			print(tui.style(
-				f"\n[Error] '{argv[0]}' was not found on this system "
-				f"(argv: {' '.join(argv)}).", fg="error", cap=cap))
+			print("\n" + tui.status(
+				"error",
+				f"'{argv[0]}' was not found on this system "
+				f"(argv: {' '.join(argv)}).", cap=cap))
 		else:
 			returncode = getattr(exc, "returncode", None)
 			reason = ("insufficient permissions"
 					  if isinstance(exc, PermissionError)
 					  else f"returncode {returncode}")
-			print(tui.style(
-				f"\n[Error] '{argv[0]}' failed with {reason} "
-				f"(argv: {' '.join(argv)}).", fg="error", cap=cap))
+			print("\n" + tui.status(
+				"error",
+				f"'{argv[0]}' failed with {reason} "
+				f"(argv: {' '.join(argv)}).", cap=cap))
 		return False
 
-	print(tui.style(success, fg="success", cap=cap))
-	print(tui.style(cancel_hint, fg="muted", cap=cap))
+	print("\n" + tui.status("ok", success, cap=cap))
+	print(tui.status("info", cancel_hint, cap=cap))
 	return True
 
 def main():
 	tui.init_ansi()
 	cap = tui.detect()
 
-	print(tui.banner("Cross-Platform Shutdown Timer", cap=cap))
+	print(tui.header("Cross-Platform Shutdown Timer", cap=cap))
 	print("Examples of valid time formats:")
 	print("  - 2h30m (2 hours, 30 minutes)")
 	print("  - 1d5h  (1 day, 5 hours)")
@@ -182,8 +187,10 @@ def main():
 	print("  - 90    (90 minutes - default unit)")
 
 	while True:
-		# The free-text delay stays on input(): tui.ask_text() cannot tell a
-		# closed stdin (EOF) from a blank entry, and this loop has to end.
+		# The free-text delay stays on input(): the prompt string and the
+		# blank/EOF handling are part of the pinned interaction, so the label
+		# is styled in place with a palette role rather than swapped for
+		# tui.ask_text(), which would reword the prompt.
 		user_input = input(
 			tui.style("\nEnter shutdown delay (or 'q' to quit): ",
 					  fg="header", bold=True, cap=cap)).strip()
@@ -204,8 +211,8 @@ def main():
 			else:
 				print("Cancelled.")
 		else:
-			print(tui.style("Invalid format. Please use units like d, h, m, or s (e.g., 1h30m).",
-							fg="warn", cap=cap))
+			print(tui.status("warn", "Invalid format. Please use units like d, h, m, or s (e.g., 1h30m).",
+							 cap=cap))
 
 if __name__ == "__main__":
 	main()

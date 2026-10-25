@@ -81,8 +81,7 @@ def create_alias(alias_name, cap):
 		# so the CRLF above survives verbatim.
 		with open(bat_path, "w", newline="", encoding="utf-8") as f:
 			f.write(bat_content)
-		print(tui.style(f"[Success] Created Windows alias: {bat_path}",
-						fg="success", cap=cap))
+		print(tui.status("ok", f"Created Windows alias: {bat_path}", cap=cap))
 
 		# Create Unix .sh. newline="" keeps the LF endings verbatim.
 		with open(sh_path, "w", newline="", encoding="utf-8") as f:
@@ -91,12 +90,11 @@ def create_alias(alias_name, cap):
 		# Make the .sh file executable
 		st = os.stat(sh_path)
 		os.chmod(sh_path, st.st_mode | stat.S_IEXEC)
-		print(tui.style(f"[Success] Created Unix alias: {sh_path}",
-						fg="success", cap=cap))
+		print(tui.status("ok", f"Created Unix alias: {sh_path}", cap=cap))
 
 	except Exception as e:
-		print(tui.style(f"[Error] Failed to create alias files: {e}",
-						fg="error", cap=cap), file=sys.stderr)
+		print(tui.status("error", f"Failed to create alias files: {e}", cap=cap),
+			  file=sys.stderr)
 
 def main():
 	# One capability record for the run: colour level, glyphs and pipe mode.
@@ -105,7 +103,7 @@ def main():
 
 	# Strict check for exactly one argument (script name + 1 arg)
 	if len(sys.argv) != 2:
-		print("Usage: python alias.py <alias_name>")
+		print(tui.status("error", "Usage: python alias.py <alias_name>", cap=cap))
 		sys.exit(1)
 
 	alias_name = sys.argv[1].strip().lower()
@@ -113,14 +111,14 @@ def main():
 	# Validation for filename characters based on user requirements
 	invalid_chars = '<>:"/\\|?*_.~[](){}` '
 	if any(char in alias_name for char in invalid_chars):
-		print(tui.style(f"[Error] Invalid alias name (illegal characters): {alias_name}",
-						fg="error", cap=cap), file=sys.stderr)
+		print(tui.status("error", f"Invalid alias name (illegal characters): {alias_name}",
+						 cap=cap), file=sys.stderr)
 		sys.exit(1)
 
 	# Validate against forbidden system names
 	if alias_name in FORBIDDEN_NAMES:
-		print(tui.style(f"[Error] '{alias_name}' is a reserved command and cannot be used.",
-						fg="error", cap=cap), file=sys.stderr)
+		print(tui.status("error", f"'{alias_name}' is a reserved command and cannot be used.",
+						 cap=cap), file=sys.stderr)
 		sys.exit(1)
 
 	create_alias(alias_name, cap)

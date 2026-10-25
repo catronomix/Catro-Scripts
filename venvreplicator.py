@@ -58,10 +58,10 @@ from pathlib import Path
 
 import tui
 
-# Status labels returned by check_online_status(), mapped to palette keys.
-# This is data handed to tui.style(): the script owns no escape strings.
-STATUS_COLOURS = {
-	"Online": "success",
+# Status labels returned by check_online_status(), mapped to status kinds.
+# This is data handed to tui.status(): the script owns no escape strings.
+STATUS_KINDS = {
+	"Online": "ok",
 	"Missing": "warn",
 	"Unreachable": "warn",
 	"No Connection": "warn",
@@ -73,9 +73,9 @@ REPORT_CAP = tui.Capabilities(level="none", unicode=False, width=None,
 							  isatty=False, plain=True, reason="venv_info.txt")
 
 
-def status_colour(status):
-	"""Palette key for a status label; "Error <n>" is an error, not a warning."""
-	return "error" if status.startswith("Error") else STATUS_COLOURS.get(status, "muted")
+def status_kind(status):
+	"""Status kind for a status label; "Error <n>" is an error, not a warning."""
+	return "error" if status.startswith("Error") else STATUS_KINDS.get(status, "info")
 
 
 class venvreplicator:
@@ -98,8 +98,8 @@ class venvreplicator:
     def ensure_pip_updated(self):
         """Attempts to upgrade pip in the source VENV to support 'inspect'."""
         if self.verbose:
-            print(tui.style("Checking/Upgrading pip in source VENV to support metadata inspection...",
-                            fg="header", cap=self.cap))
+            print(tui.status("info", "Checking/Upgrading pip in source VENV to support metadata inspection...",
+                            cap=self.cap))
         
         # Capture output unless verbose is on
         kwargs = {"env": self.env}
@@ -163,19 +163,20 @@ class venvreplicator:
         
         if result.returncode != 0:
             if self.verbose:
-                print(tui.style("--- DEBUG: pip inspect stderr ---\n" + result.stderr,
-                                fg="error", cap=cap))
-            print(tui.style("Error: pip inspect failed even after attempted upgrade.",
-                            fg="error", cap=cap))
-            print("Fallback: Using basic freeze. Accuracy regarding sources/order may be reduced.")
+                print(tui.status("error", "--- DEBUG: pip inspect stderr --- " + str(result.stderr).strip(),
+                                 cap=cap))
+            print(tui.status("error", "pip inspect failed even after attempted upgrade.",
+                             cap=cap))
+            print(tui.status("warn", "Fallback: Using basic freeze. Accuracy regarding sources/order may be reduced.",
+                             cap=cap))
             return self.get_fallback_packages()
 
         try:
             data = json.loads(result.stdout)
         except json.JSONDecodeError as e:
             if self.verbose:
-                print(tui.style("--- DEBUG: JSON Parse Error ---\n{}\nOutput: {}".format(
-                    e, result.stdout), fg="error", cap=cap))
+                print(tui.status("error", "--- DEBUG: JSON Parse Error --- {} Output: {}".format(
+                    e, result.stdout), cap=cap))
             return self.get_fallback_packages()
 
         installed_packages = data.get("installed", [])
@@ -194,8 +195,8 @@ class venvreplicator:
                 return
             if name in stack:
                 if self.verbose:
-                    print(tui.style("--- DEBUG: Circular dependency detected for {}. Breaking recursion.".format(name),
-                                    fg="header", cap=cap))
+                    print(tui.status("info", "--- DEBUG: Circular dependency detected for {}. Breaking recursion.".format(name),
+                                     cap=cap))
                 return
             
             if name not in package_map:
@@ -218,8 +219,8 @@ class venvreplicator:
             if dist:
                 install_str = dist.get('url')
                 if install_str.startswith('file:///'):
-                    print(tui.style("Warning: Package '{}' uses a local path: {}".format(
-                        name, install_str), fg="warn", cap=cap))
+                    print(tui.status("warn", "Package '{}' uses a local path: {}".format(
+                        name, install_str), cap=cap))
             else:
                 version = pkg['metadata']['version']
                 install_str = f"{pkg['metadata']['name']}=={version}"
@@ -253,11 +254,14 @@ class venvreplicator:
             ("System Packages:", config.get('include-system-site-packages', 'false'))
         ]
 
-        # The console block is the house key/value layout; venv_info.txt gets
-        # the same pairs as plain records.
-        print(tui.key_values("VENV SOURCE INFORMATION", meta_data, cap=cap))
+        # The console block is the shared page chrome: a masthead plus aligned
+        # fields. venv_info.txt keeps the same pairs as plain records.
+        print(tui.header("VENV SOURCE INFORMATION", cap=cap))
+        key_width = max(len(key) for key, _ in meta_data)
+        for key, value in meta_data:
+            print(tui.field(key, value, width=key_width, cap=cap))
 
-        print(tui.style("Gathering package details...", fg="accent", cap=cap))
+        print(tui.status("info", "Gathering package details...", cap=cap))
         
         rows = []
         package_list = sorted(packages, key=lambda x: x['metadata']['name'].lower()) if not isinstance(packages[0], str) else packages
@@ -288,8 +292,9 @@ class venvreplicator:
 
             rows.append({"Package": name, "Version": ver, "Status": status_raw, "Source": source})
             if self.touch:
-                print("Verified: {} ({})".format(
-                    name, tui.style(status_raw, fg=status_colour(status_raw), cap=cap)))
+                print(tui.status(status_kind(status_raw),
+                                 "Verified: {} ({})".format(name, status_raw),
+                                 cap=cap))
 
         # One column set for both outputs: the console table renders it in box
         # mode, venv_info.txt in plain mode.
@@ -303,7 +308,7 @@ class venvreplicator:
         ]
 
         print()
-        print(tui.section("INSTALLED PACKAGES", cap=cap))
+        print(tui.header("INSTALLED PACKAGES", cap=cap))
         tui.print_table(headers, table_rows, cap=cap)
         print("Total Packages: {}".format(len(packages)))
 
@@ -318,8 +323,7 @@ class venvreplicator:
         ]
         with open("venv_info.txt", "w", encoding='utf-8') as f:
             f.write("\n".join(report) + "\n")
-        print("VENV information saved to: {}".format(
-            tui.style("venv_info.txt", fg="warn", cap=cap)))
+        print(tui.status("ok", "VENV information saved to: venv_info.txt", cap=cap))
 
     def generate_restore_script(self, output_path="recreate_venv.py"):
         cap = self.cap
@@ -464,8 +468,8 @@ if __name__ == "__main__":
 '''
         with open(output_path, "w", encoding='utf-8') as f:
             f.write(script_template.strip())
-        print("Restoration script generated: {}".format(
-            tui.style(output_path, fg="warn", cap=cap)))
+        print(tui.status("ok", "Restoration script generated: {}".format(output_path),
+                         cap=cap))
 
 if __name__ == "__main__":
     tui.init_ansi()
@@ -484,4 +488,4 @@ if __name__ == "__main__":
         else:
             replicator.generate_restore_script()
     except Exception as e:
-        print(tui.style(f"Error: {e}", fg="error", cap=cap))
+        print(tui.status("error", str(e), cap=cap))
