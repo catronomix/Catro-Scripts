@@ -46,12 +46,13 @@ def set_creation_time(path, timestamp, cap=None):
 				ctypes.windll.kernel32.SetFileTime(handle, ctypes.byref(ctime), None, None)
 				ctypes.windll.kernel32.CloseHandle(handle)
 		except Exception as e:
-			print(tui.style(f"Warning: Could not set Windows creation time: {e}",
-							fg="warn", cap=cap))
+			print(tui.status("warn", f"Could not set Windows creation time: {e}",
+							 cap=cap))
 	else:
 		# Linux/macOS generally do not support setting 'birth time' via standard APIs
-		print(tui.style("Notice: Unix-based systems generally do not support setting "
-						"file creation time (Birth Time). Skipping.", fg="muted", cap=cap))
+		print(tui.status("info", "Notice: Unix-based systems generally do not support "
+						 "setting file creation time (Birth Time). Skipping.",
+						 cap=cap))
 
 def copy_metadata(source_path, target_path, cap=None):
 	"""
@@ -62,13 +63,13 @@ def copy_metadata(source_path, target_path, cap=None):
 	abs_target = os.path.abspath(target_path)
 
 	if not os.path.exists(abs_source):
-		print(tui.style(f"Error: Source file '{abs_source}' does not exist.",
-						fg="error", cap=cap))
+		print(tui.status("error", f"Error: Source file '{abs_source}' does not exist.",
+						 cap=cap))
 		return
 
 	if not os.path.exists(abs_target):
-		print(tui.style(f"Error: Target file '{abs_target}' does not exist.",
-						fg="error", cap=cap))
+		print(tui.status("error", f"Error: Target file '{abs_target}' does not exist.",
+						 cap=cap))
 		return
 
 	# --- Copy File System Timestamps ---
@@ -95,8 +96,8 @@ def copy_metadata(source_path, target_path, cap=None):
 		], cap=cap))
 		
 	except Exception as e:
-		print(tui.style(f"An error occurred while copying system timestamps: {e}",
-						fg="error", cap=cap))
+		print(tui.status("error", f"An error occurred while copying system timestamps: {e}",
+						 cap=cap))
 
 def main():
 	tui.init_ansi()

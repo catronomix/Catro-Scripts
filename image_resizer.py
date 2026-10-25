@@ -87,14 +87,17 @@ def resize_and_fit_image(image_path, output_path, target_width, target_height, f
 			resized_img.save(output_path)
 			return True
 	except Exception as e:
-		print(tui.style(f"Error processing {os.path.basename(image_path)}: {e}",
-						fg="error", cap=cap))
+		print(tui.status("error",
+						 f"Error processing {os.path.basename(image_path)}: {e}",
+						 cap=cap))
 		return False
 
 # --- Main Script Logic ---
 def resize_images_in_folder(cap):
 	print()
-	print(tui.banner("Image Resizer Script", cap=cap))
+	# Masthead + rule come from the shared page chrome, so the selected theme
+	# paints this page exactly like every other script's.
+	print(tui.header("Image Resizer", "Resize every image in this folder", cap=cap))
 
 	# Supported image extensions
 	image_extensions = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff')
@@ -104,8 +107,9 @@ def resize_images_in_folder(cap):
 	image_files = [f for f in os.listdir(current_dir) if f.lower().endswith(image_extensions) and os.path.isfile(os.path.join(current_dir, f))]
 	
 	if not image_files:
-		print(tui.style("No supported image files found in the current directory.",
-						fg="warn", cap=cap))
+		print(tui.status("warn",
+						 "No supported image files found in the current directory.",
+						 cap=cap))
 		return
 
 	# Prompts come from tui.prompts, so validation, cancellation and styling
@@ -139,11 +143,10 @@ def resize_images_in_folder(cap):
 
 	# Create output directory only now that we are ready to process
 	os.makedirs(output_path, exist_ok=True)
-	print(tui.style(f"Output directory created: {output_path}",
-					fg="success", cap=cap))
+	print(tui.status("ok", f"Output directory created: {output_path}", cap=cap))
 
 	total_images = len(image_files)
-	print(f"Found {total_images} images to process.")
+	print(tui.field("Found", f"{total_images} images to process", cap=cap))
 
 	interpolation_method = interpolation_choices_map[interpolation_method_str]
 
@@ -159,8 +162,9 @@ def resize_images_in_folder(cap):
 	progress.finish()
 
 	print()
-	print(tui.style(f"Resizing complete. Resized images are in: {os.path.abspath(output_path)}",
-					fg="success", bold=True, cap=cap))
+	print(tui.status("ok",
+					 f"Resizing complete. Resized images are in: {os.path.abspath(output_path)}",
+					 cap=cap))
 
 def main():
 	# parse_args() first so --help works without pillow or a terminal.
@@ -183,8 +187,8 @@ def main():
 	try:
 		from PIL import Image
 	except ImportError:
-		print(tui.style("Error: 'pillow' library is not installed.",
-						fg="error", cap=cap))
+		print(tui.status("error", "Error: 'pillow' library is not installed.",
+						 cap=cap))
 		print("Please install it using: pip install pillow")
 		sys.exit(1)
 

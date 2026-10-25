@@ -57,34 +57,39 @@ def main():
 	tui.init_ansi()
 	cap = tui.detect()
 
+	print(tui.header("TypeScript Project Scaffolder",
+					 "Vite + TypeScript in the current folder", cap=cap))
+
 	# 0. Environment Check
-	print("Checking environment...")
+	print(tui.status("info", "Checking environment...", cap=cap))
 	node_v, npm_v = check_env()
 	if not node_v or not npm_v:
-		print(tui.style("Error: Node.js or npm is not installed or not in your PATH.",
-						fg="error", cap=cap))
+		print(tui.status("error",
+						 "Error: Node.js or npm is not installed or not in your PATH.",
+						 cap=cap))
 		print("Please install Node.js from https://nodejs.org/ before running this script.")
 		return
 	
-	print("Found {} and {}".format(
-		tui.style(f"Node {node_v}", fg="success", cap=cap),
-		tui.style(f"npm {npm_v}", fg="success", cap=cap)))
+	print(tui.status("ok", "Found Node {} and npm {}".format(node_v, npm_v),
+					 cap=cap))
 
 	project_name = tui.ask_text("Enter project name: ")
 	if not project_name:
-		print(tui.style("Project name cannot be empty.", fg="error", cap=cap))
+		print(tui.status("error", "Project name cannot be empty.", cap=cap))
 		return
 
 	# Create project directory
 	try:
 		os.makedirs(project_name)
 	except FileExistsError:
-		print(tui.style(f"Error: Directory '{project_name}' already exists.",
-						fg="error", cap=cap))
+		print(tui.status("error",
+						 f"Error: Directory '{project_name}' already exists.",
+						 cap=cap))
 		return
 
 	os.chdir(project_name)
-	print(f"Creating project structure in ./{project_name}...")
+	print(tui.status("info", f"Creating project structure in ./{project_name}...",
+					 cap=cap))
 
 	# 1. package.json
 	package_json = {
@@ -198,17 +203,18 @@ console.log("Environment ready: scripts and styles linked.");
 	create_file('scripts/main.ts', main_ts)
 
 	# 7. Install Dependencies
-	print("\nRunning 'npm install'...")
+	print()
+	print(tui.status("info", "Running 'npm install'...", cap=cap))
 	try:
 		subprocess.check_call(['npm', 'install'], shell=(os.name == 'nt'))
-		print(tui.style("\nDependencies installed successfully.",
-						fg="success", cap=cap))
+		print(tui.status("ok", "Dependencies installed successfully.", cap=cap))
 	except subprocess.CalledProcessError:
-		print(tui.style("\nError: 'npm install' failed. You may need to run it manually.",
-						fg="error", cap=cap))
+		print(tui.status("error",
+						 "Error: 'npm install' failed. You may need to run it manually.",
+						 cap=cap))
 
-	print(tui.style(f"\n✨ Success! Project '{project_name}' is ready.",
-					fg="success", bold=True, cap=cap))
+	print()
+	print(tui.status("ok", f"Success! Project '{project_name}' is ready.", cap=cap))
 	print("To start the development server:")
 	print(f"  cd {project_name}")
 	print("  npm run dev")
