@@ -190,12 +190,12 @@ and a mismatch fails the run instead of silently passing.
 
 2026-10-25, Docker 29.9.1 (linux/amd64), host Windows 10:
 
-| python | layer | suite | probes | HANG | FAIL | extras probe | build | image |
+| python | layer | suite | probes run | HANG | FAIL | extras probe | build | image |
 |---|---|---|---|---|---|---|---|---|
-| 3.11 | base | ok (11 tests) | 33 | 0 | 0 | - | 3.4 s | 188.5 MB |
-| 3.11 | extras | ok (11 tests) | 33 | 0 | 0 | ok | 6.1 s | 219.6 MB |
-| 3.12 | base | ok (11 tests) | 33 | 0 | 0 | - | 2.9 s | 178.8 MB |
-| 3.12 | extras | ok (11 tests) | 33 | 0 | 0 | ok | 5.7 s | 209.7 MB |
+| 3.11 | base | ok (11 tests) | 30/33 | 0 | 0 | - | 3.4 s | 188.5 MB |
+| 3.11 | extras | ok (11 tests) | 30/33 | 0 | 0 | ok | 6.1 s | 219.6 MB |
+| 3.12 | base | ok (11 tests) | 30/33 | 0 | 0 | - | 2.9 s | 178.8 MB |
+| 3.12 | extras | ok (11 tests) | 30/33 | 0 | 0 | ok | 5.7 s | 209.7 MB |
 
 Measured interpreters: 3.11.17 and 3.12.15 (`python_measured` in the JSON, so a
 tag that does not match the requested version fails the run).

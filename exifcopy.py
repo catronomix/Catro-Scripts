@@ -44,11 +44,11 @@ def copy_exif(source_path, target_path):
 
 	if not os.path.exists(abs_source):
 		print(f"Error: Source file '{abs_source}' does not exist.")
-		return
+		sys.exit(1)
 
 	if not os.path.exists(abs_target):
 		print(f"Error: Target file '{abs_target}' does not exist.")
-		return
+		sys.exit(1)
 
 	try:
 		# Load EXIF data from the source image
@@ -63,7 +63,8 @@ def copy_exif(source_path, target_path):
 		print(f"Successfully copied EXIF data from:\n  {abs_source}\nto:\n  {abs_target}")
 		
 	except Exception as e:
-		print(f"An error occurred: {e}")
+		print(f"An error occurred: {e}", file=sys.stderr)
+		sys.exit(1)
 
 if __name__ == "__main__":
 	# Ensure exactly two arguments are provided (excluding the script name)
