@@ -62,7 +62,9 @@ class CapabilityTests(unittest.TestCase):
 	def test_no_color_wins_over_everything(self):
 		cap = self.detect({"NO_COLOR": "1", "FORCE_COLOR": "3",
 						   "COLORTERM": "truecolor", "TERM": "xterm-256color"})
-		self.assertEqual((cap.level, cap.reason, cap.plain), ("none", "NO_COLOR", True))
+		# No colour, but still a terminal: the layout survives.
+		self.assertEqual((cap.level, cap.reason, cap.plain),
+						 ("none", "NO_COLOR", False))
 
 	def test_empty_no_color_is_ignored(self):
 		cap = self.detect({"NO_COLOR": "", "TERM": "xterm-256color"})
@@ -95,7 +97,8 @@ class CapabilityTests(unittest.TestCase):
 			config.CONFIG_FILE = Path(td) / "config.ini"
 			config.set("color", "level", "none")
 			cap = self.detect({"COLORTERM": "truecolor"})
-			self.assertEqual((cap.level, cap.reason, cap.plain), ("none", "config.ini", True))
+			self.assertEqual((cap.level, cap.reason, cap.plain),
+							 ("none", "config.ini", False))
 
 	def test_config_auto_falls_through_to_autodetect(self):
 		with tempfile.TemporaryDirectory() as td:
@@ -130,6 +133,16 @@ class CapabilityTests(unittest.TestCase):
 		cap = self.detect({"TERM": "xterm-256color"}, tty=False)
 		self.assertEqual((cap.level, cap.plain, cap.isatty), ("none", True, False))
 		self.assertIsNone(cap.width)
+
+	def test_level_none_on_a_tty_is_not_plain(self):
+		# "No colour" and "machine-readable layout" are different decisions: a
+		# monochrome terminal still gets borders, alignment and truncation.
+		for environ in ({"NO_COLOR": "1"}, {"TERM": "dumb"},
+						{"CATRO_COLOR": "none"}):
+			with self.subTest(environ=environ):
+				cap = self.detect(environ, tty=True)
+				self.assertEqual((cap.level, cap.plain, cap.isatty),
+								 ("none", False, True))
 
 	def test_forced_color_on_a_pipe_keeps_plain_layout(self):
 		# `plain` follows the contract's literal definition (not a tty), while

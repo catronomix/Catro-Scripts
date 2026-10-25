@@ -110,7 +110,9 @@ truecolor one show the same layout.
 
 Anything on a pipe is plain on purpose: no ANSI escapes, no box glyphs, no
 padding - table rows become TAB-separated fields. That makes `list`, `count`,
-`action list` and friends usable in scripts and `grep`.
+`action list` and friends usable in scripts and `grep`. Turning colour off on a
+real terminal (`NO_COLOR`, `TERM=dumb`, `theme set color.level none`) only removes
+the escapes: the table keeps its borders, alignment and truncation.
 
 Settings live in `config.ini` next to the wrappers (gitignored), managed with the
 `theme` command:

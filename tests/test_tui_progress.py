@@ -47,7 +47,7 @@ def cap(level="true", unicode=True, tty=True):
 		unicode=unicode,
 		width=80,
 		isatty=tty,
-		plain=(not tty) or level == "none",
+		plain=not tty,
 		reason="test",
 	)
 
@@ -55,7 +55,8 @@ def cap(level="true", unicode=True, tty=True):
 class ProgressBarTests(unittest.TestCase):
 	def make(self, tty=True, total=50, value=0, **kwargs):
 		stream = FakeStream(tty)
-		bar = progress.ProgressBar(total, stream=stream, cap=cap(tty=tty), **kwargs)
+		cap_object = kwargs.pop("cap", None) or cap(tty=tty)
+		bar = progress.ProgressBar(total, stream=stream, cap=cap_object, **kwargs)
 		bar.update(value)
 		return bar, stream
 
@@ -121,6 +122,17 @@ class ProgressBarTests(unittest.TestCase):
 		bar.finish("done")
 		self.assertEqual(stream.getvalue(), "done 100% (2/2)\n")
 
+	def test_monochrome_tty_prints_one_line_and_no_escapes(self):
+		# Level "none" on a real terminal: no animation, but no pipe either.
+		bar, stream = self.make(tty=True, total=4, value=1, label="copy",
+								cap=cap(level="none"))
+		bar.update(2)
+		self.assertEqual(stream.getvalue(), "")
+		bar.finish()
+		self.assertEqual(stream.getvalue(), "copy 50% (2/4)\n")
+		self.assertNotIn("\033", stream.getvalue())
+		self.assertNotIn("\r", stream.getvalue())
+
 
 class SpinnerTests(unittest.TestCase):
 	def test_plain_ticks_write_nothing(self):
@@ -153,6 +165,17 @@ class SpinnerTests(unittest.TestCase):
 		spinner.stop("finished")
 		self.assertEqual(stream.getvalue()[-len("\r\033[Kfinished\n"):],
 						 "\r\033[Kfinished\n")
+
+	def test_monochrome_tty_ticks_nothing_and_stops_with_one_clean_line(self):
+		stream = FakeStream(True)
+		spinner = progress.Spinner(frames=("a", "b"), stream=stream,
+								   cap=cap(level="none"))
+		spinner.tick("sync").tick("sync")
+		self.assertEqual(stream.getvalue(), "")
+		spinner.stop("done")
+		self.assertEqual(stream.getvalue(), "done\n")
+		self.assertNotIn("\033", stream.getvalue())
+		self.assertNotIn("\r", stream.getvalue())
 
 	def test_stop_without_a_label_or_history_is_silent_on_a_tty_too(self):
 		stream = FakeStream(True)

@@ -11,6 +11,8 @@ ANSI strings:
 	- count.RAINBOW: same idea for the old 91/33/93/92/96/94/95 cycle.
 	- action.list_actions(): fixed widths and its own `..` truncation survive,
 		while a pipe gets the library's plain TAB-separated records.
+	- list.py with NO_COLOR: colour off is not a pipe - a tty keeps the box and
+		loses only the escapes.
 	- No migrated script still carries a private escape sequence or its own
 		`Colors` class: that is the gate this migration has to keep closed.
 
@@ -91,6 +93,62 @@ class NoPrivateAnsiTest(unittest.TestCase):
 							 "{} still hardcodes an escape sequence".format(name))
 			self.assertNotIn("class Colors", source,
 							 "{} still has a private Colors class".format(name))
+
+
+class ListNoColorTest(unittest.TestCase):
+	"""A monochrome tty keeps the table; a monochrome pipe stays plain."""
+
+	class Stream:
+		"""Minimal tty-able stdout: writes are captured, no file descriptor."""
+
+		def __init__(self, tty, encoding="utf-8"):
+			self._buffer = io.StringIO()
+			self._tty = tty
+			self.encoding = encoding
+
+		def write(self, text):
+			return self._buffer.write(text)
+
+		def flush(self):
+			pass
+
+		def getvalue(self):
+			return self._buffer.getvalue()
+
+		def isatty(self):
+			return self._tty
+
+		def fileno(self):
+			raise io.UnsupportedOperation("no file descriptor")
+
+	def render(self, tty):
+		import importlib
+		list_module = importlib.import_module("list")
+		stream = self.Stream(tty)
+		with mock.patch.dict(os.environ, {"NO_COLOR": "1"}, clear=False), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(sys, "stdout", stream):
+			list_module.list_scripts()
+		return stream.getvalue()
+
+	def test_no_color_tty_still_draws_the_box(self):
+		out = self.render(tty=True)
+		self.assertIn("\u250c", out, "a monochrome tty lost the top border:\n" + out[:400])
+		self.assertIn("\u2502", out)
+		self.assertIn("ID", out)
+		self.assertNotIn("\x1b", out, "NO_COLOR output still carries escapes")
+		self.assertNotIn("\t", out, "a tty degraded to TAB records")
+		self.assertIn("Total scripts found:", out)
+
+	def test_no_color_pipe_stays_tab_separated(self):
+		out = self.render(tty=False)
+		self.assertNotIn("\x1b", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+		header = "ID\tScript Name\tSize\tDescription"
+		self.assertIn(header, out)
+		record = out.split(header + "\n", 1)[1].splitlines()[0]
+		self.assertEqual(len(record.split("\t")), 4)
 
 
 class ActionPlainTableTest(unittest.TestCase):

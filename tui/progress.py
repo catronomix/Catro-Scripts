@@ -3,8 +3,9 @@
 			SPINNER, PROGRESS BAR, LIVE REGION
 			====================================
 Three small indicators for work that takes long enough to need feedback. On a
-non-tty stream each one degrades to a single final line: no carriage-return
-animation, no escape codes, never an error.
+non-tty stream, and when colour is off (a pipe or level "none"), each one
+degrades to a single final line: no carriage-return animation, no escape codes,
+never an error.
 """
 
 import sys
@@ -34,8 +35,8 @@ class Spinner:
 		self.stop()
 
 	def tick(self, label=""):
-		"""Advance one frame; a no-op off a tty."""
-		if self.cap.plain:
+		"""Advance one frame; a no-op when animation is off."""
+		if not _animating(self.cap):
 			return self
 		frame = self.frames[self._index % len(self.frames)]
 		self._index += 1
@@ -47,7 +48,7 @@ class Spinner:
 	def stop(self, label=None):
 		"""Stop animating and print at most one final line."""
 		text = self._line if label is None else str(label)
-		if self.cap.plain:
+		if not _animating(self.cap):
 			if text:
 				self.stream.write(text + "\n")
 				self.stream.flush()
@@ -74,7 +75,7 @@ class ProgressBar:
 		self.value = max(0, min(int(value), self.total))
 		if label is not None:
 			self.label = str(label)
-		if self.cap.plain:
+		if not _animating(self.cap):
 			return self
 		self.stream.write("\r" + self.line(self._bar()))
 		self.stream.flush()
@@ -84,7 +85,7 @@ class ProgressBar:
 		"""Print the final summary line once."""
 		if label is not None:
 			self.label = str(label)
-		if not self.cap.plain:
+		if _animating(self.cap):
 			self.stream.write("\r\033[K")
 		self.stream.write(self.line() + "\n")
 		self.stream.flush()
@@ -134,6 +135,15 @@ class LiveRegion:
 			self.screen.write(" " * self.width)
 		self.screen.flush()
 		return self
+
+
+def _animating(cap):
+	"""True when in-place animation is both possible and wanted.
+
+	A pipe cannot animate (`plain`), and level "none" means no escape codes, so
+	`\\r\\033[K` is out too even on a tty; both cases print one final line.
+	"""
+	return not cap.plain and cap.level != "none"
 
 
 def _isatty(stream):

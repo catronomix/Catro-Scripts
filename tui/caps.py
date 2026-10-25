@@ -9,8 +9,10 @@ Precedence for `level` (first match wins):
 	NO_COLOR > FORCE_COLOR/CLICOLOR_FORCE > CATRO_COLOR > config.ini colour.level
 	> autodetect (TERM, legacy Windows console, COLORTERM, SSH, tty).
 
-`plain` is the machine-readable mode: stdout is not a tty, or colour is off. In
-plain mode the table helpers emit no ANSI, no box glyphs and no padding.
+`plain` is the machine-readable mode, and it means one thing only: stdout is not
+a tty. A non-tty gets no ANSI, no box glyphs and no padding from the helpers. A
+tty stays a tty even when colour is off - level "none" removes the escape codes
+but the table keeps its borders, alignment and truncation.
 
 Test seams: pass `stream`/`environ` explicitly, and patch the module-level
 `_IS_WINDOWS` flag to simulate a legacy Windows console on any host. Nothing
@@ -57,7 +59,7 @@ def detect(stream=None, environ=None):
 		unicode=_supports_unicode(env, stream),
 		width=_width(stream),
 		isatty=isatty,
-		plain=(not isatty) or level == "none",
+		plain=not isatty,
 		reason=reason,
 	)
 

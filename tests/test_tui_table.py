@@ -39,6 +39,11 @@ ASCII = caps.Capabilities(level="true", unicode=False, width=None,
 						  isatty=True, plain=False, reason="test")
 PIPE = caps.Capabilities(level="none", unicode=False, width=None,
 						 isatty=False, plain=True, reason="pipe")
+# Colour off, but still a terminal: the layout must not degrade to a pipe.
+MONO = caps.Capabilities(level="none", unicode=True, width=None,
+						 isatty=True, plain=False, reason="NO_COLOR")
+MONO_ASCII = caps.Capabilities(level="none", unicode=False, width=None,
+							   isatty=True, plain=False, reason="NO_COLOR")
 
 
 class PlainModeTests(unittest.TestCase):
@@ -68,6 +73,46 @@ class PlainModeTests(unittest.TestCase):
 		out = table.render_table(self.HEADERS, self.ROWS, cap=PIPE)
 		second = [line.split("\t")[1] for line in out.split("\n")[1:]]
 		self.assertEqual(second, ["list", "theme"])
+
+
+class NoColorLayoutTests(unittest.TestCase):
+	"""Level "none" removes escapes, not the table: a tty keeps its decor."""
+
+	HEADERS = ["ID", "Script Name", "Size"]
+	ROWS = [(1, "list", "4.2 KB"), (2, "theme", "1.0 KB")]
+
+	def test_monochrome_tty_keeps_the_box_and_drops_the_escapes(self):
+		out = table.render_table(self.HEADERS, self.ROWS, cap=MONO)
+		self.assertNotIn("\x1b", out)
+		for glyph in ("\u250c", "\u2500", "\u2502", "\u2514", "\u253c"):
+			self.assertIn(glyph, out, "the monochrome table lost {!r}".format(glyph))
+		lines = out.split("\n")
+		self.assertEqual(len(lines), 6)
+		# Padded columns, not TAB-separated fields.
+		self.assertEqual(lines[1], "\u2502 ID   \u2502 Script Name \u2502 Size   \u2502")
+		self.assertEqual(lines[3],
+						 "\u2502 1    \u2502 list        \u2502 4.2 KB \u2502")
+		self.assertNotIn("\t", out)
+
+	def test_monochrome_ascii_tty_falls_back_to_ascii_boxes(self):
+		out = table.render_table(self.HEADERS, self.ROWS, cap=MONO_ASCII)
+		self.assertNotIn("\x1b", out)
+		self.assertIn("+", out)
+		self.assertIn("|", out)
+		self.assertNotIn("\u2500", out)
+
+	def test_level_none_pipe_is_still_plain(self):
+		out = table.render_table(self.HEADERS, self.ROWS, cap=PIPE)
+		self.assertEqual(out.split("\n")[0], "ID\tScript Name\tSize")
+		self.assertNotIn("\x1b", out)
+		self.assertNotIn("\t\t", out)
+
+	def test_monochrome_banner_and_sections_have_no_escapes(self):
+		for render in (lambda: table.banner("TITLE", cap=MONO),
+					   lambda: table.section("HEADING", cap=MONO),
+					   lambda: table.key_values("KEYS", [("a", "b")], cap=MONO)):
+			out = render()
+			self.assertNotIn("\x1b", out)
 
 
 class GoldenBytesTests(unittest.TestCase):

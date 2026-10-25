@@ -3,8 +3,9 @@
 			CATRO-SCRIPTS LISTER
 			====================
 This utility scans its directory for all Python (.py) scripts and displays them
-in the house table: a purple/blue Unicode box at a terminal, one TAB-separated
-record per line when the output is piped.
+in the house table: a box with padded columns on a terminal (coloured according
+to the colour level), one TAB-separated record per line when the output is
+piped.
 
 Features:
 	- Automatically extracts descriptions from scripts.
