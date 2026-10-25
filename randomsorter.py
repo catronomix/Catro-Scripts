@@ -29,6 +29,8 @@ import sys
 import shutil
 import string
 
+import tui
+
 # Predefined extension groups
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.svg', '.heic', '.jfif')
 VIDEO_EXTENSIONS = ('.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v')
@@ -66,7 +68,7 @@ def generate_random_name(length, scramble):
 		chars = string.digits
 	return ''.join(random.choice(chars) for _ in range(length))
 
-def distribute_files(folder_path, counts, allowed_extensions, include_all, prefix, keep, digit_count, scramble):
+def distribute_files(folder_path, counts, allowed_extensions, include_all, prefix, keep, digit_count, scramble, cap):
 	"""Shuffles, renames, and distributes files into subfolders."""
 	files = get_target_files(folder_path, allowed_extensions, include_all)
 	
@@ -90,7 +92,8 @@ def distribute_files(folder_path, counts, allowed_extensions, include_all, prefi
 		subfolder_path = os.path.join(folder_path, subfolder_name)
 		
 		os.makedirs(subfolder_path, exist_ok=True)
-		print(f"\nProcessing {subfolder_name}...")
+		print()
+		print(tui.section(f"Processing {subfolder_name}...", cap=cap))
 		
 		for _ in range(count):
 			if file_idx < len(files):
@@ -108,16 +111,24 @@ def distribute_files(folder_path, counts, allowed_extensions, include_all, prefi
 
 				if keep:
 					shutil.copy2(old_path, new_dest_path)
-					print(f"Copied: {filename} -> {subfolder_name}/{new_name}")
+					print("Copied: {} -> {}".format(
+						filename,
+						tui.style(f"{subfolder_name}/{new_name}", fg="success", cap=cap)))
 				else:
 					os.rename(old_path, new_dest_path)
-					print(f"Moved: {filename} -> {subfolder_name}/{new_name}")
+					print("Moved: {} -> {}".format(
+						filename,
+						tui.style(f"{subfolder_name}/{new_name}", fg="success", cap=cap)))
 				
 				file_idx += 1
 			else:
 				break
 
-if __name__ == "__main__":
+def main():
+	# One capability record for the run: colour level, glyphs and pipe mode.
+	tui.init_ansi()
+	cap = tui.detect()
+
 	parser = argparse.ArgumentParser(description="Rename and distribute files into subfolders.")
 	
 	parser.add_argument("counts", metavar="N", type=int, nargs="*", 
@@ -147,7 +158,14 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	if args.all:
-		confirm = input("WARNING: You are using the --all flag. This will process system files and scripts.\nAre you sure? (y/n): ")
+		# The confirmation is the only interactive step: refuse a piped or
+		# closed stdin with the shared preflight instead of letting input()
+		# raise EOFError in the middle of a destructive run.
+		tui.require_tty("randomsorter --all")
+		print(tui.style(
+			"WARNING: You are using the --all flag. This will process system files and scripts.",
+			fg="error", cap=cap))
+		confirm = tui.ask_text("Are you sure? (y/n): ")
 		if confirm.lower() != 'y':
 			print("Operation cancelled.")
 			sys.exit()
@@ -166,7 +184,10 @@ if __name__ == "__main__":
 	current_folder = os.getcwd()
 	distribute_files(
 		current_folder, args.counts, allowed, args.all, 
-		args.prefix, args.keep, args.digits, args.scramble
+		args.prefix, args.keep, args.digits, args.scramble, cap
 	)
 	
 	print("\nProcessing complete.")
+
+if __name__ == "__main__":
+	main()
