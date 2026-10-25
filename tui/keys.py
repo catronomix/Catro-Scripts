@@ -182,7 +182,10 @@ def _wait(stream, timeout):
 	import select
 
 	try:
-		return bool(select.select([fd], [], [], 0 if timeout is None else timeout)[0])
+		# A blocking read passes None: select() then waits instead of polling,
+		# which is what keeps `pager.page()` from flashing on POSIX.
+		wait = None if timeout is None else timeout
+		return bool(select.select([fd], [], [], wait)[0])
 	except (OSError, ValueError):
 		return False
 

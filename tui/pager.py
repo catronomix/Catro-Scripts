@@ -12,7 +12,7 @@ import sys
 from . import keys
 from .screen import Screen, terminal_size
 
-_FORWARD = (" ", "enter", "n", "pagedown", "down")
+_FORWARD = ("space", "enter", "n", "pagedown", "down")
 _BACK = ("b", "p", "pageup", "up")
 _EXIT = ("q", "esc", "ctrl-c")
 

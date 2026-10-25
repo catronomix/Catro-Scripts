@@ -109,6 +109,25 @@ class EscapeSequenceTests(unittest.TestCase):
 			os.close(read_fd)
 			os.close(write_fd)
 
+	def test_blocking_read_passes_none_to_select(self):
+		# None means "wait forever" to select(); 0 would poll and make a
+		# blocking read return immediately (the pager flashes each page).
+		read_fd, write_fd = os.pipe()
+		seen = []
+		try:
+			stream = FakeStream(fd=read_fd)
+
+			def fake_select(readers, writers, errors, timeout):
+				seen.append(timeout)
+				return ([], [], [])
+
+			with mock.patch("select.select", fake_select):
+				self.assertFalse(keys._wait(stream, None))
+			self.assertEqual(seen, [None])
+		finally:
+			os.close(read_fd)
+			os.close(write_fd)
+
 	def read_with_stream(self, stream, timeout):
 		return keys._read_key_stream(stream, timeout)
 
