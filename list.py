@@ -67,16 +67,20 @@ def list_scripts():
 	current_script = os.path.basename(__file__)
 
 	print()
-	print(tui.style("--- SCRIPT DIRECTORY SCAN ---", fg="header", bold=True, cap=cap))
-	print("{} {}\n".format(tui.style("Location:", fg="border", cap=cap), script_dir))
+	# Masthead through the page-chrome seam: title band, muted location band,
+	# then the border rule (which a pipe drops, keeping the two plain lines).
+	print(tui.header("--- SCRIPT DIRECTORY SCAN ---", "Location: " + script_dir,
+					 cap=cap))
+	print()
 
 	try:
 		files = os.listdir(script_dir)
 		scripts = sorted([f for f in files if f.endswith('.py') and f != current_script])
 
 		if not scripts:
-			print(tui.style("No other Python scripts found in this directory.",
-							fg="border", cap=cap))
+			print(tui.status("warn",
+							 "No other Python scripts found in this directory.",
+							 cap=cap))
 			return
 
 		# One row per script. The cells are built exactly as the renderer will
@@ -107,7 +111,7 @@ def list_scripts():
 		# printing an error here would write into the same dead pipe.
 		raise
 	except Exception as e:
-		print(tui.style("Error scanning directory: {}".format(e), fg="error", cap=cap))
+		print(tui.status("error", "Error scanning directory: {}".format(e), cap=cap))
 		sys.exit(1)
 
 if __name__ == "__main__":

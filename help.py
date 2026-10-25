@@ -41,12 +41,6 @@ INDENT_STYLES = [
 	{"fg": "#800000"},  # Level 4: red
 ]
 
-# The error colour is the level-4 indentation red, for the same reason.
-ERROR_STYLE = INDENT_STYLES[4]
-
-# Header row of the box: yellow on dark purple.
-HEADER_STYLE = {"fg": "#FFFF00", "bg": "#3C005A"}
-
 BOX_WIDTH_FLOOR = 40
 
 
@@ -80,17 +74,11 @@ def print_colored_docstring(docstring, cap=None):
 	if not docstring:
 		message = "No intro text (docstring) found in this script."
 		if cap.plain:
-			print(tui.style(message, cap=cap, **ERROR_STYLE))
+			print(message)
 			return
-		inner = 50
-		border = tui.style(glyphs["tl"] + glyphs["h"] * inner + glyphs["tr"],
-						   fg="border", cap=cap)
-		print(border)
-		print(tui.style(glyphs["v"], fg="border", cap=cap) + " "
-			  + tui.style(message, cap=cap, **ERROR_STYLE) + " "
-			  + tui.style(glyphs["v"], fg="border", cap=cap))
-		print(tui.style(glyphs["bl"] + glyphs["h"] * inner + glyphs["br"],
-						fg="border", cap=cap))
+		# Themed status line instead of a one-line hand-drawn box: same words,
+		# but the marker and text come from the palette roles.
+		print(tui.status("error", message, cap=cap))
 		return
 
 	# Check for catro-scripts wrapper to allow command aliasing in help text
@@ -155,10 +143,11 @@ def print_colored_docstring(docstring, cap=None):
 	print(tui.style(tl + h * box_width + tr, fg="border", cap=cap))
 
 	if has_header:
-		# Header Row: Centered Yellow on Dark Purple
+		# Header Row: the docstring title as a themed section heading, framed by
+		# the box borders. No per-script yellow-on-purple any more.
 		centered_header = header_text.center(box_width)
 		print(tui.style(v, fg="border", cap=cap)
-			  + tui.style(centered_header, cap=cap, **HEADER_STYLE)
+			  + tui.section(centered_header, cap=cap)
 			  + tui.style(v, fg="border", cap=cap))
 		# Divider Row replacing the equal signs
 		print(tui.style(l_join + h * box_width + r_join, fg="border", cap=cap))
@@ -200,13 +189,14 @@ def main():
 	target_path = os.path.join(script_dir, f"{target_name}.py")
 
 	if not os.path.exists(target_path):
-		print(tui.style(f"Error: Script '{target_name}.py' not found in {script_dir}",
-						cap=cap, **ERROR_STYLE))
+		print(tui.status(
+			"error",
+			f"Error: Script '{target_name}.py' not found in {script_dir}",
+			cap=cap))
 		sys.exit(1)
 
 	print()
-	print(tui.style(f"--- Help for {target_name} ---", fg="border", bold=True,
-					cap=cap))
+	print(tui.header(f"--- Help for {target_name} ---", cap=cap))
 	print()
 	doc = get_docstring(target_path)
 	print_colored_docstring(doc, cap)
