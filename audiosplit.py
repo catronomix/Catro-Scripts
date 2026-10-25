@@ -214,6 +214,10 @@ def main():
 	# Handle configuration selection
 	out_ext, out_codec = (None, None)
 	if args.codec:
+		# The codec menu is the only interactive path in this script, and
+		# tui.ask_int re-prompts forever on a closed stdin, so refuse a pipe
+		# here with the contract's tty seam instead of hanging.
+		tui.require_tty("audiosplit")
 		chosen = interactive_codec_menu(cap)
 		if chosen is None:
 			print("Cancelled.")
