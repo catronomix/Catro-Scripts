@@ -122,9 +122,20 @@ def list_scripts():
 		# Do not swallow this one: printing it and exiting 0 would make a
 		# UTF-8 problem look like a successful, empty scan.
 		raise
+	except BrokenPipeError:
+		# The reader went away (e.g. `| head`); not a scan failure, and
+		# printing an error here would write into the same dead pipe.
+		raise
 	except Exception as e:
 		print(f"\033[91mError scanning directory: {e}{Colors.END}")
 		sys.exit(1)
 
 if __name__ == "__main__":
-	list_scripts()
+	try:
+		list_scripts()
+		sys.stdout.flush()
+	except BrokenPipeError:
+		# Downstream reader closed the pipe; exit quietly and point stdout at
+		# devnull so the interpreter's shutdown flush cannot raise again.
+		os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+		sys.exit(0)
