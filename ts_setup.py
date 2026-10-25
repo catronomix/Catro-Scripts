@@ -21,10 +21,12 @@ Requirements:
 	- Python 3.x
 	- Node.js and npm
 """
+import argparse
 import os
 import json
 import subprocess
-import sys
+
+import tui
 
 def create_file(path, content):
 	"""Writes content to a file, creating parent directories if they don't exist."""
@@ -41,37 +43,44 @@ def check_env():
 	except (subprocess.CalledProcessError, FileNotFoundError):
 		return None, None
 
-def require_tty():
-	"""Refuse to run when stdin/stdout is redirected: the setup prompts need a terminal."""
-	if sys.stdin.isatty() and sys.stdout.isatty():
-		return
-	sys.stderr.write("[Error] ts_setup needs an interactive terminal "
-					 "(stdin/stdout is not a tty).\n")
-	raise SystemExit(2)
-
 def main():
-	require_tty()
+	# parse_args() first so --help works without node, npm or a terminal.
+	parser = argparse.ArgumentParser(
+		description="Scaffold a Vite + TypeScript project in the current folder."
+	)
+	parser.parse_args()
+
+	# Refuse a non-terminal before anything else: the setup prompts need one.
+	tui.require_tty("ts_setup")
+
+	# Capabilities are resolved once: every message in the run shares them.
+	tui.init_ansi()
+	cap = tui.detect()
 
 	# 0. Environment Check
 	print("Checking environment...")
 	node_v, npm_v = check_env()
 	if not node_v or not npm_v:
-		print("Error: Node.js or npm is not installed or not in your PATH.")
+		print(tui.style("Error: Node.js or npm is not installed or not in your PATH.",
+						fg="error", cap=cap))
 		print("Please install Node.js from https://nodejs.org/ before running this script.")
 		return
 	
-	print(f"Found Node {node_v} and npm {npm_v}")
+	print("Found {} and {}".format(
+		tui.style(f"Node {node_v}", fg="success", cap=cap),
+		tui.style(f"npm {npm_v}", fg="success", cap=cap)))
 
-	project_name = input("\nEnter project name: ").strip()
+	project_name = tui.ask_text("Enter project name: ")
 	if not project_name:
-		print("Project name cannot be empty.")
+		print(tui.style("Project name cannot be empty.", fg="error", cap=cap))
 		return
 
 	# Create project directory
 	try:
 		os.makedirs(project_name)
 	except FileExistsError:
-		print(f"Error: Directory '{project_name}' already exists.")
+		print(tui.style(f"Error: Directory '{project_name}' already exists.",
+						fg="error", cap=cap))
 		return
 
 	os.chdir(project_name)
@@ -192,11 +201,14 @@ console.log("Environment ready: scripts and styles linked.");
 	print("\nRunning 'npm install'...")
 	try:
 		subprocess.check_call(['npm', 'install'], shell=(os.name == 'nt'))
-		print("\nDependencies installed successfully.")
+		print(tui.style("\nDependencies installed successfully.",
+						fg="success", cap=cap))
 	except subprocess.CalledProcessError:
-		print("\nError: 'npm install' failed. You may need to run it manually.")
+		print(tui.style("\nError: 'npm install' failed. You may need to run it manually.",
+						fg="error", cap=cap))
 
-	print(f"\n✨ Success! Project '{project_name}' is ready.")
+	print(tui.style(f"\n✨ Success! Project '{project_name}' is ready.",
+					fg="success", bold=True, cap=cap))
 	print("To start the development server:")
 	print(f"  cd {project_name}")
 	print("  npm run dev")
