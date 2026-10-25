@@ -20,6 +20,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import clean_env  # noqa: E402  (test helper, not production)
 
 # (script, argv tail) for every command that prints a table.
 PIPE_CASES = [
@@ -31,8 +34,8 @@ PIPE_CASES = [
 
 
 def child_env(**overrides):
-	"""Copy of the environment with output-related variables normalised."""
-	env = dict(os.environ)
+	"""Copy of the environment with colour and output variables normalised."""
+	env = clean_env()
 	for key in ("PYTHONUNBUFFERED", "PYTHONIOENCODING", "PYTHONUTF8"):
 		env.pop(key, None)
 	# The tables use box-drawing characters; a cp1252 console codepage would

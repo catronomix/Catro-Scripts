@@ -81,6 +81,20 @@ class ProgressBarTests(unittest.TestCase):
 		self.assertEqual(stream.getvalue(), "copy 100% (4/4)\n")
 		self.assertEqual(stream.getvalue().count("\n"), 1)
 
+	def test_forced_colour_pipe_prints_one_final_line(self):
+		# FORCE_COLOR on a pipe is styled but still not a terminal, so repainting
+		# a line would put "\r" and "\033[K" into a file.
+		forced = caps.Capabilities(level="true", unicode=True, width=None,
+								   isatty=False, plain=False, reason="FORCE_COLOR")
+		bar, stream = self.make(tty=False, total=4, label="copy", cap=forced)
+		for value in (1, 2, 4):
+			bar.update(value)
+		bar.finish()
+		out = stream.getvalue()
+		self.assertNotIn("\r", out)
+		self.assertNotIn("\033[K", out)
+		self.assertEqual(out.count("\n"), 1)
+
 	def test_total_and_value_are_clamped(self):
 		bar = progress.ProgressBar(0, stream=FakeStream(False), cap=cap(tty=False))
 		self.assertEqual(bar.total, 1)

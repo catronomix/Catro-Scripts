@@ -11,6 +11,8 @@ Rules this suite keeps:
 	  working directory.
 	- Child processes get a bytecode cache outside the repository
 	  (PYTHONPYCACHEPREFIX), so a run does not litter the tree it tests.
+	- Child environments are built with `support.clean_env()`: colour, theme and
+	  glyph switches never leak in from the developer's shell.
 	- Every child process is bounded by a timeout and gets stdin=DEVNULL unless
 	  the test is specifically about interactive behavior.
 	- Missing platform tooling produces a skip with an explicit reason, never a
@@ -32,6 +34,9 @@ from pathlib import Path
 # directory holding this file. Resolving it from __file__ keeps the suite
 # cwd-independent (see the "run from a different cwd" check in the task spec).
 REPO = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import clean_env  # noqa: E402  (test helper, not production)
 
 # No single smoke run should ever take longer than this.
 TIMEOUT = 60
@@ -77,7 +82,7 @@ def tearDownModule():
 
 def child_env(**overrides):
 	"""Environment for a child process, with the out-of-tree bytecode cache."""
-	env = dict(os.environ)
+	env = clean_env()
 	if _pycache_dir is not None:
 		env["PYTHONPYCACHEPREFIX"] = _pycache_dir.name
 	env.update(overrides)

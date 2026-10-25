@@ -140,10 +140,12 @@ class LiveRegion:
 def _animating(cap):
 	"""True when in-place animation is both possible and wanted.
 
-	A pipe cannot animate (`plain`), and level "none" means no escape codes, so
-	`\\r\\033[K` is out too even on a tty; both cases print one final line.
+	Animation needs a real terminal *and* colour: a forced-colour pipe has
+	`plain` off but still cannot repaint a line, so `\\r\\033[K` would land in a
+	file. Level "none" means no escape codes either; every case prints one
+	final line.
 	"""
-	return not cap.plain and cap.level != "none"
+	return cap.isatty and cap.level != "none"
 
 
 def _isatty(stream):

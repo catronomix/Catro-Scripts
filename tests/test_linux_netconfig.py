@@ -34,9 +34,12 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import action
 import netconfig
+from support import clean_env  # noqa: E402  (test helper, not production)
 
 
 class NetconfigPlatformTests(unittest.TestCase):
@@ -203,7 +206,7 @@ class ActionsFileTests(unittest.TestCase):
 	def run_action(self, *args):
 		# Force UTF-8 so the table does not depend on the console code page;
 		# the wrappers set the same mode in real use.
-		env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+		env = clean_env(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
 		return subprocess.run(
 			[sys.executable, "action.py"] + list(args),
 			cwd=str(self.dir),

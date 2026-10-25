@@ -17,11 +17,15 @@ Run from the repo root:
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import clean_env  # noqa: E402  (test helper, not production)
 WRAPPER = REPO / "catro-scripts.sh"
 TIMEOUT = 60
 # Piped `list` output is one TAB-separated record per line (the tui contract's
@@ -60,10 +64,11 @@ def bash():
 
 
 def run(args, cwd=None):
-	"""Run a child with bounded time, captured bytes, and no stdin."""
+	"""Run a child with bounded time, captured bytes, no stdin and a clean env."""
 	return subprocess.run(
 		args,
 		cwd=str(cwd if cwd is not None else REPO),
+		env=clean_env(),
 		stdin=subprocess.DEVNULL,
 		stdout=subprocess.PIPE,
 		stderr=subprocess.PIPE,

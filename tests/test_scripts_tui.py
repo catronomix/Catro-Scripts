@@ -32,8 +32,11 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tui  # noqa: E402  (import after sys.path setup)
+from support import clean_env  # noqa: E402  (test helper, not production)
 
 
 def cap16():
@@ -125,9 +128,8 @@ class ListNoColorTest(unittest.TestCase):
 		import importlib
 		list_module = importlib.import_module("list")
 		stream = self.Stream(tty)
-		env = {key: value for key, value in os.environ.items()
-			   if key not in ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE",
-							  "CATRO_COLOR", "TERM", "COLORTERM")}
+		env = {key: value for key, value in clean_env().items()
+			   if key not in ("TERM", "COLORTERM")}
 		env.update(environ or {"NO_COLOR": "1"})
 		with mock.patch.dict(os.environ, env, clear=True), \
 				mock.patch.object(tui, "init_ansi"), \
@@ -209,7 +211,8 @@ class ActionPlainTableTest(unittest.TestCase):
 			with open(path, "w", encoding="utf-8") as handle:
 				json.dump(actions, handle)
 			buffer = io.StringIO()
-			with mock.patch.object(action_module, "ACTIONS_FILE", path):
+			with mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "ACTIONS_FILE", path):
 				with contextlib.redirect_stdout(buffer):
 					action_module.list_actions()
 		return buffer.getvalue()
@@ -229,7 +232,8 @@ class ActionPlainTableTest(unittest.TestCase):
 			with open(path, "w", encoding="utf-8") as handle:
 				json.dump({"ping": {"command": "ping", "description": "x"}}, handle)
 			buffer = io.StringIO()
-			with mock.patch.object(action_module, "ACTIONS_FILE", path), \
+			with mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "ACTIONS_FILE", path), \
 					mock.patch.object(tui, "detect", wraps=tui.detect) as detect:
 				with contextlib.redirect_stdout(buffer):
 					action_module.list_actions()
