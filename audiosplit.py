@@ -86,7 +86,7 @@ def get_target_files(allowed_extensions=None, include_all=False, wildcard_patter
 					
 					files.append(filename)
 	except OSError as e:
-		print(tui.style(f"Error accessing directory: {e}", fg="error", cap=cap),
+		print(tui.status("error", f"Error accessing directory: {e}", cap=cap),
 			  file=sys.stderr)
 		sys.exit(1)
 		
@@ -107,9 +107,10 @@ def interactive_codec_menu(cap=None):
 	]
 
 	print()
-	print(tui.section("--- Output Configuration ---", cap=cap))
-	for i, f in enumerate(formats, 1):
-		print(f"{i}) {f['label']}")
+	# The masthead and the numbered menu are the shared page chrome: the theme
+	# reaches them without this script knowing any colour names.
+	print(tui.header("Audio Splitter", "Output configuration", cap=cap))
+	print(tui.menu([f["label"] for f in formats], selected=None, cap=cap))
 
 	# tui.ask_int owns the validation loop, the range check and the cancel key.
 	choice = tui.ask_int("Select output format", 1, len(formats))
@@ -129,16 +130,19 @@ def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=N
 	filename = os.path.basename(abs_path)
 	
 	try:
-		print("\nLoading {}...".format(
-			tui.style(filename, fg="accent", cap=cap)))
+		print()
+		print(tui.status("info", f"Loading {filename}...", cap=cap))
 		audio = AudioSegment.from_file(abs_path)
 		
 		channel_count = audio.channels
 		if channel_count <= 1:
-			print(f"File only has {channel_count} channel. Skipping.")
+			print(tui.status("warn",
+							 f"File only has {channel_count} channel. Skipping.",
+							 cap=cap))
 			return True
 
-		print(f"Detected {channel_count} channels. Splitting...")
+		print(tui.status("info", f"Detected {channel_count} channels. Splitting...",
+						 cap=cap))
 
 		tracks = audio.split_to_mono()
 		
@@ -157,19 +161,20 @@ def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=N
 			else:
 				final_out_path = out_name
 			
-			print(f"Exporting track {track_number}...")
+			print(tui.status("info", f"Exporting track {track_number}...", cap=cap))
 			# Pydub export takes format and optional codec
 			export_kwargs = {"format": ext}
 			if custom_codec:
 				export_kwargs["codec"] = custom_codec
 				
 			track.export(final_out_path, **export_kwargs)
-			print(tui.style(f"[Success] Saved: {os.path.basename(final_out_path)}",
-							fg="success", cap=cap))
+			print(tui.status("ok",
+							 f"Saved: {os.path.basename(final_out_path)}",
+							 cap=cap))
 
 	except Exception as e:
-		print(tui.style(f"An error occurred with '{filename}': {e}",
-						fg="error", cap=cap))
+		print(tui.status("error", f"An error occurred with '{filename}': {e}",
+						 cap=cap))
 		return False
 
 	return True
@@ -200,14 +205,14 @@ def main():
 	try:
 		from pydub import AudioSegment
 	except ImportError:
-		print(tui.style("Error: 'pydub' library is not installed.",
-						fg="error", cap=cap))
+		print(tui.status("error", "Error: 'pydub' library is not installed.",
+						 cap=cap))
 		print("Please install it using: pip install pydub")
 		sys.exit(1)
 
 	if not check_ffmpeg():
 		print()
-		print(tui.style("FFmpeg is missing or not found.", fg="warn", cap=cap))
+		print(tui.status("warn", "FFmpeg is missing or not found.", cap=cap))
 		print("Pydub requires FFmpeg for audio processing. Place it in the script folder or add to PATH.")
 		sys.exit(1)
 
@@ -230,8 +235,8 @@ def main():
 		if os.path.isfile(args.file):
 			files_to_process.append(args.file)
 		else:
-			print(tui.style(f"Error: File '{args.file}' not found.",
-							fg="error", cap=cap))
+			print(tui.status("error", f"Error: File '{args.file}' not found.",
+							 cap=cap))
 			sys.exit(1)
 	elif args.all or args.wildcard or args.ext:
 		allowed = None
@@ -246,10 +251,10 @@ def main():
 		sys.exit(0)
 
 	if not files_to_process:
-		print(tui.style("No matching files found.", fg="warn", cap=cap))
+		print(tui.status("warn", "No matching files found.", cap=cap))
 		sys.exit(1)
 
-	print(f"Targeting {len(files_to_process)} files.")
+	print(tui.field("Targeting", f"{len(files_to_process)} files", cap=cap))
 
 	failures = 0
 	for file in files_to_process:
