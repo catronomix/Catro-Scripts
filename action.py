@@ -21,6 +21,7 @@ Usage:
 """
 
 import os
+import re
 import sys
 import json
 import subprocess
@@ -130,6 +131,45 @@ def save_actions(actions):
         return False
 
 
+# cmd.exe syntax characters: an extra arg containing any of them must be
+# wrapped in double quotes or the shell would split / re-interpret it.
+# '%' is intentionally absent - cmd expands %VAR% even inside double quotes, so
+# quoting cannot fix it. That is the documented Windows limitation in README.md.
+_WINDOWS_SHELL_META = re.compile(r'[\s"&|<>^()!]')
+
+
+def quote_extra_arg(arg):
+    """Quotes one extra CLI arg so the platform shell passes it through verbatim.
+
+    The stored macro base string is never touched: it deliberately keeps its own
+    shell syntax. Only the args appended by the caller are quoted.
+    """
+    if os.name == "nt":
+        if not arg:
+            return '""'
+        if not _WINDOWS_SHELL_META.search(arg):
+            return arg
+        # Escape like subprocess.list2cmdline: a run of backslashes is literal
+        # unless it precedes a double quote. Before a quote emit 2n+1
+        # backslashes (n literal + the quote's escape), and double the trailing
+        # run so the closing quote is not swallowed. Doubling quotes instead
+        # would hand the child a literal quote char and lose trailing
+        # backslashes - see tests/test_action_args.py.
+        out = []
+        backslashes = 0
+        for char in arg:
+            if char == "\\":
+                backslashes += 1
+                continue
+            if char == '"':
+                out.append("\\" * (backslashes * 2 + 1) + '"')
+            else:
+                out.append("\\" * backslashes + char)
+            backslashes = 0
+        return '"' + "".join(out) + "\\" * (backslashes * 2) + '"'
+    return shlex.quote(arg)
+
+
 def run_action(action_name, extra_args):
     """Looks up and executes a macro command string with extra CLI args appended."""
     actions = load_actions()
@@ -154,11 +194,11 @@ def run_action(action_name, extra_args):
         sys.exit(1)
     base_command = base_command.strip()
 
-    # Append extra CLI args passed during invocation
+    # Append extra CLI args passed during invocation. Every arg is quoted for
+    # the platform shell: shell metacharacters, spaces and globs inside an arg
+    # must reach the child as one literal argument, never as new syntax.
     if extra_args:
-        formatted_args = " ".join(
-            [shlex.quote(arg) if " " in arg else arg for arg in extra_args]
-        )
+        formatted_args = " ".join(quote_extra_arg(arg) for arg in extra_args)
         full_command = f"{base_command} {formatted_args}"
     else:
         full_command = base_command
@@ -418,4 +458,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Downstream reader closed the pipe; exit quietly and point stdout at
+        # devnull so the interpreter's shutdown flush cannot raise again.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)

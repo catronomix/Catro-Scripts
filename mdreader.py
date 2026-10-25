@@ -19,7 +19,9 @@ Features:
 
 Requirements:
     - python libraries rich, curses
-    - On Windows: 'windows-curses' (installed automatically if missing).
+    - On Windows: 'windows-curses'.
+    - Nothing is installed automatically: a missing library is reported on
+      stderr with the 'catro-scripts installdeps' / 'pip install' hint.
 
 Disclaimer: This script was generated with Gemini 3
 """
@@ -27,38 +29,20 @@ Disclaimer: This script was generated with Gemini 3
 import os
 import sys
 import platform
-import subprocess
+import argparse
 import re
 
 # Enable ANSI escape sequences on Windows
 if platform.system().lower() == "windows":
     os.system("color")
 
+# Dependencies are resolved exactly once here, without side effects: a missing
+# module only sets its name to None. Importing mdreader must never install
+# anything or touch the network (issue #11); main() reports missing packages.
 try:
     import curses
 except ImportError:
-    if os.name == "nt":
-        print(
-            "[Error] 'curses' module is missing on Windows. Trying to install it automatically."
-        )
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        installdeps_path = os.path.join(script_dir, "installdeps.py")
-        if os.path.exists(installdeps_path):
-            subprocess.run([sys.executable, installdeps_path, "curses"], check=False)
-        else:
-            subprocess.run(
-                ["catro-scripts", "installdeps", "curses"], shell=True, check=False
-            )
-        try:
-            import curses
-        except ImportError:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "windows-curses"], check=False
-            )
-            import curses
-    else:
-        print("[Error] 'curses' library is missing from Python environment.")
-        sys.exit(1)
+    curses = None
 
 try:
     from rich.console import Console
@@ -68,33 +52,16 @@ try:
     from rich import box
     from rich.text import Text
 except ImportError:
-    print("[Notice] 'rich' library is missing. Attempting automatic installation...")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    installdeps_path = os.path.join(script_dir, "installdeps.py")
-    if os.path.exists(installdeps_path):
-        subprocess.run([sys.executable, installdeps_path, "rich"], check=False)
-    else:
-        subprocess.run(
-            ["catro-scripts", "installdeps", "rich"], shell=True, check=False
-        )
-    try:
-        from rich.console import Console
-        from rich.markdown import Markdown, TableElement, Link
-        from rich.segment import Segment as RichSegment
-        from rich.theme import Theme
-        from rich import box
-        from rich.text import Text
-    except ImportError:
-        subprocess.run([sys.executable, "-m", "pip", "install", "rich"], check=False)
-        from rich.console import Console
-        from rich.markdown import Markdown, TableElement, Link
-        from rich.segment import Segment as RichSegment
-        from rich.theme import Theme
-        from rich import box
-        from rich.text import Text
+    Console = Markdown = TableElement = Link = None
+    RichSegment = Theme = box = Text = None
 
 try:
     _orig_table_console = TableElement.__rich_console__
+except AttributeError:
+    # rich is not installed; nothing to patch until it is.
+    _orig_table_console = None
+
+if _orig_table_console is not None:
 
     def _custom_table_console(self, console, options):
         from rich.table import Table
@@ -122,8 +89,6 @@ try:
             Table.__init__ = _orig_init
 
     TableElement.__rich_console__ = _custom_table_console
-except Exception:
-    pass
 
 
 class Segment:
@@ -170,37 +135,78 @@ def slice_line_segments(segments, start_col, max_cols):
     return sliced
 
 
+def terminal_color_count():
+    """Number of colour pairs the terminal offers (0 when unknown)."""
+    try:
+        return int(getattr(curses, "COLORS", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _init_pairs(pairs):
+    """Applies (pair, fg, bg) tuples, ignoring colours the terminal rejects."""
+    for pair, fg, bg in pairs:
+        try:
+            curses.init_pair(pair, fg, bg)
+        except curses.error:
+            pass
+
+
+def _init_high_contrast_dark():
+    """Base-colour palette: Contrast Dark, and the fallback for limited terminals."""
+    _init_pairs(
+        (
+            (1, curses.COLOR_WHITE, curses.COLOR_BLACK),
+            (2, curses.COLOR_YELLOW, curses.COLOR_BLACK),
+            (3, curses.COLOR_CYAN, curses.COLOR_BLACK),
+            (4, curses.COLOR_GREEN, curses.COLOR_BLACK),
+            (5, curses.COLOR_CYAN, curses.COLOR_BLACK),
+            (6, curses.COLOR_BLACK, curses.COLOR_WHITE),
+            (7, curses.COLOR_YELLOW, curses.COLOR_BLACK),
+            (8, curses.COLOR_YELLOW, curses.COLOR_BLACK),
+            (9, curses.COLOR_YELLOW, curses.COLOR_BLACK),
+        )
+    )
+
+
 def init_cozy_colors(theme_mode=0):
-    """Initializes curses theme colors."""
-    curses.start_color()
+    """Initializes curses theme colors, degrading gracefully on limited terminals."""
+    try:
+        curses.start_color()
+    except curses.error:
+        return
 
     if theme_mode == 1:
         # High Contrast Light Mode
-        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(2, curses.COLOR_BLUE, curses.COLOR_WHITE)
-        curses.init_pair(3, curses.COLOR_MAGENTA, curses.COLOR_WHITE)
-        curses.init_pair(4, curses.COLOR_CYAN, curses.COLOR_WHITE)
-        curses.init_pair(5, curses.COLOR_BLUE, curses.COLOR_WHITE)
-        curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        curses.init_pair(7, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(8, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        curses.init_pair(9, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        _init_pairs(
+            (
+                (1, curses.COLOR_BLACK, curses.COLOR_WHITE),
+                (2, curses.COLOR_BLUE, curses.COLOR_WHITE),
+                (3, curses.COLOR_MAGENTA, curses.COLOR_WHITE),
+                (4, curses.COLOR_CYAN, curses.COLOR_WHITE),
+                (5, curses.COLOR_BLUE, curses.COLOR_WHITE),
+                (6, curses.COLOR_WHITE, curses.COLOR_BLACK),
+                (7, curses.COLOR_BLACK, curses.COLOR_WHITE),
+                (8, curses.COLOR_WHITE, curses.COLOR_BLACK),
+                (9, curses.COLOR_BLACK, curses.COLOR_CYAN),
+            )
+        )
         return
 
     if theme_mode == 2:
         # High Contrast Dark Mode
-        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        curses.init_pair(4, curses.COLOR_GREEN, curses.COLOR_BLACK)
-        curses.init_pair(5, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        curses.init_pair(8, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        curses.init_pair(9, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        _init_high_contrast_dark()
         return
 
     # Mode 0: Cozy Purple
+    colors = terminal_color_count()
+    if colors < 256:
+        # An 8/16-colour terminal rejects the 256-colour indices below with
+        # curses.error, so fall back to the base-colour palette instead of
+        # aborting the whole reader.
+        _init_high_contrast_dark()
+        return
+
     can_rgb = False
     try:
         if curses.can_change_color():
@@ -231,15 +237,19 @@ def init_cozy_colors(theme_mode=0):
             238,
         )
 
-    curses.init_pair(1, c_text, c_bg)
-    curses.init_pair(2, c_gold, c_bg)
-    curses.init_pair(3, c_amber, c_bg)
-    curses.init_pair(4, c_cream, c_slate)
-    curses.init_pair(5, c_muted, c_bg)
-    curses.init_pair(6, c_gold, c_status)
-    curses.init_pair(7, c_cream, c_slate_alt)
-    curses.init_pair(8, c_gold, c_slate)
-    curses.init_pair(9, c_gold, c_slate)
+    _init_pairs(
+        (
+            (1, c_text, c_bg),
+            (2, c_gold, c_bg),
+            (3, c_amber, c_bg),
+            (4, c_cream, c_slate),
+            (5, c_muted, c_bg),
+            (6, c_gold, c_status),
+            (7, c_cream, c_slate_alt),
+            (8, c_gold, c_slate),
+            (9, c_gold, c_slate),
+        )
+    )
     return
 
 
@@ -670,46 +680,77 @@ def require_tty():
     raise SystemExit(2)
 
 
+def missing_dependencies():
+    """Returns one install hint per unavailable library (empty when ready)."""
+    hints = []
+    if curses is None:
+        package = "windows-curses" if os.name == "nt" else "curses"
+        hints.append(
+            "curses: catro-scripts installdeps curses"
+            f"  (or: python -m pip install {package})"
+        )
+    if Theme is None:
+        hints.append(
+            "rich: catro-scripts installdeps rich"
+            "  (or: python -m pip install rich)"
+        )
+    return hints
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        prog="mdreader.py",
+        description="Read Markdown files in a scrollable terminal (curses) UI.",
+    )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        help="Markdown file to open (default: first .md file in the current directory)",
+    )
+    args = parser.parse_args()
+
     require_tty()
 
-    filepath = None
+    # mdreader never installs anything itself; it only reports what is missing.
+    hints = missing_dependencies()
+    if hints:
+        sys.stderr.write("[Error] mdreader cannot start: missing libraries.\n")
+        for hint in hints:
+            sys.stderr.write(f"  {hint}\n")
+        raise SystemExit(2)
 
-    if len(sys.argv) == 1:
+    filepath = args.file
+    if filepath is None:
         folder, md_files = get_directory_md_files(os.getcwd())
         if not md_files:
-            print("[Error] No .md files found in current working directory.")
-            sys.exit(1)
+            sys.stderr.write("[Error] No .md files found in current working directory.\n")
+            raise SystemExit(1)
         filepath = os.path.join(folder, md_files[0])
-    elif len(sys.argv) == 2:
-        filepath = sys.argv[1]
-    else:
-        print("Usage: python mdreader.py [filename.md]")
-        print("Or:    catro-scripts mdreader [filename.md]")
-        sys.exit(1)
 
     if not os.path.exists(filepath):
-        print(f"[Error] File not found: '{filepath}'")
-        sys.exit(1)
+        sys.stderr.write(f"[Error] File not found: '{filepath}'\n")
+        raise SystemExit(1)
 
     if not os.path.isfile(filepath):
-        print(f"[Error] '{filepath}' is not a valid file.")
-        sys.exit(1)
+        sys.stderr.write(f"[Error] '{filepath}' is not a valid file.\n")
+        raise SystemExit(1)
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             raw_content = f.read()
     except Exception as e:
-        print(f"[Error] Could not read file '{filepath}': {e}")
-        sys.exit(1)
+        sys.stderr.write(f"[Error] Could not read file '{filepath}': {e}\n")
+        raise SystemExit(1)
 
     try:
         curses.wrapper(render_reader, filepath, raw_content)
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl-C quits cleanly with status 0, like 'q'.
     except Exception as e:
-        print(f"\n[Error] An unexpected error occurred while running mdreader: {e}")
-        sys.exit(1)
+        sys.stderr.write(
+            f"\n[Error] An unexpected error occurred while running mdreader: {e}\n"
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
