@@ -10,7 +10,7 @@ Layout:
 	config    project config.ini read/optional-write
 	caps      Capabilities and detection precedence
 	text      display width, truncate, pad, wrap, strip ANSI
-	palette   dark/light palettes, style() and level downgrade
+	palette   soft and contrast palettes, style() and level downgrade
 	table     box/plain tables, banner, section, key-value blocks
 	prompts   ask_text, ask_int, ask_choice
 	screen    Screen, Canvas, TerminalRenderer
@@ -32,7 +32,7 @@ from . import caps, config, keys, loop, palette, pager, progress, prompts, scree
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .loop import FrameLoop, ScreensaverHost
 from .pager import page
-from .palette import DARK, LIGHT, RESET, THEMES, prefix, style, theme
+from .palette import CONTRAST_DARK, CONTRAST_LIGHT, RESET, SOFT, THEMES, prefix, style, theme
 from .progress import LiveRegion, ProgressBar, Spinner
 from .prompts import ask_choice, ask_int, ask_text
 from .screen import Canvas, Screen, TerminalRenderer
@@ -43,7 +43,8 @@ __all__ = [
 	"caps", "config", "keys", "loop", "palette", "pager", "progress",
 	"prompts", "screen", "table", "text",
 	"Capabilities", "detect", "init_ansi", "require_tty",
-	"DARK", "LIGHT", "RESET", "THEMES", "prefix", "style", "theme",
+	"CONTRAST_DARK", "CONTRAST_LIGHT", "RESET", "SOFT", "THEMES", "prefix",
+	"style", "theme",
 	"display_width", "pad", "strip_ansi", "truncate", "wrap",
 	"banner", "key_values", "print_table", "render_table", "section",
 	"Canvas", "Screen", "TerminalRenderer",

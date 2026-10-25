@@ -6,8 +6,8 @@ Shows and changes the checkout-local terminal preferences. `theme.py` and
 `python -m tui` share this implementation, so both answer the same commands:
 
 	theme                     show mode/level/style, config path and writability
-	theme dark|light|high-contrast|toggle
-	                          change theme.mode (aliases: highcontrast, hc)
+	theme soft|contrast-light|contrast-dark|toggle
+	                          change theme.mode (aliases: cozy, clight, cdark, hc)
 	theme set <key> <value>   change one setting
 	theme palette             list the active palette
 
@@ -19,10 +19,10 @@ import sys
 
 from . import caps, config, palette
 
-USAGE = ("usage: theme [show|dark|light|high-contrast|toggle|"
+USAGE = ("usage: theme [show|soft|contrast-light|contrast-dark|toggle|"
 		 "set <key> <value>|palette]")
 
-THEME_ORDER = ("dark", "light", "high-contrast")
+THEME_ORDER = ("soft", "contrast-light", "contrast-dark")
 MODES = ", ".join(THEME_ORDER)
 
 VALID = {
@@ -57,7 +57,7 @@ def main(argv=None):
 	if command in ("-h", "--help", "help"):
 		out.write(USAGE + "\n")
 		return 0
-	if command in palette.THEME_ALIASES:
+	if palette.fold(command) in palette.THEME_ALIASES:
 		return _write("theme.mode", palette.normalize(command))
 	if command == "toggle":
 		index = THEME_ORDER.index(palette.theme())
@@ -67,7 +67,7 @@ def main(argv=None):
 			out.write(USAGE + "\n")
 			return 2
 		key, value = args[1].strip().lower(), args[2].strip().lower()
-		if key == "theme.mode" and value in palette.THEME_ALIASES:
+		if key == "theme.mode" and palette.fold(value) in palette.THEME_ALIASES:
 			value = palette.normalize(value)
 		if key not in VALID or value not in VALID[key]:
 			if key == "theme.mode":
@@ -87,6 +87,12 @@ def main(argv=None):
 
 def _write(key, value):
 	section, name = key.split(".", 1)
+	# Any write canonicalises a legacy theme.mode (e.g. `dark` -> `soft`), so the
+	# migration completes on `theme set` too, not only on `toggle`.
+	current = config.get("theme", "mode", "soft")
+	canonical = palette.normalize(current)
+	if canonical != str(current).strip().lower():
+		config.set("theme", "mode", canonical)
 	if config.set(section, name, value):
 		return 0
 	sys.stdout.write("config.ini is not writable here: {}\n".format(config.path()))

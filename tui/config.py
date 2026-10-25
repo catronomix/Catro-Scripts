@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 
 DEFAULTS = {
-	"theme": {"mode": "dark"},
+	"theme": {"mode": "soft"},
 	"color": {"level": "auto"},
 	"table": {"style": "auto"},
 }
