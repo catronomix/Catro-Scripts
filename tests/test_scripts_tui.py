@@ -1,15 +1,18 @@
-# Regression tests for the migrated help/action rendering
+# Regression tests for the migrated script rendering
 """
 			SCRIPT MIGRATION SEAMS
 			======================
-Pins the two things the help/action migration deliberately kept as data rather
-than as private ANSI strings:
+Pins what the Phase A migration deliberately kept as data rather than as private
+ANSI strings:
 
 	- help.INDENT_STYLES: the indentation palette must still resolve to the old
 		16-colour codes (1;37, 0;36, 0;32, 0;33, 0;31), so a 16-colour terminal
 		sees the same colours it always did.
+	- count.RAINBOW: same idea for the old 91/33/93/92/96/94/95 cycle.
 	- action.list_actions(): fixed widths and its own `..` truncation survive,
 		while a pipe gets the library's plain TAB-separated records.
+	- No migrated script still carries a private escape sequence or its own
+		`Colors` class: that is the gate this migration has to keep closed.
 
 Run with:
 	python -m unittest discover -s tests -v
@@ -57,6 +60,37 @@ class HelpIndentStylesTest(unittest.TestCase):
 	def test_level_zero_is_still_bold(self):
 		styled = tui.style("x", cap=cap16(), **self.help.INDENT_STYLES[0])
 		self.assertIn("\033[1m", styled)
+
+
+class CountRainbowTest(unittest.TestCase):
+	"""count.py's rainbow is data passed to tui.style()."""
+
+	def test_each_row_keeps_its_16_colour_code(self):
+		import count as count_module
+		expected = ["\033[91m", "\033[33m", "\033[93m", "\033[92m",
+					"\033[96m", "\033[94m", "\033[95m"]
+		self.assertEqual(len(count_module.RAINBOW), len(expected))
+		for code, colour in zip(expected, count_module.RAINBOW):
+			styled = tui.style("x", fg=colour, cap=cap16())
+			self.assertIn(code, styled,
+						  "{} lost its {} code: {!r}".format(colour, code, styled))
+
+
+class NoPrivateAnsiTest(unittest.TestCase):
+	"""The gate: migrated scripts only style through tui."""
+
+	# Phase A scripts migrated so far; screensaver.py joins this list with its
+	# own migration.
+	MIGRATED = ("list.py", "help.py", "action.py", "count.py",
+				"opencode.py", "sanitize.py")
+
+	def test_migrated_scripts_have_no_private_ansi(self):
+		for name in self.MIGRATED:
+			source = (REPO / name).read_text(encoding="utf-8")
+			self.assertNotIn("\\033", source,
+							 "{} still hardcodes an escape sequence".format(name))
+			self.assertNotIn("class Colors", source,
+							 "{} still has a private Colors class".format(name))
 
 
 class ActionPlainTableTest(unittest.TestCase):
