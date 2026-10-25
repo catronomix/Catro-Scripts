@@ -7,6 +7,11 @@ framed panel, a horizontal rule, a key/value field, a status line, a filled
 background line and a menu. Nothing here prints and nothing returns a trailing
 newline, so the caller decides how the lines land.
 
+The module is `tui.chrome`, not `tui.page`, because `tui.page` is the pager
+helper (`pager.page`) and keeping that callable is part of the public surface.
+`tui/__init__.py` re-exports these helpers by name, so a caller can write
+`tui.header(...)` or `from tui import chrome`.
+
 Every colour goes through `palette.prefix()`/`palette.style()`, which is what
 makes the four levels and the three themes work here for free: `true` emits
 `38;2`, `256` the nearest index, `16` the basic stop, and `none` keeps the

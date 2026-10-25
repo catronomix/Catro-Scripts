@@ -8,7 +8,7 @@ prompt label. Every helper returns the cancelled value instead of raising when
 stdin closes (EOF), and none of them touch terminal modes.
 """
 
-from . import caps, palette, page
+from . import caps, chrome, palette
 
 
 def _label(text):
@@ -69,7 +69,7 @@ def ask_choice(prompt, options):
 	if not options:
 		return None
 	cap = caps.detect()
-	print(page.menu(options, selected=None, cap=cap))
+	print(chrome.menu(options, selected=None, cap=cap))
 	raw = ask_text("{} [1-{}, q to cancel]: ".format(prompt, len(options)))
 	if raw.lower() in ("q", "quit", "exit"):
 		return None
