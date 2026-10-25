@@ -180,6 +180,23 @@ def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
 	return "".join(parts)
 
 
+def rgb(value, theme=None):
+	"""(r, g, b) for a semantic key, "#rrggbb" or an (r, g, b) tuple."""
+	return _rgb(value, palette(theme), "fg")
+
+
+def index(value, theme=None, level="256"):
+	"""Nearest colour index for `value`, for curses `init_pair` callers.
+
+	`value` is a semantic key, "#rrggbb" or an (r, g, b) tuple. Level "16"
+	searches the basic sixteen colours only, anything else the full xterm-256
+	table. The number is the one `style()` would emit at the same level, so a
+	curses renderer and the escape-code renderer cannot disagree.
+	"""
+	stop = 16 if str(level) == "16" else None
+	return _nearest(rgb(value, theme), 0, stop=stop)
+
+
 def _theme_name(mode=None):
 	if mode is None or not str(mode).strip():
 		mode = os.environ.get("CATRO_THEME") or config.get("theme", "mode", "soft")
