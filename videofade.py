@@ -37,22 +37,11 @@ import platform
 import subprocess
 import re
 
-def init_ansi():
-	if platform.system().lower() == "windows":
-		os.system('color')
+import tui
 
 # Optional dependency, imported on demand inside main() so that --help works
 # without decord installed.
 VideoReader = None
-
-# ANSI Color constants
-PURPLE = '\033[38;2;170;0;255m'
-CYAN = '\033[0;36m'
-YELLOW = '\033[0;33m'
-GREEN = '\033[0;32m'
-RED = '\033[0;31m'
-BOLD = '\033[1m'
-RESET = '\033[0m'
 
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
@@ -101,24 +90,28 @@ def has_audio(filename):
 	except:
 		return False
 
-def get_codec_choice():
+def get_codec_choice(cap):
 	codecs = [
 		("libx264", "H.264 (Default/High Compatibility)"),
 		("libx265", "H.265 (HEVC - High Efficiency)"),
 		("libvpx-vp9", "VP9 (WebM High Quality)"),
 		("mpeg4", "MPEG-4 (Legacy)"),
 	]
-	print(f"\n{PURPLE}{BOLD}--- Select Output Codec ---{RESET}")
+	print()
+	print(tui.section("--- Select Output Codec ---", cap=cap))
 	for i, (cmd, desc) in enumerate(codecs, 1):
-		print(f"{CYAN}{i}.{RESET} {BOLD}{cmd:<12}{RESET} - {desc}")
+		print("{} {} - {}".format(
+			tui.style("{}.", fg="accent", cap=cap),
+			tui.style("{:<12}".format(cmd), bold=True, cap=cap),
+			desc))
 	while True:
 		choice = input(f"\nChoose (1-{len(codecs)}) [1]: ").strip()
 		if not choice: return codecs[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(codecs):
 			return codecs[int(choice)-1][0]
-		print(f"{RED}Invalid choice.{RESET}")
+		print(tui.style("Invalid choice.", fg="error", cap=cap))
 
-def get_curve_choice():
+def get_curve_choice(cap):
 	curves = [
 		("tri", "Linear (Standard Compatibility)"),
 		("esin", "Exponential Sine (Ease-In-Out)"),
@@ -127,19 +120,23 @@ def get_curve_choice():
 		("exp", "Exponential"),
 		("log", "Logarithmic"),
 	]
-	print(f"\n{PURPLE}{BOLD}--- Select Fade Interpolation ---{RESET}")
+	print()
+	print(tui.section("--- Select Fade Interpolation ---", cap=cap))
 	for i, (cmd, desc) in enumerate(curves, 1):
-		print(f"{CYAN}{i}.{RESET} {BOLD}{cmd:<8}{RESET} - {desc}")
+		print("{} {} - {}".format(
+			tui.style("{}.", fg="accent", cap=cap),
+			tui.style("{:<8}".format(cmd), bold=True, cap=cap),
+			desc))
 	while True:
 		choice = input(f"\nChoose (1-{len(curves)}) [1]: ").strip()
 		if not choice: return curves[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(curves):
 			return curves[int(choice)-1][0]
-		print(f"{RED}Invalid choice.{RESET}")
+		print(tui.style("Invalid choice.", fg="error", cap=cap))
 
-def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffix, supports_curve=True):
+def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffix, supports_curve, cap):
 	if not check_ffmpeg():
-		print(f"{RED}Error: FFmpeg not found.{RESET}")
+		print(tui.style("Error: FFmpeg not found.", fg="error", cap=cap))
 		return
 
 	base, ext = os.path.splitext(file_path)
@@ -189,24 +186,24 @@ def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffi
 
 		cmd.extend(["-c:v", codec, "-preset", "medium", output_name])
 
-		print(f"{YELLOW}Processing: {os.path.basename(file_path)}...{RESET}")
+		print(tui.style(f"Processing: {os.path.basename(file_path)}...", fg="warn", cap=cap))
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		
 		if result.returncode != 0:
 			if "Option 'curve' not found" in result.stderr or "Error applying option 'curve'" in result.stderr:
-				print(f"{YELLOW}Curve '{curve}' not supported by this FFmpeg build. Retrying with linear fade...{RESET}")
-				return process_video(file_path, fade_in, fade_out, append_mode, codec, "tri", suffix, False)
+				print(tui.style(f"Curve '{curve}' not supported by this FFmpeg build. Retrying with linear fade...", fg="warn", cap=cap))
+				return process_video(file_path, fade_in, fade_out, append_mode, codec, "tri", suffix, False, cap)
 			
-			print(f"{RED}FFmpeg Error Output:{RESET}\n{result.stderr}")
+			print(tui.style("FFmpeg Error Output:", fg="error", cap=cap) + "\n" + result.stderr)
 			return
 			
-		print(f"{GREEN}[Success] Saved as {output_name}{RESET}")
+		print(tui.style(f"[Success] Saved as {output_name}", fg="success", cap=cap))
 
 	except Exception as e:
-		print(f"{RED}Error processing {file_path}: {e}{RESET}")
+		print(tui.style(f"Error processing {file_path}: {e}", fg="error", cap=cap))
 
 def main():
-	init_ansi()
+	tui.init_ansi()
 	parser = argparse.ArgumentParser(description="Add fades to video files.")
 	parser.add_argument("path", nargs="?", help="Video file or directory")
 	parser.add_argument("-i", "--fadein", type=float, default=1.0, help="Fade-in duration (sec)")
@@ -217,13 +214,16 @@ def main():
 	parser.add_argument("-n", "--interpolation", action="store_true", help="Choose curve interactively")
 
 	args = parser.parse_args()
+	# Capabilities are resolved once: one colour level, unicode decision and
+	# plain/tty mode for the whole run.
+	cap = tui.detect()
 
 	# decord is only needed for an actual run, not for --help.
 	global VideoReader
 	try:
 		from decord import VideoReader
 	except ImportError:
-		print("\033[0;31mError: 'decord' library is not installed.\033[0m")
+		print(tui.style("Error: 'decord' library is not installed.", fg="error", cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install decord")
 		sys.exit(1)
 
@@ -239,20 +239,23 @@ def main():
 		files = [os.path.join(target, f) for f in os.listdir(target) if f.lower().endswith(video_exts)]
 	
 	if not files:
-		print(f"{RED}No video files found.{RESET}")
+		print(tui.style("No video files found.", fg="error", cap=cap))
 		return
 
-	selected_codec = get_codec_choice() if args.codec else "libx264"
-	selected_curve = get_curve_choice() if args.interpolation else "esin"
+	selected_codec = get_codec_choice(cap) if args.codec else "libx264"
+	selected_curve = get_curve_choice(cap) if args.interpolation else "esin"
 
-	print(f"\n{PURPLE}{BOLD}--- FADE SETTINGS ---{RESET}")
-	print(f"Fade In:  {args.fadein}s")
-	print(f"Fade Out: {args.fadeout}s")
-	print(f"Mode:     {'Append' if args.append else 'Standard'}")
-	print(f"Curve:    {selected_curve}\n")
+	print()
+	print(tui.key_values("--- FADE SETTINGS ---", [
+		("Fade In", f"{args.fadein}s"),
+		("Fade Out", f"{args.fadeout}s"),
+		("Mode", "Append" if args.append else "Standard"),
+		("Curve", selected_curve),
+	], cap=cap))
+	print()
 
 	for f in sorted(files):
-		process_video(f, args.fadein, args.fadeout, args.append, selected_codec, selected_curve, args.suffix, supports_curve)
+		process_video(f, args.fadein, args.fadeout, args.append, selected_codec, selected_curve, args.suffix, supports_curve, cap)
 
 if __name__ == "__main__":
 	main()
