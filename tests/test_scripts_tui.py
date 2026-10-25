@@ -15,6 +15,14 @@ ANSI strings:
 		loses only the escapes.
 	- No migrated script still carries a private escape sequence or its own
 		`Colors` class: that is the gate this migration has to keep closed.
+	- `ThemedOutputTest`: every in-scope script that prints output calls at
+		least one shared page-chrome/table helper (`tui.header`, `tui.panel`,
+		`tui.rule`, `tui.status`, `tui.field`, `tui.fill`, `tui.menu`, or the
+		table/section/key-values helpers) instead of printing bare headings.
+		`PENDING_THEMING` names the scripts the other phase-C groups are still
+		theming on their own branches; the lead empties that tuple at close-out,
+		which makes the gate strict. `SCREEN_RENDERERS` are the full-screen
+		engines that paint their own frame and are outside the inline rule.
 
 Run with:
 	python -m unittest discover -s tests -v
@@ -23,6 +31,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -108,7 +117,9 @@ class NoPrivateAnsiTest(unittest.TestCase):
 				# B7 file tools
 				"renamer.py", "alias.py", "newfile.py", "getaudio.py",
 				"exifcopy.py", "timecopy.py", "randomsorter.py",
-				"shutdown.py", "installdeps.py")
+				"shutdown.py", "installdeps.py",
+				# the theme command (delegates to tui.__main__)
+				"theme.py")
 
 	def test_migrated_scripts_have_no_private_ansi(self):
 		for name in self.MIGRATED:
@@ -117,6 +128,75 @@ class NoPrivateAnsiTest(unittest.TestCase):
 							 "{} still hardcodes an escape sequence".format(name))
 			self.assertNotIn("class Colors", source,
 							 "{} still has a private Colors class".format(name))
+
+
+class ThemedOutputTest(unittest.TestCase):
+	"""Every in-scope script renders through the shared page chrome.
+
+	The rule is one line: a script that prints output must call a shared
+	chrome/table helper, so headings, rules, status lines and key/value blocks
+	look like the rest of the collection instead of being hand-printed. A
+	private escape sequence is `NoPrivateAnsiTest`; a bare `print("Title")` is
+	what this one catches.
+	"""
+
+	HELPERS = ("header", "panel", "rule", "status", "field", "fill",
+			   "banner", "section", "print_table", "key_values",
+			   "render_table", "menu")
+
+	# `tui.<helper>` (or `tui.chrome.<helper>`) and the `from tui import ...`
+	# spelling both count: the call, not the import style, is what matters.
+	CALL = re.compile(r"\btui\.(?:chrome\.)?(?:{})\b".format("|".join(HELPERS)))
+	IMPORT = re.compile(r"from\s+tui(?:\.chrome)?\s+import\s+[^\n]*\b(?:{})\b"
+						.format("|".join(HELPERS)))
+
+	# Scripts the c1-c5 groups theme on their own branches. They are on `dev`
+	# already but not on this branch, so their helper calls do not exist here.
+	# The lead empties this tuple at close-out; after that the gate is strict
+	# for every in-scope script and any new one has to be themed on arrival.
+	PENDING_THEMING = ("alias.py", "count.py", "gitpush.py", "help.py",
+					   "image_generator.py", "newfile.py", "opencode.py",
+					   "theme.py", "ts_setup.py", "videoframes.py")
+
+	# Full-screen engines: they own the whole screen (curses, the alternate
+	# screen or the plugin canvas) and paint their frame from the palette, so
+	# the inline page helper is the wrong seam. mdreader is pinned instead by
+	# tests/test_mdreader.py::test_chrome_pairs_are_palette_roles.
+	SCREEN_RENDERERS = ("fakeserver.py", "jsonl_monitor.py", "mdreader.py",
+						"screensaver.py")
+
+	def uses_chrome(self, name):
+		source = (REPO / name).read_text(encoding="utf-8")
+		return bool(self.CALL.search(source) or self.IMPORT.search(source))
+
+	def test_migrated_covers_every_script(self):
+		# The gate is only honest if the list it walks is the whole set: a new
+		# root script that is missing from MIGRATED would escape both checks.
+		scripts = {path.name for path in REPO.glob("*.py")}
+		self.assertEqual(scripts - set(NoPrivateAnsiTest.MIGRATED), set(),
+						 "new scripts must be added to MIGRATED (and themed)")
+
+	def test_skip_lists_stay_inside_migrated(self):
+		migrated = set(NoPrivateAnsiTest.MIGRATED)
+		self.assertEqual(set(self.PENDING_THEMING) - migrated, set(),
+						 "PENDING_THEMING names a script MIGRATED does not walk")
+		self.assertEqual(set(self.SCREEN_RENDERERS) - migrated, set(),
+						 "SCREEN_RENDERERS names a script MIGRATED does not walk")
+		self.assertEqual(set(self.PENDING_THEMING) & set(self.SCREEN_RENDERERS),
+						 set(), "a script is both pending and exempt")
+
+	def test_in_scope_scripts_use_shared_chrome(self):
+		unthemed = [
+			name for name in NoPrivateAnsiTest.MIGRATED
+			if name not in self.PENDING_THEMING
+			and name not in self.SCREEN_RENDERERS
+			and not self.uses_chrome(name)
+		]
+		self.assertEqual(
+			unthemed, [],
+			"these scripts print without a shared chrome helper "
+			"(tui.header/panel/rule/status/field/fill/menu or the table "
+			"helpers): {}".format(", ".join(unthemed)))
 
 
 class ListNoColorTest(unittest.TestCase):
