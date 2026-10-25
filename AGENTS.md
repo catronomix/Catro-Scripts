@@ -26,7 +26,7 @@ This document provides instructions for AI agents working on the `catro-scripts`
     composition and pipe behavior.
   - **No private ANSI**: Do not hardcode escape codes or define a local `Colors`
     class in a script. Use `tui.style()`/`tui.prefix()` with semantic palette
-    keys (`header`, `border`, `fg`, `muted`, `success`, `warning`, `error`, ...),
+    keys (`header`, `border`, `fg`, `muted`, `success`, `warn`, `error`, ...),
     and `tui.init_ansi()` for the Windows console bootstrap.
   - **Detection once per run**: `tui.detect()` (and `tui.theme()`) re-read
     `config.ini`, so resolve `cap = tui.detect()` once in `main()` and pass it to
