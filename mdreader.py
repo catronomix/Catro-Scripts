@@ -31,15 +31,10 @@ Disclaimer: This script was generated with Gemini 3
 
 import os
 import sys
-import platform
 import argparse
 import re
 
 import tui
-
-# Enable ANSI escape sequences on Windows
-if platform.system().lower() == "windows":
-    os.system("color")
 
 # Dependencies are resolved exactly once here, without side effects: a missing
 # module only sets its name to None. Importing mdreader must never install
@@ -369,22 +364,25 @@ def segment_pair(style, colours):
 
     fg = _colour_name(style.color)
     bg = _colour_name(style.bgcolor)
-    header = {colours["header"].lower(), colours["accent"].lower()}
+    surface = colours["surface"].lower()
     zebra = colours["zebra_bg"].lower()
-    is_dim = bool(style.dim) or "gray" in fg or "grey" in fg or fg == colours["muted"].lower()
+    header = {colours["header"].lower(), colours["accent"].lower()}
+    warn = colours["warn"].lower()
+    is_dim = (bool(style.dim) or "gray" in fg or "grey" in fg
+              or fg == colours["muted"].lower())
 
-    if bg or fg in (colours["surface"].lower(), zebra):
+    if bg or fg in (surface, zebra):
         if fg in header:
             return 9   # table header: accent on the surface fill
-        if bg == zebra and zebra != colours["surface"].lower():
+        if bg == zebra and zebra != surface:
             return 7   # alternate table row: body text on the zebra fill
         return 4       # code spans and themed table chrome on the surface fill
     if fg:
         # In contrast-dark `header` and `warn` are the same yellow; links are
         # the underlined ones, so they keep their own pair.
-        if fg in header and not (style.underline and fg == colours["warn"].lower()):
+        if fg in header and not (style.underline and fg == warn):
             return 2
-        if fg == colours["warn"].lower():
+        if fg == warn:
             return 3
         if is_dim:
             return 5
@@ -756,6 +754,7 @@ def main():
         raise SystemExit(1)
 
     try:
+        tui.init_ansi()
         curses.wrapper(render_reader, filepath, raw_content, cap)
     except KeyboardInterrupt:
         pass  # Ctrl-C quits cleanly with status 0, like 'q'.
