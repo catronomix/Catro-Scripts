@@ -196,6 +196,20 @@ class ActionPlainTableTest(unittest.TestCase):
 				   if line.startswith("Total macros saved:"))
 		return body[:end]
 
+	def test_list_actions_detects_capabilities_once(self):
+		import action as action_module
+		with tempfile.TemporaryDirectory() as td:
+			path = os.path.join(td, "actions.json")
+			with open(path, "w", encoding="utf-8") as handle:
+				json.dump({"ping": {"command": "ping", "description": "x"}}, handle)
+			buffer = io.StringIO()
+			with mock.patch.object(action_module, "ACTIONS_FILE", path), \
+					mock.patch.object(tui, "detect", wraps=tui.detect) as detect:
+				with contextlib.redirect_stdout(buffer):
+					action_module.list_actions()
+		self.assertEqual(detect.call_count, 1,
+						 "list_actions() re-detected the terminal")
+
 	def test_pipe_is_tab_separated_without_ansi_or_glyphs(self):
 		out = self.render({
 			"ping": {"command": "ping 127.0.0.1", "description": "Loopback"},

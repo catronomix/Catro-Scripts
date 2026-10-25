@@ -53,14 +53,20 @@ DEFAULT_ACTIONS = {
 }
 
 
-def warn_malformed(actions):
+def _capabilities(cap=None):
+    """The resolved capabilities, detecting once when a caller did not thread it."""
+    return cap if cap is not None else tui.detect()
+
+
+def warn_malformed(actions, cap=None):
     """Warns about entries that cannot be run, instead of crashing on them."""
+    cap = _capabilities(cap)
     for name, details in actions.items():
         if not isinstance(details, dict):
             print(
                 tui.style(f"Warning: action '{name}' is not an object with "
                           f"'command' and 'description'; it will be skipped.",
-                          fg="warn"),
+                          fg="warn", cap=cap),
                 file=sys.stderr,
             )
             continue
@@ -72,12 +78,12 @@ def warn_malformed(actions):
         if missing:
             print(
                 tui.style(f"Warning: action '{name}' is missing "
-                          f"{', '.join(missing)}.", fg="warn"),
+                          f"{', '.join(missing)}.", fg="warn", cap=cap),
                 file=sys.stderr,
             )
 
 
-def load_actions():
+def load_actions(cap=None):
     """Loads macros from the actions.json file.
 
     A missing file is bootstrapped from DEFAULT_ACTIONS. A file that is not
@@ -85,9 +91,10 @@ def load_actions():
     clear message and exit 1, never a traceback or a silently empty menu.
     Entries missing 'command'/'description' only warn; they still list.
     """
+    cap = _capabilities(cap)
     if not os.path.exists(ACTIONS_FILE):
         # Default initial template actions if file doesn't exist
-        save_actions(DEFAULT_ACTIONS)
+        save_actions(DEFAULT_ACTIONS, cap)
         return {name: dict(details) for name, details in DEFAULT_ACTIONS.items()}
 
     try:
@@ -95,7 +102,8 @@ def load_actions():
             actions = json.load(f)
     except (OSError, ValueError) as e:
         print(
-            tui.style(f"Error: cannot read '{ACTIONS_FILE}': {e}", fg="error"),
+            tui.style(f"Error: cannot read '{ACTIONS_FILE}': {e}", fg="error",
+                      cap=cap),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -104,23 +112,24 @@ def load_actions():
         print(
             tui.style(f"Error: '{ACTIONS_FILE}' must contain a JSON object "
                       f"mapping action names to {{command, description}}.",
-                      fg="error"),
+                      fg="error", cap=cap),
             file=sys.stderr,
         )
         sys.exit(1)
 
-    warn_malformed(actions)
+    warn_malformed(actions, cap)
     return actions
 
 
-def save_actions(actions):
+def save_actions(actions, cap=None):
     """Saves the actions dictionary to actions.json formatted cleanly."""
+    cap = _capabilities(cap)
     try:
         with open(ACTIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(actions, f, indent=4, ensure_ascii=False)
         return True
     except Exception as e:
-        print(tui.style(f"Error saving actions to file: {e}", fg="error"))
+        print(tui.style(f"Error saving actions to file: {e}", fg="error", cap=cap))
         return False
 
 
@@ -163,18 +172,19 @@ def quote_extra_arg(arg):
     return shlex.quote(arg)
 
 
-def run_action(action_name, extra_args):
+def run_action(action_name, extra_args, cap=None):
     """Looks up and executes a macro command string with extra CLI args appended."""
-    actions = load_actions()
+    cap = _capabilities(cap)
+    actions = load_actions(cap)
 
     if action_name not in actions:
         print(
             tui.style(f"Error: Action '{action_name}' not found in actions.json.",
-                      fg="error")
+                      fg="error", cap=cap)
         )
         print(
             "Use {} to view available macros.".format(
-                tui.style("python action.py list", fg="border"))
+                tui.style("python action.py list", fg="border", cap=cap))
         )
         sys.exit(1)
 
@@ -182,10 +192,11 @@ def run_action(action_name, extra_args):
     base_command = entry.get("command") if isinstance(entry, dict) else None
     if not isinstance(base_command, str) or not base_command.strip():
         print(
-            tui.style(f"Error: Action '{action_name}' has no command. ", fg="error")
+            tui.style(f"Error: Action '{action_name}' has no command. ", fg="error",
+                      cap=cap)
             + "Fix it with "
-            + tui.style(f"python action.py add {action_name}", fg="border")
-            + tui.style(".", fg="error")
+            + tui.style(f"python action.py add {action_name}", fg="border", cap=cap)
+            + tui.style(".", fg="error", cap=cap)
         )
         sys.exit(1)
     base_command = base_command.strip()
@@ -201,30 +212,30 @@ def run_action(action_name, extra_args):
 
     print()
     print(tui.style(f"--- EXECUTING MACRO: {action_name} ---",
-                    fg="header", bold=True))
-    print("{} {}\n".format(tui.style("Command:", fg="fg"), full_command))
+                    fg="header", bold=True, cap=cap))
+    print("{} {}\n".format(tui.style("Command:", fg="fg", cap=cap), full_command))
 
     try:
         # Run the command in the active shell environment
         result = subprocess.run(full_command, shell=True)
         print()
         print(tui.style(f"--- MACRO FINISHED (Exit Code: {result.returncode}) ---",
-                        fg="border"))
+                        fg="border", cap=cap))
         print()
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         print()
-        print(tui.style("[Macro execution interrupted by user]", fg="warn"))
+        print(tui.style("[Macro execution interrupted by user]", fg="warn", cap=cap))
         sys.exit(130)
     except Exception as e:
-        print(tui.style(f"Execution error: {e}", fg="error"))
+        print(tui.style(f"Execution error: {e}", fg="error", cap=cap))
         sys.exit(1)
 
 
-def list_actions():
+def list_actions(cap=None):
     """Displays all saved macros in the house table."""
-    actions = load_actions()
-    cap = tui.detect()
+    cap = _capabilities(cap)
+    actions = load_actions(cap)
 
     print()
     print(tui.style("--- ACTION MACRO DIRECTORY SCAN ---",
@@ -261,13 +272,14 @@ def list_actions():
     print()
 
 
-def prompt_input_with_default(prompt_str, default_value=""):
+def prompt_input_with_default(prompt_str, default_value="", cap=None):
     """Helper for mini-TUI to allow editing existing values or keeping default.
 
     Deliberately not tui.ask_text(): the readline branch pre-fills the editing
     buffer with the current value, and ask_text has no equivalent, so replacing
     it would change what an operator sees and can edit.
     """
+    cap = _capabilities(cap)
     if default_value:
         # Try using GNU readline if available for pre-filled buffer on Linux/macOS
         try:
@@ -281,17 +293,17 @@ def prompt_input_with_default(prompt_str, default_value=""):
         except ImportError:
             # Fallback prompt showing current value for Windows/systems without readline
             disp_prompt = "{} [{}]: ".format(
-                prompt_str, tui.style(default_value, fg="warn"))
+                prompt_str, tui.style(default_value, fg="warn", cap=cap))
             val = input(disp_prompt).strip()
             return val if val else default_value
     else:
         return input(prompt_str).strip()
 
 
-def interactive_add(target_name=None):
+def interactive_add(target_name=None, cap=None):
     """Mini-TUI interface to add a new action or edit an existing one."""
-    actions = load_actions()
-    cap = tui.detect()
+    cap = _capabilities(cap)
+    actions = load_actions(cap)
 
     print()
     print(tui.style("=== ACTION MACRO MANAGER: ADD / EDIT ===",
@@ -326,7 +338,7 @@ def interactive_add(target_name=None):
     print()
     print(tui.style("Executable Command String:", fg="border", cap=cap))
     cmd = prompt_input_with_default(
-        tui.style("Command > ", fg="fg", cap=cap), existing_cmd
+        tui.style("Command > ", fg="fg", cap=cap), existing_cmd, cap
     )
 
     if not cmd:
@@ -338,7 +350,7 @@ def interactive_add(target_name=None):
     print()
     print(tui.style("Description:", fg="border", cap=cap))
     desc = prompt_input_with_default(
-        tui.style("Description > ", fg="fg", cap=cap), existing_desc
+        tui.style("Description > ", fg="fg", cap=cap), existing_desc, cap
     )
 
     # Save updated action
@@ -347,17 +359,17 @@ def interactive_add(target_name=None):
         "description": desc or "No description provided",
     }
 
-    if save_actions(actions):
+    if save_actions(actions, cap):
         status = "updated" if is_edit else "added"
         print()
         print(tui.style(f"[Success] Action '{target_name}' successfully {status}!\n",
                         fg="success", cap=cap))
 
 
-def interactive_remove(target_name=None):
+def interactive_remove(target_name=None, cap=None):
     """Mini-TUI interface to delete an existing action."""
-    actions = load_actions()
-    cap = tui.detect()
+    cap = _capabilities(cap)
+    actions = load_actions(cap)
 
     if not actions:
         print(tui.style("No actions available to remove.\n", fg="error", cap=cap))
@@ -368,7 +380,7 @@ def interactive_remove(target_name=None):
                     fg="header", bold=True, cap=cap))
 
     if not target_name:
-        list_actions()
+        list_actions(cap)
         target_name = input(
             tui.style("Enter action name to delete (or 'q' to cancel): ",
                       fg="fg", cap=cap)
@@ -404,39 +416,40 @@ def interactive_remove(target_name=None):
 
 def main():
     args = sys.argv[1:]
+    cap = tui.detect()
 
     # Handle redundant 'action' prefix when invoked via wrapper (e.g. `catro-scripts action <macro>`)
-    actions = load_actions()
+    actions = load_actions(cap)
     if args and args[0].lower() == "action" and args[0] not in actions:
         args = args[1:]
 
     if not args or args[0] in ["list", "--help", "-h"]:
-        list_actions()
+        list_actions(cap)
         return
 
     subcommand = args[0].lower()
 
     if subcommand == "add":
         target = args[1] if len(args) > 1 else None
-        interactive_add(target)
+        interactive_add(target, cap)
     elif subcommand in ["remove", "rm", "delete"]:
         target = args[1] if len(args) > 1 else None
-        interactive_remove(target)
+        interactive_remove(target, cap)
     elif subcommand == "run":
         if len(args) < 2:
             print(
                 tui.style("Usage: python action.py run <action_name> "
-                          "[optional flags/args]", fg="error")
+                          "[optional flags/args]", fg="error", cap=cap)
             )
             sys.exit(1)
         action_name = args[1]
         extra_args = args[2:]
-        run_action(action_name, extra_args)
+        run_action(action_name, extra_args, cap)
     else:
         # Direct shortcut execution: python action.py <action_name> [extra args...]
         action_name = args[0]
         extra_args = args[1:]
-        run_action(action_name, extra_args)
+        run_action(action_name, extra_args, cap)
 
 
 if __name__ == "__main__":
