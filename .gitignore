@@ -19,7 +19,8 @@ jsonl_debug.log
 .env
 
 # Script-specific local artifacts
-config.ini          # tui theme/style preference - per checkout, never committed
+# tui theme/style preference: per checkout, never committed
+config.ini
 opencode.default
 venv_info.txt
 recreate_venv.py
