@@ -336,6 +336,46 @@ class DowngradeTests(unittest.TestCase):
 		self.assertEqual(palette.style("x", cap=TRUE), "x")
 
 
+class IndexSeamTests(unittest.TestCase):
+	"""`palette.index()` is the numeric twin of the 256/16 downgrade.
+
+	It exists so a curses consumer can ask for the same nearest colour the
+	escape-code renderer would pick, instead of keeping a second table.
+	"""
+
+	def test_index_matches_the_256_escape(self):
+		for key in palette.SOFT:
+			with self.subTest(key=key):
+				out = palette.style("x", fg=key, cap=LEVEL256)
+				match = re.match(r"^\x1b\[38;5;(\d+)mx\x1b\[0m$", out)
+				self.assertIsNotNone(match, repr(out))
+				self.assertEqual(int(match.group(1)), palette.index(key))
+				self.assertEqual(palette.index(key), palette.index(palette.SOFT[key]))
+
+	def test_index_matches_the_16_escape(self):
+		for key in palette.SOFT:
+			with self.subTest(key=key):
+				out = palette.style("x", fg=key, cap=LEVEL16)
+				match = re.match(r"^\x1b\[(3[0-7]|9[0-7])mx\x1b\[0m$", out)
+				self.assertIsNotNone(match, repr(out))
+				code = int(match.group(1))
+				index = code - 30 if code < 90 else code - 90 + 8
+				self.assertEqual(index, palette.index(key, level="16"))
+				self.assertTrue(0 <= index <= 15)
+
+	def test_index_accepts_rgb_tuples_and_other_themes(self):
+		self.assertEqual(palette.index((245, 205, 104)),
+						 palette.index("#F5CD68"))
+		for name in palette.THEMES:
+			with self.subTest(theme=name):
+				value = palette.index("accent", theme=name)
+				self.assertTrue(0 <= value <= 255)
+				self.assertEqual(value, palette.index(
+					palette.THEMES[name]["accent"], theme=name))
+		self.assertNotEqual(palette.index("bg", theme="soft"),
+							palette.index("bg", theme="contrast-light"))
+
+
 class DegradationTests(unittest.TestCase):
 	"""Every theme keeps working when colour, glyphs or the tty go away."""
 

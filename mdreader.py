@@ -10,12 +10,15 @@ Usage:
     catro-scripts mdreader [filename.md]
 
 Features:
-    - Markdown rendering powered by 'rich' with custom palettes & table boxes.
+    - Markdown rendering powered by 'rich' with the shared tui palettes and
+      table boxes: soft (mode 0), contrast light (mode 1), contrast dark (2).
     - Pinned 2-line bottom menu and status bar with page percentage.
     - Full scrolling support (Up/Down, PgUp/PgDn, Home/End, Left/Right file navigation).
-    - Viewport border toggle [H] and Contrast theme modes [C].
+    - Viewport border toggle [H] and theme cycling [C].
     - Displays raw URLs for links.
     - Aligned table rendering.
+    - Needs an interactive terminal: a pipe is refused with the tui contract's
+      one-line message and exit 2, before curses starts.
 
 Requirements:
     - python libraries rich, curses
@@ -28,15 +31,10 @@ Disclaimer: This script was generated with Gemini 3
 
 import os
 import sys
-import platform
 import argparse
 import re
 
 import tui
-
-# Enable ANSI escape sequences on Windows
-if platform.system().lower() == "windows":
-    os.system("color")
 
 # Dependencies are resolved exactly once here, without side effects: a missing
 # module only sets its name to None. Importing mdreader must never install
@@ -71,14 +69,26 @@ if _orig_table_console is not None:
         _orig_init = Table.__init__
 
         def _table_init(table_self, *args, **kwargs):
-            # Use HEAVY_EDGE or SQUARE to keep borders rigid.
-            # We must set collapse_padding=True and pad_edge=False to help prevent
-            # content from pushing the borders out of alignment when rendered to segments.
+            # Keep borders rigid: collapse_padding/pad_edge/show_edge stop the
+            # content from pushing them out of alignment when rendered to
+            # segments. Every colour comes from this console's theme, so the
+            # table follows the active mode instead of a baked-in palette.
+            cell = console.get_style("markdown.table.cell")
+            border = console.get_style("markdown.table.border")
+            header = console.get_style("markdown.table.header")
+            zebra = console.get_style("mdreader.table.zebra")
             kwargs["box"] = box.SQUARE
-            kwargs["row_styles"] = ["on #292238", "on #352b49"]
-            kwargs["border_style"] = "#9381B0 on #292238"
-            kwargs["header_style"] = "bold #F5CD68 on #292238"
-            kwargs["style"] = "on #292238"
+            kwargs["row_styles"] = [
+                "on {}".format(_colour_name(cell.bgcolor)),
+                "on {}".format(_colour_name(zebra.bgcolor)),
+            ]
+            kwargs["border_style"] = "{} on {}".format(
+                _colour_name(border.color), _colour_name(cell.bgcolor)
+            )
+            kwargs["header_style"] = "bold {} on {}".format(
+                _colour_name(header.color), _colour_name(cell.bgcolor)
+            )
+            kwargs["style"] = "on {}".format(_colour_name(cell.bgcolor))
             kwargs["collapse_padding"] = True
             kwargs["pad_edge"] = False
             kwargs["show_edge"] = True
@@ -137,8 +147,37 @@ def slice_line_segments(segments, start_col, max_cols):
     return sliced
 
 
+# mdreader's three display modes map one-to-one onto the shared theme ids, so
+# every colour the reader draws - curses pairs and Rich alike - comes from the
+# same house palette, and the reader matches the other scripts.
+THEME_MODES = ("soft", "contrast-light", "contrast-dark")
+
+# Pair number -> (foreground role, background role), using palette keys. The
+# numbers are the ones process_markdown_rich and the chrome hand to
+# color_pair(); because the roles are semantic, switching mode recolours the
+# content and the frame together.
+PAIR_ROLES = (
+    (1, "fg", "bg"),          # body text
+    (2, "header", "bg"),      # headings, bullets, numbers
+    (3, "warn", "bg"),        # links and secondary emphasis
+    (4, "fg", "surface"),     # code spans, table cells
+    (5, "muted", "bg"),       # dimmed text
+    (6, "header", "surface"),  # status bar
+    (7, "fg", "zebra_bg"),    # shortcut bar, alternate table row
+    (8, "border", "bg"),      # window frame
+    (9, "header", "surface"),  # table header row
+)
+
+
+def theme_id(theme_mode=0):
+    """Shared theme id for a display mode (mode 0 is soft)."""
+    if 0 <= theme_mode < len(THEME_MODES):
+        return THEME_MODES[theme_mode]
+    return THEME_MODES[0]
+
+
 def terminal_color_count():
-    """Number of colour pairs the terminal offers (0 when unknown)."""
+    """Number of colours the terminal offers (0 when unknown)."""
     try:
         return int(getattr(curses, "COLORS", 0) or 0)
     except (TypeError, ValueError):
@@ -154,121 +193,95 @@ def _init_pairs(pairs):
             pass
 
 
-def _init_high_contrast_dark():
-    """Base-colour palette: Contrast Dark, and the fallback for limited terminals."""
-    _init_pairs(
-        (
-            (1, curses.COLOR_WHITE, curses.COLOR_BLACK),
-            (2, curses.COLOR_YELLOW, curses.COLOR_BLACK),
-            (3, curses.COLOR_CYAN, curses.COLOR_BLACK),
-            (4, curses.COLOR_GREEN, curses.COLOR_BLACK),
-            (5, curses.COLOR_CYAN, curses.COLOR_BLACK),
-            (6, curses.COLOR_BLACK, curses.COLOR_WHITE),
-            (7, curses.COLOR_YELLOW, curses.COLOR_BLACK),
-            (8, curses.COLOR_YELLOW, curses.COLOR_BLACK),
-            (9, curses.COLOR_YELLOW, curses.COLOR_BLACK),
-        )
-    )
+def _can_redefine_colors():
+    """True when the terminal lets curses replace palette entries with RGB."""
+    try:
+        return bool(curses.can_change_color())
+    except Exception:
+        return False
 
 
-def init_cozy_colors(theme_mode=0):
-    """Initializes curses theme colors, degrading gracefully on limited terminals."""
+def _fold_index(index, limit):
+    """Fold an xterm index into the terminal's real range (bright -> normal)."""
+    if limit <= 0:
+        return 0
+    while index >= limit:
+        index -= 8 if limit >= 8 else limit
+    return max(0, index)
+
+
+def _colour_slots(colours):
+    """Map each palette role used by PAIR_ROLES to a curses colour number.
+
+    A terminal that can redefine colours gets exact RGB in spare slots above
+    the basic sixteen; otherwise the nearest xterm index (256, or the basic 16)
+    is used. Allocation order is fixed, so a theme always yields the same
+    slots.
+    """
+    limit = terminal_color_count() or 8
+    level = "256" if limit >= 256 else "16"
+
+    slots = {}
+    next_slot = 16
+    redefinable = level == "256" and _can_redefine_colors()
+    for _pair, fg_role, bg_role in PAIR_ROLES:
+        for role in (fg_role, bg_role):
+            if role in slots:
+                continue
+            if redefinable and next_slot < limit:
+                rgb = tui.palette.rgb(colours[role])
+                try:
+                    # curses spells RGB in 0..1000.
+                    curses.init_color(next_slot, *(
+                        int(round(channel * 1000 / 255)) for channel in rgb
+                    ))
+                except curses.error:
+                    # Some terminals claim they can redefine colours and then
+                    # refuse; stop trying and use the nearest index instead.
+                    redefinable = False
+                else:
+                    slots[role] = next_slot
+                    next_slot += 1
+                    continue
+            slots[role] = _fold_index(
+                tui.palette.index(colours[role], level=level), limit
+            )
+    return slots
+
+
+def init_theme_colors(theme_mode=0, cap=None):
+    """Initializes the curses colour pairs from the house palette of `theme_mode`.
+
+    Degrades safely: terminals that cannot redefine colours get the nearest
+    xterm index, 16/8-colour terminals get the nearest basic colour, and a pair
+    the terminal rejects is swallowed (curses then uses its default). With
+    `cap.level == "none"` (NO_COLOR, TERM=dumb) the layout is kept and only the
+    colour is dropped, as the tui contract requires.
+    """
     try:
         curses.start_color()
     except curses.error:
         return
 
-    if theme_mode == 1:
-        # High Contrast Light Mode
+    if cap is not None and getattr(cap, "level", "") == "none":
+        default = getattr(curses, "COLOR_DEFAULT", -1)
         _init_pairs(
-            (
-                (1, curses.COLOR_BLACK, curses.COLOR_WHITE),
-                (2, curses.COLOR_BLUE, curses.COLOR_WHITE),
-                (3, curses.COLOR_MAGENTA, curses.COLOR_WHITE),
-                (4, curses.COLOR_CYAN, curses.COLOR_WHITE),
-                (5, curses.COLOR_BLUE, curses.COLOR_WHITE),
-                (6, curses.COLOR_WHITE, curses.COLOR_BLACK),
-                (7, curses.COLOR_BLACK, curses.COLOR_WHITE),
-                (8, curses.COLOR_WHITE, curses.COLOR_BLACK),
-                (9, curses.COLOR_BLACK, curses.COLOR_CYAN),
-            )
+            tuple((pair, default, default) for pair, _fg, _bg in PAIR_ROLES)
         )
         return
 
-    if theme_mode == 2:
-        # High Contrast Dark Mode
-        _init_high_contrast_dark()
-        return
-
-    # Mode 0: Cozy Purple
-    colors = terminal_color_count()
-    if colors < 256:
-        # An 8/16-colour terminal rejects the 256-colour indices below with
-        # curses.error, so fall back to the base-colour palette instead of
-        # aborting the whole reader.
-        _init_high_contrast_dark()
-        return
-
-    can_rgb = False
-    try:
-        if curses.can_change_color():
-            can_rgb = True
-    except Exception:
-        can_rgb = False
-
-    if can_rgb:
-        curses.init_color(16, 106, 90, 149)  # Dark Velvet Purple BG (#1B1726)
-        curses.init_color(17, 160, 133, 220)  # Slate Purple Container BG (#292238)
-        curses.init_color(18, 100, 75, 60)  # Amethyst Status BG (#34254F)
-        curses.init_color(19, 831, 784, 921)  # Soft Lavender Text (#D4C8EB)
-        curses.init_color(20, 250, 250, 300)  # Muted Purple Secondary (#9381B0)
-        curses.init_color(21, 960, 803, 407)  # Glowing Gold Accent (#F5CD68)
-        curses.init_color(22, 878, 623, 300)  # Warm Amber / Rose Gold (#E09F67)
-        curses.init_color(23, 988, 933, 796)  # Pale Golden Cream (#FCEECB)
-        curses.init_color(24, 208, 168, 286)  # Alt Slate Purple Row BG (#352B49)
-        c_bg, c_slate, c_status = 16, 17, 18
-        c_text, c_muted, c_gold, c_amber, c_cream, c_slate_alt = 19, 20, 21, 22, 23, 24
-    else:
-        c_bg, c_slate, c_status = 235, 236, 237
-        c_text, c_muted, c_gold, c_amber, c_cream, c_slate_alt = (
-            252,
-            140,
-            220,
-            208,
-            230,
-            238,
-        )
-
+    slots = _colour_slots(tui.palette.palette(theme_id(theme_mode)))
     _init_pairs(
-        (
-            (1, c_text, c_bg),
-            (2, c_gold, c_bg),
-            (3, c_amber, c_bg),
-            (4, c_cream, c_slate),
-            (5, c_muted, c_bg),
-            (6, c_gold, c_status),
-            (7, c_cream, c_slate_alt),
-            (8, c_gold, c_slate),
-            (9, c_gold, c_slate),
+        tuple(
+            (pair, slots[fg_role], slots[bg_role])
+            for pair, fg_role, bg_role in PAIR_ROLES
         )
     )
-    return
-
-
-# mdreader's three display modes map one-to-one onto the shared theme ids, so
-# the Rich rendering uses the same hexes as every migrated script. The curses
-# colour pairs below stay separate for now (they cannot take hex; group B3 of
-# Phase B rewrites that path).
-THEME_MODES = ("soft", "contrast-light", "contrast-dark")
 
 
 def get_rich_theme(theme_mode=0):
     """Generates a custom Rich Theme from the shared palette of the active mode."""
-    if 0 <= theme_mode < len(THEME_MODES):
-        theme_id = THEME_MODES[theme_mode]
-    else:
-        theme_id = THEME_MODES[0]
-    colours = tui.palette.palette(theme_id)
+    colours = tui.palette.palette(theme_id(theme_mode))
     return Theme(
         {
             "markdown.h1": "bold " + colours["header"],
@@ -286,6 +299,8 @@ def get_rich_theme(theme_mode=0):
             "markdown.table.cell": colours["fg"] + " on " + colours["surface"],
             "markdown.table.border": colours["border"],
             "markdown.link": "underline " + colours["warn"],
+            # The table patch below reads this for the alternate row fill.
+            "mdreader.table.zebra": "on " + colours["zebra_bg"],
         }
     )
 
@@ -330,9 +345,55 @@ def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
         pass
 
 
+def _colour_name(colour):
+    """Lowercase "#rrggbb" (or colour name) for a Rich colour; "" when unset."""
+    if colour is None:
+        return ""
+    return str(getattr(colour, "name", None) or colour).lower()
+
+
+def segment_pair(style, colours):
+    """Curses pair number for a Rich segment style, chosen by palette role.
+
+    Roles come from `colours`, so the same classification works in all three
+    modes: body text, heading/accent, warn, code/table cell, muted and the
+    zebra row.
+    """
+    if style is None:
+        return 1
+
+    fg = _colour_name(style.color)
+    bg = _colour_name(style.bgcolor)
+    surface = colours["surface"].lower()
+    zebra = colours["zebra_bg"].lower()
+    header = {colours["header"].lower(), colours["accent"].lower()}
+    warn = colours["warn"].lower()
+    is_dim = (bool(style.dim) or "gray" in fg or "grey" in fg
+              or fg == colours["muted"].lower())
+
+    if bg or fg in (surface, zebra):
+        if fg in header:
+            return 9   # table header: accent on the surface fill
+        if bg == zebra and zebra != surface:
+            return 7   # alternate table row: body text on the zebra fill
+        return 4       # code spans and themed table chrome on the surface fill
+    if fg:
+        # In contrast-dark `header` and `warn` are the same yellow; links are
+        # the underlined ones, so they keep their own pair.
+        if fg in header and not (style.underline and fg == warn):
+            return 2
+        if fg == warn:
+            return 3
+        if is_dim:
+            return 5
+        return 1
+    return 5 if is_dim else 1
+
+
 def process_markdown_rich(raw_content, width, theme_mode=0):
     """Parses and renders Markdown text into formatted lines using Rich."""
     rich_theme = get_rich_theme(theme_mode)
+    colours = tui.palette.palette(theme_id(theme_mode))
     console = Console(
         width=max(10, width), force_terminal=True, color_system="256", theme=rich_theme
     )
@@ -360,7 +421,6 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
                 continue
 
             attr = 0
-            color = 1
 
             if seg.style:
                 if seg.style.bold:
@@ -372,40 +432,9 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
                 if seg.style.dim:
                     attr |= curses.A_DIM
 
-                bg_name = (
-                    str(seg.style.bgcolor.name).lower() if seg.style.bgcolor else ""
-                )
-                cname = str(seg.style.color.name).lower() if seg.style.color else ""
-                has_bg = bool(seg.style.bgcolor) or any(
-                    k in cname for k in ["#292238", "#352b49", "#fceecb"]
-                )
-                is_dim = seg.style.dim or any(
-                    k in cname for k in ["dim", "gray", "grey", "#9381b0"]
-                )
-
-                if has_bg:
-                    if "#352b49" in bg_name:
-                        color = 7  # Alternate Table Row: Same text color on #352B49 BG
-                    elif any(k in cname for k in ["#f5cd68", "gold", "yellow"]):
-                        color = 9  # Table Header Gold on Slate BG
-                    else:
-                        color = 4  # Standard Table Row / Code on Slate BG
-                elif seg.style.color:
-                    if any(k in cname for k in ["#f5cd68", "gold", "yellow"]):
-                        color = 2  # Gold on Main BG
-                    elif any(
-                        k in cname
-                        for k in ["#e09f67", "amber", "cyan", "blue", "magenta"]
-                    ):
-                        color = 3  # Amber on Main BG
-                    elif is_dim:
-                        color = 5  # Muted on Main BG
-                    else:
-                        color = 1  # Standard Body Text on Main BG
-                elif is_dim:
-                    color = 5
-
-            line_segments.append(Segment(seg.text, attr, color))
+            line_segments.append(
+                Segment(seg.text, attr, segment_pair(seg.style, colours))
+            )
         formatted_doc.append(FormattedLine(line_segments))
 
     # Append blank lines + centered golden end-of-file marker
@@ -437,17 +466,25 @@ def get_directory_md_files(current_filepath):
         return folder, [os.path.basename(current_filepath)]
 
 
-def render_reader(stdscr, filepath, raw_content):
+def initial_theme_mode():
+    """Display mode for the configured theme (CATRO_THEME > config.ini > soft)."""
+    try:
+        return THEME_MODES.index(tui.theme())
+    except ValueError:
+        return 0
+
+
+def render_reader(stdscr, filepath, raw_content, cap=None):
     """Main TUI loop handling viewport rendering, input events, file switching, and status bar."""
     curses.use_default_colors()
     curses.curs_set(0)
     stdscr.keypad(True)
 
     show_border = True
-    theme_mode = 0  # 0: Cozy Purple, 1: High Contrast Light, 2: High Contrast Dark
-    theme_names = ["Cozy Purple", "Contrast Light", "Contrast Dark"]
+    theme_mode = initial_theme_mode()
+    theme_names = [name.replace("-", " ") for name in THEME_MODES]
 
-    init_cozy_colors(theme_mode)
+    init_theme_colors(theme_mode, cap)
     stdscr.bkgd(" ", curses.color_pair(1))
 
     scroll_top = 0
@@ -594,8 +631,8 @@ def render_reader(stdscr, filepath, raw_content):
             show_border = not show_border
             stdscr.clear()
         elif key in (ord("c"), ord("C")):
-            theme_mode = (theme_mode + 1) % 3
-            init_cozy_colors(theme_mode)
+            theme_mode = (theme_mode + 1) % len(THEME_MODES)
+            init_theme_colors(theme_mode, cap)
             stdscr.bkgd(" ", curses.color_pair(1))
             stdscr.clear()
         elif key in (ord("["), ord("a"), ord("A"), curses.KEY_SLEFT):
@@ -650,15 +687,6 @@ def render_reader(stdscr, filepath, raw_content):
             stdscr.clear()
 
 
-def require_tty():
-    """Refuse to run when stdin/stdout is redirected: curses needs a terminal."""
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        return
-    sys.stderr.write("[Error] mdreader needs an interactive terminal "
-                     "(stdin/stdout is not a tty).\n")
-    raise SystemExit(2)
-
-
 def missing_dependencies():
     """Returns one install hint per unavailable library (empty when ready)."""
     hints = []
@@ -688,7 +716,11 @@ def main():
     )
     args = parser.parse_args()
 
-    require_tty()
+    # tui owns the refusal: one stderr line with the contract's wording, exit 2,
+    # and it runs before curses (or a file is even opened). The capability
+    # snapshot is taken once per run and carried into the renderer.
+    tui.require_tty("mdreader")
+    cap = tui.detect()
 
     # mdreader never installs anything itself; it only reports what is missing.
     hints = missing_dependencies()
@@ -722,7 +754,8 @@ def main():
         raise SystemExit(1)
 
     try:
-        curses.wrapper(render_reader, filepath, raw_content)
+        tui.init_ansi()
+        curses.wrapper(render_reader, filepath, raw_content, cap)
     except KeyboardInterrupt:
         pass  # Ctrl-C quits cleanly with status 0, like 'q'.
     except Exception as e:
