@@ -21,6 +21,7 @@ Run from the repo root:
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,10 @@ import tui  # noqa: E402
 import jsonl_monitor  # noqa: E402
 
 BOX_GLYPHS = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c"
+
+# Every CSI form tui emits; anything left after this substitution that still
+# contains ESC is a sequence cut mid-way (truncate() counted escape bytes).
+COMPLETE_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 class FakeScreen:
@@ -70,6 +75,11 @@ def no_colour_cap():
 	"""Level "none", ASCII glyphs: the strictest no-escape capability set."""
 	return tui.detect(stream=io.StringIO(),
 					  environ={"NO_COLOR": "1", "CATRO_ASCII": "1"})
+
+
+def colour_cap():
+	"""True colour: the styled legend whose escapes used to be clipped."""
+	return tui.detect(environ={"FORCE_COLOR": "3"})
 
 
 def write_jsonl(directory):
@@ -365,8 +375,86 @@ class StatusBarTests(unittest.TestCase):
 											   no_colour_cap())
 		footer = tui.strip_ansi(cache["fs_footer"])
 		self.assertEqual(tui.display_width(footer), 100)
-		self.assertTrue(footer.startswith(" "), repr(footer))
-		self.assertTrue(footer.endswith(" "), repr(footer))
+		# Balance, not "starts with a space": the old .ljust() footer also
+		# ended in one, and only a centred bar has padding on both sides.
+		left = len(footer) - len(footer.lstrip(" "))
+		right = len(footer) - len(footer.rstrip(" "))
+		self.assertGreater(left, 0, repr(footer))
+		self.assertGreater(right, 0, repr(footer))
+		self.assertLessEqual(abs(left - right), 1, repr(footer))
+
+
+class LegendPopupTests(unittest.TestCase):
+	"""A styled legend is drawn either whole or not at all.
+
+	Clipping an already-styled legend with `tui.truncate()` counts escape bytes
+	as cells: at cols < 47 the rows shrank to 10-40 cells, sequences were cut
+	mid-form and the closing reset was lost, leaking the surface background.
+	The overlay is optional help, so a too-narrow terminal simply skips it.
+	"""
+
+	def assert_whole_escapes(self, writes):
+		for line in writes:
+			self.assertNotIn(
+				"\x1b", COMPLETE_ESCAPE.sub("", line),
+				"escape cut mid-sequence: " + repr(line))
+
+	def render_main(self, cols, cap):
+		with tempfile.TemporaryDirectory() as directory:
+			write_jsonl(directory)
+			monitor = populated_monitor(directory)
+			monitor.show_legend = True
+			screen = FakeScreen(cols=cols, rows=14)
+			cache = {}
+			jsonl_monitor.render_ui(monitor, cache, screen, cap)
+		return screen, cache
+
+	def render_fullscreen(self, cols, cap):
+		with tempfile.TemporaryDirectory() as directory:
+			write_jsonl(directory)
+			monitor = populated_monitor(directory)
+			monitor.show_legend = True
+			monitor.fullscreen_file = monitor.sorted_files[0]
+			screen = FakeScreen(cols=cols, rows=14)
+			cache = {}
+			jsonl_monitor.render_fullscreen_ui(monitor, cache, screen, cap)
+		return screen, cache
+
+	def popup_rows(self, cache):
+		return [cache[key] for key in cache
+				if isinstance(key, str) and key.startswith("popup_")]
+
+	def test_narrow_terminal_skips_the_styled_popup(self):
+		for cols in (45, 46):
+			for name, renderer in (("main", self.render_main),
+								   ("fullscreen", self.render_fullscreen)):
+				with self.subTest(cols=cols, renderer=name):
+					screen, cache = renderer(cols, colour_cap())
+					visible = tui.strip_ansi("".join(screen.writes))
+					self.assertNotIn("COLOR LEGEND", visible)
+					self.assertEqual(self.popup_rows(cache), [])
+					self.assert_whole_escapes(screen.writes)
+					for line in screen.writes:
+						self.assertLessEqual(tui.display_width(line), cols,
+											 repr(line))
+					self.assertTrue(screen.writes, "monitor stopped drawing")
+
+	def test_drawn_popup_rows_share_one_width(self):
+		for cols in (47, 100):
+			for name, renderer in (("main", self.render_main),
+								   ("fullscreen", self.render_fullscreen)):
+				with self.subTest(cols=cols, renderer=name):
+					screen, cache = renderer(cols, colour_cap())
+					rows = self.popup_rows(cache)
+					self.assertTrue(rows, "popup missing at %d cols" % cols)
+					self.assert_whole_escapes(rows)
+					self.assert_whole_escapes(screen.writes)
+					widths = {tui.display_width(row) for row in rows}
+					self.assertEqual(widths, {jsonl_monitor.LEGEND_WIDTH},
+									 repr(sorted(widths)))
+					for row in rows:
+						self.assertTrue(row.endswith(tui.RESET), repr(row))
+						self.assertLessEqual(tui.display_width(row), cols)
 
 
 if __name__ == "__main__":
