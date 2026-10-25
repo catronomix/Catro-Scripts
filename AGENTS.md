@@ -32,6 +32,15 @@ This document provides instructions for AI agents working on the `catro-scripts`
     `config.ini`, so resolve `cap = tui.detect()` once in `main()` and pass it to
     the helpers instead of calling per line.
   - **Visual Layout**:
+    - **Page chrome**: a script that prints a page composes it from the shared
+      helpers - `tui.header()` for the title band, `tui.panel()` for a framed
+      block, `tui.rule()` for a divider, `tui.field()` for key/value rows,
+      `tui.status()` for `[ok]`/`[warn]`/`[error]`/`[info]` lines, `tui.fill()`
+      for a full-width background band and `tui.menu()` for numbered choices.
+      Never print a bare heading, a hand-drawn divider or a private colour:
+      `tests/test_scripts_tui.py::ThemedOutputTest` fails an in-scope script
+      that calls none of the chrome/table helpers (`PENDING_THEMING` is the
+      shrinking close-out list, not an escape hatch for new code).
     - **Tables**: Use `tui.render_table()`/`print_table()` (box glyphs, ASCII
       fallback) or `tui.key_values()`/`banner()`/`section()` instead of drawing
       borders by hand. Keep the header/footer structure seen in `list.py`.
