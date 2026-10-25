@@ -7,7 +7,10 @@ seamlessly toggle between DHCP and Static IP modes. It maintains a local
 database of manual configurations for quick switching.
 
 FEATURES:
-	- Cross-platform support (Windows netsh / Linux nmcli).
+	- Supported platforms: Windows (netsh) and Linux with NetworkManager
+	  (nmcli). There is no macOS backend: any other OS exits non-zero.
+	- A missing platform tool (nmcli, ip, ethtool, iw) is reported as an error;
+	  it is never reported as a successful change.
 	- Persistent storage for Static IP profiles (networks.json).
 	- Quick-restart functionality for network adapters.
 	- Real-time network configuration inspection (Verbose).
@@ -26,6 +29,7 @@ INTERMEDIATE OPTIONS:
 import os
 import sys
 import json
+import shutil
 import subprocess
 import platform
 import time
@@ -57,6 +61,43 @@ def run_cmd(cmd):
 		return result.stdout.strip(), None
 	except subprocess.CalledProcessError as e:
 		return None, e.stderr.strip()
+	except OSError as e:
+		# A tool or shell that cannot even be launched is a failure, not success.
+		return None, str(e)
+
+def require_tool(name):
+	"""Checks that an external tool exists; prints a red error and returns False if not."""
+	if shutil.which(name) is None:
+		print(f"{CLR_RED}Error: required tool '{name}' is not installed or not on PATH.{CLR_RESET}", file=sys.stderr)
+		return False
+	return True
+
+def run_step(cmd):
+	"""Runs one command for a write operation; returns False and reports the failure."""
+	_, err = run_cmd(cmd)
+	if err:
+		print(f"{CLR_RED}Error: command failed: {cmd}{CLR_RESET}", file=sys.stderr)
+		for line in err.splitlines():
+			print(f"{CLR_RED}  {line}{CLR_RESET}", file=sys.stderr)
+		return False
+	return True
+
+def mask_to_prefix(mask):
+	"""Converts a dotted netmask (255.255.255.0) or a prefix length (24) to an int.
+
+	Returns None when the value is not a valid contiguous IPv4 netmask.
+	"""
+	text_mask = str(mask).strip()
+	if text_mask.isdigit():
+		value = int(text_mask)
+		return value if 0 <= value <= 32 else None
+	parts = text_mask.split(".")
+	if len(parts) != 4 or not all(part.isdigit() and 0 <= int(part) <= 255 for part in parts):
+		return None
+	bits = "".join(format(int(part), "08b") for part in parts)
+	if "01" in bits:  # a gap between ones is not a netmask
+		return None
+	return bits.count("1")
 
 def elevate_privileges():
 	"""Attempts to relaunch the script with administrative privileges."""
@@ -66,8 +107,11 @@ def elevate_privileges():
 	if system == "windows":
 		import ctypes
 		is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-	else:
+	elif system == "linux":
 		is_admin = os.getuid() == 0
+	else:
+		print(f"{CLR_RED}Error: elevation is not supported on {system}.{CLR_RESET}", file=sys.stderr)
+		return False
 
 	if is_admin:
 		return True
@@ -81,10 +125,13 @@ def elevate_privileges():
 			ctypes.windll.shell32.ShellExecuteW(
 				None, "runas", sys.executable, " ".join(sys.argv), None, 1
 			)
-		else:
+		elif system == "linux":
 			# Re-run with sudo on Linux
 			args = ['sudo', sys.executable] + sys.argv
 			os.execvp('sudo', args)
+		else:
+			print(f"{CLR_RED}Error: elevation is not supported on {system}.{CLR_RESET}", file=sys.stderr)
+			return False
 			
 		sys.exit(0) # Exit the non-privileged instance
 	except Exception as e:
@@ -124,7 +171,9 @@ def get_interfaces():
 						name = " ".join(parts[4:])
 						if "Loopback" not in name:
 							interfaces.append(name)
-	else:
+	elif system == "linux":
+		if not require_tool("ip"):
+			return []
 		out, _ = run_cmd("ip -o link show | awk -F': ' '{print $2}'")
 		if out:
 			interfaces = [iface for iface in out.splitlines() if iface != "lo"]
@@ -164,40 +213,57 @@ def show_network_info(iface):
 		if pwr_out: print(pwr_out)
 		else: print("Power management info unavailable for this adapter.")
 
-	else:
-		# Linux implementation
+	elif system == "linux":
+		# Linux implementation: `ip` is required, ethtool/iw are optional.
 		# 1. IP and MAC
+		if not require_tool("ip"):
+			input(f"\n{CLR_ORANGE}Press Enter to return...{CLR_RESET}")
+			return
 		print(f"\n{CLR_CYAN}[ IP & Hardware Details ]{CLR_RESET}")
 		addr_out, _ = run_cmd(f"ip addr show {iface}")
 		if addr_out: print(addr_out)
 		
-		# 2. Link Speed and Duplex (if supported)
+		# 2. Link Speed and Duplex (only when ethtool is installed)
 		print(f"\n{CLR_CYAN}[ Link Status ]{CLR_RESET}")
-		eth_out, _ = run_cmd(f"ethtool {iface} 2>/dev/null | grep -E 'Speed|Duplex|Link detected'")
-		if eth_out: print(eth_out)
+		if shutil.which("ethtool"):
+			eth_out, _ = run_cmd(f"ethtool {iface} 2>/dev/null | grep -E 'Speed|Duplex|Link detected'")
+			if eth_out: print(eth_out)
+		else:
+			print("ethtool is not installed; link status unavailable.")
 		
-		# 3. Power Saving (primarily for WiFi)
+		# 3. Power Saving (primarily for WiFi, only when iw is installed)
 		print(f"\n{CLR_CYAN}[ Power Management ]{CLR_RESET}")
-		iw_out, _ = run_cmd(f"iw dev {iface} get power_save 2>/dev/null")
-		if iw_out: print(iw_out)
-		else: print("Power management info unavailable (or not a wireless device).")
+		if shutil.which("iw"):
+			iw_out, _ = run_cmd(f"iw dev {iface} get power_save 2>/dev/null")
+			if iw_out: print(iw_out)
+			else: print("Power management info unavailable (or not a wireless device).")
+		else:
+			print("iw is not installed; wireless power info unavailable.")
 	
 	input(f"\n{CLR_ORANGE}Press Enter to return...{CLR_RESET}")
 
 def restart_adapter(iface):
-	"""Disables and re-enables the network adapter."""
+	"""Disables and re-enables the network adapter. Returns True on success."""
 	system = get_platform()
 	print(f"{CLR_ORANGE}Restarting {iface}...{CLR_RESET}")
 	if system == "windows":
-		run_cmd(f'netsh interface set interface name="{iface}" admin=disabled')
+		ok = run_step(f'netsh interface set interface name="{iface}" admin=disabled')
 		time.sleep(2)
-		run_cmd(f'netsh interface set interface name="{iface}" admin=enabled')
+		ok = run_step(f'netsh interface set interface name="{iface}" admin=enabled') and ok
+	elif system == "linux":
+		if not require_tool("nmcli"):
+			return False
+		ok = run_step(f"nmcli device disconnect {iface}")
+		time.sleep(2)
+		ok = run_step(f"nmcli device connect {iface}") and ok
 	else:
-		run_cmd(f"nmcli device disconnect {iface}")
-		time.sleep(2)
-		run_cmd(f"nmcli device connect {iface}")
+		print(f"{CLR_RED}Error: adapter restart is not supported on {system}.{CLR_RESET}", file=sys.stderr)
+		return False
+	if not ok:
+		return False
 	print(f"{CLR_GREEN}Restart command issued.{CLR_RESET}")
 	time.sleep(1)
+	return True
 
 def get_manual_input(iface, current_configs):
 	print(f"\n{CLR_PURPLE}Setting up static IP for: {CLR_BOLD}{iface}{CLR_RESET}")
@@ -212,57 +278,99 @@ def get_manual_input(iface, current_configs):
 	return config
 
 def apply_dns(iface, mode, dns_list=None):
-	"""Applies DNS configuration separately."""
+	"""Applies DNS configuration separately. Returns True on success."""
 	system = get_platform()
 	print(f"{CLR_ORANGE}Updating DNS settings...{CLR_RESET}")
 	
 	if mode == "auto":
 		if system == "windows":
-			run_cmd(f'netsh interface ipv4 set dnsservers name="{iface}" source=dhcp')
+			ok = run_step(f'netsh interface ipv4 set dnsservers name="{iface}" source=dhcp')
+		elif system == "linux":
+			if not require_tool("nmcli"):
+				return False
+			ok = run_step(f"nmcli device modify {iface} ipv4.ignore-auto-dns no")
+			ok = run_step(f"nmcli device reapply {iface}") and ok
 		else:
-			run_cmd(f"nmcli device modify {iface} ipv4.ignore-auto-dns no")
-			run_cmd(f"nmcli device reapply {iface}")
+			print(f"{CLR_RED}Error: DNS changes are not supported on {system}.{CLR_RESET}", file=sys.stderr)
+			return False
+		if not ok:
+			return False
 		print(f"{CLR_GREEN}DNS set to Automatic (DHCP).{CLR_RESET}")
 	
 	elif mode == "manual" and dns_list:
 		if system == "windows":
+			ok = True
 			for i, dns_ip in enumerate(dns_list):
 				if i == 0:
 					cmd = f'netsh interface ipv4 set dnsservers name="{iface}" static address={dns_ip} validate=no'
 				else:
 					cmd = f'netsh interface ipv4 add dnsservers name="{iface}" address={dns_ip} index={i+1} validate=no'
-				run_cmd(cmd)
+				ok = run_step(cmd) and ok
+		elif system == "linux":
+			if not require_tool("nmcli"):
+				return False
+			# nmcli wants one comma-separated list, not space-separated addresses.
+			dns_str = ','.join(dns_list)
+			ok = run_step(f"nmcli device modify {iface} ipv4.dns '{dns_str}' ipv4.ignore-auto-dns yes")
+			ok = run_step(f"nmcli device reapply {iface}") and ok
 		else:
-			dns_str = ' '.join(dns_list)
-			run_cmd(f"nmcli device modify {iface} ipv4.dns '{dns_str}' ipv4.ignore-auto-dns yes")
-			run_cmd(f"nmcli device reapply {iface}")
+			print(f"{CLR_RED}Error: DNS changes are not supported on {system}.{CLR_RESET}", file=sys.stderr)
+			return False
+		if not ok:
+			return False
 		print(f"{CLR_GREEN}DNS set to Manual: {', '.join(dns_list)}{CLR_RESET}")
+	else:
+		print(f"{CLR_RED}Error: no DNS servers supplied for manual mode.{CLR_RESET}", file=sys.stderr)
+		return False
 	
 	time.sleep(1)
+	return True
 
 def apply_config(iface, mode, config=None):
-	"""Applies IP addressing configuration."""
+	"""Applies IP addressing configuration. Returns True on success."""
 	system = get_platform()
 	print(f"{CLR_ORANGE}Applying IP configuration...{CLR_RESET}")
 	
 	if mode == "dhcp":
 		if system == "windows":
-			run_cmd(f'netsh interface ipv4 set address name="{iface}" source=dhcp')
+			ok = run_step(f'netsh interface ipv4 set address name="{iface}" source=dhcp')
+		elif system == "linux":
+			if not require_tool("nmcli"):
+				return False
+			ok = run_step(f"nmcli device modify {iface} ipv4.method auto")
+			ok = run_step(f"nmcli device reapply {iface}") and ok
 		else:
-			run_cmd(f"nmcli device modify {iface} ipv4.method auto")
-			run_cmd(f"nmcli device reapply {iface}")
+			print(f"{CLR_RED}Error: IP configuration is not supported on {system}.{CLR_RESET}", file=sys.stderr)
+			return False
+		if not ok:
+			return False
 		print(f"{CLR_GREEN}Interface {iface} set to DHCP.{CLR_RESET}")
 		
 	elif mode == "static" and config:
 		if system == "windows":
-			run_cmd(f'netsh interface ipv4 set address name="{iface}" static {config["ip"]} {config["mask"]} {config["gw"]}')
+			ok = run_step(f'netsh interface ipv4 set address name="{iface}" static {config["ip"]} {config["mask"]} {config["gw"]}')
+		elif system == "linux":
+			if not require_tool("nmcli"):
+				return False
+			# nmcli takes a CIDR prefix, so dotted masks are converted first.
+			prefix = mask_to_prefix(config["mask"])
+			if prefix is None:
+				print(f"{CLR_RED}Error: '{config['mask']}' is not a valid subnet mask or prefix length.{CLR_RESET}", file=sys.stderr)
+				return False
+			ok = run_step(f"nmcli device modify {iface} ipv4.addresses {config['ip']}/{prefix} ipv4.gateway {config['gw']} ipv4.method manual")
+			ok = run_step(f"nmcli device reapply {iface}") and ok
 		else:
-			prefix = config["mask"]
-			run_cmd(f"nmcli device modify {iface} ipv4.addresses {config['ip']}/{prefix} ipv4.gateway {config['gw']} ipv4.method manual")
-			run_cmd(f"nmcli device reapply {iface}")
+			print(f"{CLR_RED}Error: IP configuration is not supported on {system}.{CLR_RESET}", file=sys.stderr)
+			return False
+		if not ok:
+			return False
 		print(f"{CLR_GREEN}Interface {iface} set to Static IP: {config['ip']}{CLR_RESET}")
+	else:
+		print(f"{CLR_RED}Error: no static configuration supplied.{CLR_RESET}", file=sys.stderr)
+		return False
 	
 	time.sleep(1)
+	return True
 
 def interface_menu(selected_iface):
 	"""Intermediate menu for a specific interface."""
@@ -331,13 +439,14 @@ def interface_menu(selected_iface):
 def main():
 	init_ansi()
 	
-	if not (sys.platform.startswith('win') or sys.platform.startswith('linux')):
-		print(f"{CLR_RED}Unsupported OS.{CLR_RESET}")
-		return
+	system = get_platform()
+	if system not in ("windows", "linux"):
+		print(f"{CLR_RED}Error: netconfig is not supported on {system or 'this platform'}. Supported platforms: Windows (netsh) and Linux (nmcli).{CLR_RESET}", file=sys.stderr)
+		return 1
 
 	if not elevate_privileges():
 		print(f"{CLR_RED}{CLR_BOLD}Error: This script requires administrative/root privileges to run.{CLR_RESET}")
-		return
+		return 1
 
 	while True:
 		interfaces = get_interfaces()
@@ -367,6 +476,7 @@ def main():
 			print(f"{CLR_RED}Please enter a valid number.{CLR_RESET}")
 		except KeyboardInterrupt:
 			break
+	return 0
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())
