@@ -19,10 +19,11 @@ ANSI strings:
 		least one shared page-chrome/table helper (`tui.header`, `tui.panel`,
 		`tui.rule`, `tui.status`, `tui.field`, `tui.fill`, `tui.menu`, or the
 		table/section/key-values helpers) instead of printing bare headings.
-		`PENDING_THEMING` names the scripts the other phase-C groups are still
-		theming on their own branches; the lead empties that tuple at close-out,
-		which makes the gate strict. `SCREEN_RENDERERS` are the full-screen
-		engines that paint their own frame and are outside the inline rule.
+		The gate is strict: `PENDING_THEMING` is empty after the c1-c5 groups
+		merged, and the only exemptions are `SCREEN_RENDERERS` (full-screen
+		engines that paint their own frame) and `DELEGATES` (`theme.py`, whose
+		page is `tui/__main__.py`) - both explicit tuples, each checked to
+		really be what it claims.
 
 Run with:
 	python -m unittest discover -s tests -v
@@ -138,6 +139,10 @@ class ThemedOutputTest(unittest.TestCase):
 	look like the rest of the collection instead of being hand-printed. A
 	private escape sequence is `NoPrivateAnsiTest`; a bare `print("Title")` is
 	what this one catches.
+
+	Strict since the phase-C close-out: `PENDING_THEMING` is empty and the only
+	exemptions left are `SCREEN_RENDERERS` (full-screen engines) and
+	`DELEGATES` (an entrypoint whose page lives in `tui/__main__.py`).
 	"""
 
 	HELPERS = ("header", "panel", "rule", "status", "field", "fill",
@@ -150,13 +155,19 @@ class ThemedOutputTest(unittest.TestCase):
 	IMPORT = re.compile(r"from\s+tui(?:\.chrome)?\s+import\s+[^\n]*\b(?:{})\b"
 						.format("|".join(HELPERS)))
 
-	# Scripts the c1-c5 groups theme on their own branches. They are on `dev`
-	# already but not on this branch, so their helper calls do not exist here.
-	# The lead empties this tuple at close-out; after that the gate is strict
-	# for every in-scope script and any new one has to be themed on arrival.
-	PENDING_THEMING = ("alias.py", "count.py", "gitpush.py", "help.py",
-					   "image_generator.py", "newfile.py", "opencode.py",
-					   "theme.py", "ts_setup.py", "videoframes.py")
+	# Closed at phase-C close-out: the c1-c5 groups are merged and every
+	# in-scope script now calls a shared helper, so this is empty on purpose.
+	# It stays as the one place a temporarily unthemed script may be named;
+	# adding a name here is a visible diff and needs a reason.
+	PENDING_THEMING = ()
+
+	# Entrypoints that only delegate. `theme.py` imports and calls
+	# `tui.__main__.main`, so its page is rendered in `tui/__main__.py` - a
+	# package module, not a root script - and the file-level regex below cannot
+	# see it. This is one explicit tuple rather than a silent skip: a test
+	# checks each name really is that delegate, so the exemption cannot be
+	# reused for a script that grows its own output.
+	DELEGATES = ("theme.py",)
 
 	# Full-screen engines: they own the whole screen (curses, the alternate
 	# screen or the plugin canvas) and paint their frame from the palette, so
@@ -182,14 +193,31 @@ class ThemedOutputTest(unittest.TestCase):
 						 "PENDING_THEMING names a script MIGRATED does not walk")
 		self.assertEqual(set(self.SCREEN_RENDERERS) - migrated, set(),
 						 "SCREEN_RENDERERS names a script MIGRATED does not walk")
-		self.assertEqual(set(self.PENDING_THEMING) & set(self.SCREEN_RENDERERS),
-						 set(), "a script is both pending and exempt")
+		self.assertEqual(set(self.DELEGATES) - migrated, set(),
+						 "DELEGATES names a script MIGRATED does not walk")
+		search = (set(self.PENDING_THEMING), set(self.SCREEN_RENDERERS),
+				  set(self.DELEGATES))
+		for index, first in enumerate(search):
+			for second in search[index + 1:]:
+				self.assertEqual(first & second, set(),
+								 "a script is exempt twice")
+
+	def test_delegates_are_really_pure_delegates(self):
+		# The exemption says "the page is in tui/__main__, not here". If one of
+		# these ever grows its own rendering, it has to pass the chrome gate
+		# instead of sliding through on a stale tuple entry.
+		for name in self.DELEGATES:
+			source = (REPO / name).read_text(encoding="utf-8")
+			self.assertIn("from tui.__main__ import", source,
+						  "{} is exempted as a delegate but no longer "
+						  "delegates to tui/__main__".format(name))
 
 	def test_in_scope_scripts_use_shared_chrome(self):
 		unthemed = [
 			name for name in NoPrivateAnsiTest.MIGRATED
 			if name not in self.PENDING_THEMING
 			and name not in self.SCREEN_RENDERERS
+			and name not in self.DELEGATES
 			and not self.uses_chrome(name)
 		]
 		self.assertEqual(
