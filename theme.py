@@ -7,11 +7,12 @@ checkout-local `config.ini` (never in the current directory, never per user).
 
 Everything the rest of the collection renders - colour level, Unicode box
 glyphs, table style - consults the same file, so one command switches the whole
-toolset between the dark house identity and its light pair.
+toolset between the three shipped palettes: dark (house identity), light and
+high-contrast.
 
 Features:
 	- Shows theme mode, colour level, table style, config path and writability.
-	- `theme dark|light|toggle` switches the palette.
+	- `theme dark|light|high-contrast|toggle` switches the palette.
 	- `theme set <key> <value>` changes one setting; keys are theme.mode,
 	  color.level and table.style.
 	- Environment overrides still win per run: NO_COLOR, FORCE_COLOR,
@@ -20,6 +21,8 @@ Features:
 Usage:
 	catro-scripts theme
 	catro-scripts theme light
+	catro-scripts theme high-contrast
+	catro-scripts theme toggle
 	catro-scripts theme set color.level 256
 """
 

@@ -10,8 +10,10 @@
 # Precedence: NO_COLOR > FORCE_COLOR > CATRO_* > config.ini > autodetect.
 
 [theme]
-# dark | light
-# dark is the house identity (purple on black); light is its light-background pair.
+# dark | light | high-contrast
+# dark is the house identity (purple on black); light is its light-background
+# pair; high-contrast is the accessible white/yellow/cyan theme. Toggle with
+# `theme toggle`; aliases highcontrast, high_contrast and hc also work.
 #mode = dark
 
 [color]

@@ -139,22 +139,39 @@ class ThemeCommandTests(unittest.TestCase):
 			self.assertIn(marker, out)
 		self.assertIn(str(config.path()), out)
 
-	def test_dark_and_light_write_the_mode(self):
-		self.assertEqual(self.run_main(["light"])[0], 0)
-		self.assertEqual(config.get("theme", "mode"), "light")
-		self.assertEqual(self.run_main(["dark"])[0], 0)
-		self.assertEqual(config.get("theme", "mode"), "dark")
+	def test_every_theme_command_writes_its_mode(self):
+		for mode in ("light", "high-contrast", "dark"):
+			with self.subTest(mode=mode):
+				self.assertEqual(self.run_main([mode])[0], 0)
+				self.assertEqual(config.get("theme", "mode"), mode)
 
-	def test_toggle_flips_the_current_mode(self):
+	def test_high_contrast_aliases_write_the_canonical_name(self):
+		for alias in ("highcontrast", "high_contrast", "HC"):
+			with self.subTest(alias=alias):
+				self.assertEqual(self.run_main([alias])[0], 0)
+				self.assertEqual(config.get("theme", "mode"), "high-contrast")
+
+	def test_toggle_cycles_through_the_three_modes(self):
 		self.run_main(["dark"])
-		self.run_main(["toggle"])
-		self.assertEqual(config.get("theme", "mode"), "light")
+		for expected in ("light", "high-contrast", "dark"):
+			self.assertEqual(self.run_main(["toggle"])[0], 0)
+			self.assertEqual(config.get("theme", "mode"), expected)
+
+	def test_set_theme_mode_names_all_valid_modes_when_it_rejects_one(self):
+		code, out = self.run_main(["set", "theme.mode", "neon"])
+		self.assertEqual(code, 2)
+		self.assertEqual(
+			out, "invalid theme.mode: neon (valid: dark, light, high-contrast)\n")
 
 	def test_set_accepts_known_keys(self):
 		self.assertEqual(self.run_main(["set", "color.level", "256"])[0], 0)
 		self.assertEqual(config.get("color", "level"), "256")
 		self.assertEqual(self.run_main(["set", "table.style", "ascii"])[0], 0)
 		self.assertEqual(config.get("table", "style"), "ascii")
+
+	def test_set_theme_mode_accepts_aliases_and_stores_the_canonical_name(self):
+		self.assertEqual(self.run_main(["set", "theme.mode", "High_Contrast"])[0], 0)
+		self.assertEqual(config.get("theme", "mode"), "high-contrast")
 
 	def test_set_rejects_unknown_keys_and_values(self):
 		self.assertEqual(self.run_main(["set", "color.level", "banana"])[0], 2)
@@ -168,10 +185,14 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertEqual(code, 1)
 		self.assertEqual(out, "config.ini is not writable here: {}\n".format(config.path()))
 
-	def test_help_and_palette(self):
+	def test_help_lists_every_theme_selector(self):
 		code, out = self.run_main(["--help"])
 		self.assertEqual(code, 0)
 		self.assertIn("usage: theme", out)
+		for mode in ("dark", "light", "high-contrast", "toggle"):
+			self.assertIn(mode, out)
+
+	def test_help_and_palette(self):
 		code, out = self.run_main(["palette"])
 		self.assertEqual(code, 0)
 		for key in ("bg", "fg", "accent", "zebra_bg"):

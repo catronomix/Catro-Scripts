@@ -2,9 +2,11 @@
 """
 			COLOR PALETTES AND STYLING
 			===========================
-Two hand-authored palettes with identical semantic keys - DARK reproduces the
-bytes the old per-script `Colors` class emitted at truecolor, LIGHT is its
-light-background pair. Neither is derived from the other.
+Three hand-authored palettes with identical semantic keys, none derived from
+another (no inversion, no hue rotation). DARK reproduces the bytes the old
+per-script `Colors` class emitted at truecolor; LIGHT and HIGH_CONTRAST are
+adapted from the palettes `mdreader.py` already ships (mode 1, "High Contrast
+Light", and mode 2, "High Contrast Dark"), so the reader and the scripts agree.
 
 `style()` is the only place that emits SGR codes. Its emission order is pinned:
 foreground, background, attributes, text, reset. Dark at level "true" therefore
@@ -37,19 +39,46 @@ DARK = {
 
 LIGHT = {
 	"bg": "#FFFFFF",
-	"surface": "#F0EDF7",
-	"fg": "#1F1B2E",
-	"muted": "#5A5370",
-	"accent": "#6A3FB5",
-	"success": "#1E7A4C",
-	"warn": "#9A6200",
+	"surface": "#E8F4F8",
+	"fg": "#000000",
+	"muted": "#4A4A4A",
+	"accent": "#0000B3",
+	"success": "#0A7A2F",
+	"warn": "#8A5A00",
 	"error": "#B3261E",
-	"border": "#6A3FB5",
-	"header": "#6A3FB5",
-	"zebra_bg": "#F0EDF7",
+	"border": "#000000",
+	"header": "#A0007A",
+	"zebra_bg": "#E8F4F8",
 }
 
-THEMES = {"dark": DARK, "light": LIGHT}
+# Accessibility theme, not a fallback: selectable like the others, never chosen
+# automatically. Exact contract values, adapted from mdreader mode 2.
+HIGH_CONTRAST = {
+	"bg": "#000000",
+	"surface": "#0A0A0A",
+	"fg": "#FFFFFF",
+	"muted": "#D0D0D0",
+	"accent": "#00FFFF",
+	"success": "#00FF66",
+	"warn": "#FFFF00",
+	"error": "#FF4040",
+	"border": "#00FFFF",
+	"header": "#FFFF00",
+	"zebra_bg": "#1A1A1A",
+}
+
+THEMES = {"dark": DARK, "light": LIGHT, "high-contrast": HIGH_CONTRAST}
+
+# Every accepted spelling of a theme name. `theme()` and the `theme` command
+# both go through this one table, so aliases cannot drift apart.
+THEME_ALIASES = {
+	"dark": "dark",
+	"light": "light",
+	"high-contrast": "high-contrast",
+	"highcontrast": "high-contrast",
+	"high_contrast": "high-contrast",
+	"hc": "high-contrast",
+}
 
 # The only reset this package emits; callers composing their own spans use it
 # instead of hardcoding the escape.
@@ -67,6 +96,11 @@ _XTERM256 = (_BASE16
 			 + tuple((8 + 10 * step,) * 3 for step in range(24)))
 
 _NEAREST = {}
+
+
+def normalize(name):
+	"""Canonical theme name for any accepted spelling; unknown -> "dark"."""
+	return THEME_ALIASES.get(str(name).strip().lower(), "dark")
 
 
 def theme(override=None):
@@ -124,8 +158,7 @@ def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
 def _theme_name(mode=None):
 	if mode is None or not str(mode).strip():
 		mode = os.environ.get("CATRO_THEME") or config.get("theme", "mode", "dark")
-	name = str(mode).strip().lower()
-	return name if name in THEMES else "dark"
+	return normalize(mode)
 
 
 def _rgb(value, colours, default_key):

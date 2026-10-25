@@ -156,6 +156,111 @@ class ThemeTests(unittest.TestCase):
 		self.assertEqual(palette.palette("nope")["bg"], "#000000")
 
 
+class ThreeThemeTests(unittest.TestCase):
+	"""The three contract tables, verbatim; dark must not move a digit."""
+
+	EXPECTED = {
+		"dark": {
+			"bg": "#000000", "surface": "#2D2D2D", "fg": "#ADD8E6",
+			"muted": "#7F8C99", "accent": "#AA00FF", "success": "#50C878",
+			"warn": "#F5CD68", "error": "#FF5F5F", "border": "#AA00FF",
+			"header": "#AA00FF", "zebra_bg": "#2D2D2D",
+		},
+		"light": {
+			"bg": "#FFFFFF", "surface": "#E8F4F8", "fg": "#000000",
+			"muted": "#4A4A4A", "accent": "#0000B3", "success": "#0A7A2F",
+			"warn": "#8A5A00", "error": "#B3261E", "border": "#000000",
+			"header": "#A0007A", "zebra_bg": "#E8F4F8",
+		},
+		"high-contrast": {
+			"bg": "#000000", "surface": "#0A0A0A", "fg": "#FFFFFF",
+			"muted": "#D0D0D0", "accent": "#00FFFF", "success": "#00FF66",
+			"warn": "#FFFF00", "error": "#FF4040", "border": "#00FFFF",
+			"header": "#FFFF00", "zebra_bg": "#1A1A1A",
+		},
+	}
+
+	def test_theme_set_is_exactly_three(self):
+		self.assertEqual(set(palette.THEMES), set(self.EXPECTED))
+
+	def test_every_theme_has_the_same_eleven_keys(self):
+		keys = set(self.EXPECTED["dark"])
+		self.assertEqual(len(keys), 11)
+		for name, table in palette.THEMES.items():
+			self.assertEqual(set(table), keys, name)
+
+	def test_tables_are_the_contract_values(self):
+		for name, expected in self.EXPECTED.items():
+			with self.subTest(theme=name):
+				self.assertEqual(palette.THEMES[name], expected)
+
+	def test_high_contrast_true_accent_is_cyan(self):
+		self.assertEqual(
+			palette.style("x", fg="accent", cap=TRUE, theme="high-contrast"),
+			"\x1b[38;2;0;255;255mx\x1b[0m")
+
+	def test_high_contrast_downgrades_at_16_without_raising(self):
+		out = palette.style("x", fg="accent", cap=LEVEL16,
+							theme="high-contrast")
+		self.assertRegex(out, r"^\x1b\[(3[0-7]|9[0-7])mx\x1b\[0m$")
+
+
+def _luminance(colour):
+	"""WCAG 2.x relative luminance for a #rrggbb colour."""
+	def channel(value):
+		value = value / 255.0
+		return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+	r, g, b = (int(colour[index:index + 2], 16) for index in (1, 3, 5))
+	return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def _contrast(first, second):
+	high, low = sorted((_luminance(first), _luminance(second)), reverse=True)
+	return (high + 0.05) / (low + 0.05)
+
+
+class ContrastGateTests(unittest.TestCase):
+	"""A future tweak must not quietly make light or high-contrast unreadable."""
+
+	FOREGROUND = ("fg", "muted", "accent", "success", "warn", "error",
+				  "border", "header")
+
+	def test_light_and_high_contrast_clear_wcag_aa(self):
+		for name in ("light", "high-contrast"):
+			table = palette.THEMES[name]
+			for key in self.FOREGROUND:
+				for backdrop in ("bg", "zebra_bg"):
+					ratio = _contrast(table[key], table[backdrop])
+					self.assertGreaterEqual(
+						ratio, 4.5, "{} {} on {} is {:.2f}:1".format(
+							name, key, backdrop, ratio))
+
+
+class ThemeAliasTests(unittest.TestCase):
+	def tearDown(self):
+		config.CONFIG_FILE = None
+
+	def test_high_contrast_spellings_normalize(self):
+		for alias in ("high-contrast", "highcontrast", "high_contrast", "hc",
+					  " HC "):
+			with self.subTest(alias=alias):
+				self.assertEqual(palette.theme(alias), "high-contrast")
+		self.assertEqual(palette.normalize("HIGH_CONTRAST"), "high-contrast")
+
+	def test_unknown_theme_falls_back_to_dark(self):
+		self.assertEqual(palette.theme("neon"), "dark")
+		self.assertEqual(palette.normalize(""), "dark")
+
+	def test_env_and_config_use_the_same_normalizer(self):
+		with mock.patch.dict(os.environ, {"CATRO_THEME": "HC"}, clear=True):
+			self.assertEqual(palette.theme(), "high-contrast")
+		with tempfile.TemporaryDirectory() as td:
+			config.CONFIG_FILE = Path(td) / "config.ini"
+			config.set("theme", "mode", "High_Contrast")
+			with mock.patch.dict(os.environ, {}, clear=True):
+				self.assertEqual(palette.theme(), "high-contrast")
+
+
 class DowngradeTests(unittest.TestCase):
 	def test_256_mapping_is_deterministic_and_total(self):
 		samples = ("#AA00FF", "#000000", "#2D2D2D", "#ADD8E6", "#FFFFFF", "#123456")

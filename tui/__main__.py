@@ -6,7 +6,8 @@ Shows and changes the checkout-local terminal preferences. `theme.py` and
 `python -m tui` share this implementation, so both answer the same commands:
 
 	theme                     show mode/level/style, config path and writability
-	theme dark|light|toggle   change theme.mode
+	theme dark|light|high-contrast|toggle
+	                          change theme.mode (aliases: highcontrast, hc)
 	theme set <key> <value>   change one setting
 	theme palette             list the active palette
 
@@ -18,10 +19,14 @@ import sys
 
 from . import caps, config, palette
 
-USAGE = "usage: theme [show|dark|light|toggle|set <key> <value>|palette]"
+USAGE = ("usage: theme [show|dark|light|high-contrast|toggle|"
+		 "set <key> <value>|palette]")
+
+THEME_ORDER = ("dark", "light", "high-contrast")
+MODES = ", ".join(THEME_ORDER)
 
 VALID = {
-	"theme.mode": ("dark", "light"),
+	"theme.mode": THEME_ORDER,
 	"color.level": ("auto", "none", "16", "256", "true"),
 	"table.style": ("auto", "unicode", "ascii"),
 }
@@ -52,17 +57,24 @@ def main(argv=None):
 	if command in ("-h", "--help", "help"):
 		out.write(USAGE + "\n")
 		return 0
-	if command in ("dark", "light"):
-		return _write("theme.mode", command)
+	if command in palette.THEME_ALIASES:
+		return _write("theme.mode", palette.normalize(command))
 	if command == "toggle":
-		return _write("theme.mode", "light" if palette.theme() == "dark" else "dark")
+		index = THEME_ORDER.index(palette.theme())
+		return _write("theme.mode", THEME_ORDER[(index + 1) % len(THEME_ORDER)])
 	if command == "set":
 		if len(args) != 3:
 			out.write(USAGE + "\n")
 			return 2
 		key, value = args[1].strip().lower(), args[2].strip().lower()
+		if key == "theme.mode" and value in palette.THEME_ALIASES:
+			value = palette.normalize(value)
 		if key not in VALID or value not in VALID[key]:
-			out.write("invalid setting: {} {}\n".format(key, value))
+			if key == "theme.mode":
+				out.write("invalid theme.mode: {} (valid: {})\n".format(
+					args[2].strip(), MODES))
+			else:
+				out.write("invalid setting: {} {}\n".format(key, value))
 			return 2
 		return _write(key, value)
 	if command == "palette":

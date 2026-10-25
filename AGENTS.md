@@ -38,8 +38,9 @@ This document provides instructions for AI agents working on the `catro-scripts`
     - **Pipes**: The library already emits plain TAB-separated output when
       stdout is not a tty - no ANSI, glyphs or padding. Do not special-case
       `isatty()` in a script.
-    - **Themes**: Both `dark` and `light` are first class; colors come from the
-      palette so every colour level (`16`/`256`/`true`) downgrades automatically.
+    - **Themes**: `dark`, `light` and `high-contrast` are all first class
+      (`theme dark|light|high-contrast|toggle`); colors come from the palette so
+      every colour level (`16`/`256`/`true`) downgrades automatically.
   - **Automation**: When a script needs styled output and the helpers do not
     cover it, add the seam to `tui/` (with a test in `tests/test_tui_*.py`)
     rather than growing a private renderer.
