@@ -23,6 +23,8 @@ import subprocess
 import argparse
 import fnmatch
 
+import tui
+
 # Audio Extension Group
 AUDIO_EXTENSIONS = ('.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.aiff', '.opus')
 
@@ -34,28 +36,9 @@ FORBIDDEN_EXTENSIONS = (
 	'.msi', '.pkg', '.dmg', '.iso', '.bin', '.inf', '.config', '.yaml', '.yml'
 )
 
-# Color Constants
-CLR_ORANGE = "\033[93m"
-CLR_GREEN  = "\033[92m"
-CLR_BLUE   = "\033[94m"
-CLR_RED    = "\033[91m"
-CLR_RESET  = "\033[0m"
-
-def init_ansi():
-	"""Enables ANSI color support on Windows."""
-	if platform.system().lower() == "windows":
-		os.system('color')
-
 # Optional dependency, imported on demand inside main() so that --help and
 # argument errors work on machines without pydub installed.
 AudioSegment = None
-
-class ColoredArgumentParser(argparse.ArgumentParser):
-	"""Custom ArgumentParser that outputs errors in red."""
-	def error(self, message):
-		sys.stderr.write(f"{CLR_RED}error: {message}{CLR_RESET}\n")
-		self.print_usage(sys.stderr)
-		sys.exit(2)
 
 def get_bin_path(name):
 	"""Returns the path to a binary, prioritizing the script's directory."""
@@ -77,7 +60,7 @@ def check_ffmpeg():
 	except FileNotFoundError:
 		return False
 
-def get_target_files(allowed_extensions=None, include_all=False, wildcard_pattern=None):
+def get_target_files(allowed_extensions=None, include_all=False, wildcard_pattern=None, cap=None):
 	"""Returns a list of files to process based on filters."""
 	files = []
 	current_dir = os.getcwd()
@@ -103,13 +86,17 @@ def get_target_files(allowed_extensions=None, include_all=False, wildcard_patter
 					
 					files.append(filename)
 	except OSError as e:
-		sys.stderr.write(f"{CLR_RED}Error accessing directory: {e}{CLR_RESET}\n")
+		print(tui.style(f"Error accessing directory: {e}", fg="error", cap=cap),
+			  file=sys.stderr)
 		sys.exit(1)
 		
 	return files
 
-def interactive_codec_menu():
-	"""Prompts the user to select an output format and codec."""
+def interactive_codec_menu(cap=None):
+	"""Prompts the user to select an output format and codec.
+
+	Returns `(ext, codec)`, or None when the user cancels at the prompt.
+	"""
 	formats = [
 		{"ext": "wav", "codec": None, "label": "WAV (Uncompressed)"},
 		{"ext": "mp3", "codec": "libmp3lame", "label": "MP3 (LAME)"},
@@ -119,21 +106,19 @@ def interactive_codec_menu():
 		{"ext": "opus", "codec": "libopus", "label": "OPUS (Ogg Opus)"}
 	]
 
-	print(f"\n{CLR_BLUE}--- Output Configuration ---{CLR_RESET}")
+	print()
+	print(tui.section("--- Output Configuration ---", cap=cap))
 	for i, f in enumerate(formats, 1):
 		print(f"{i}) {f['label']}")
-	
-	while True:
-		try:
-			choice = int(input(f"\nSelect output format (1-{len(formats)}): "))
-			if 1 <= choice <= len(formats):
-				selected = formats[choice-1]
-				return selected["ext"], selected["codec"]
-		except ValueError:
-			pass
-		print(f"{CLR_RED}Invalid selection.{CLR_RESET}")
 
-def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=None):
+	# tui.ask_int owns the validation loop, the range check and the cancel key.
+	choice = tui.ask_int("Select output format", 1, len(formats))
+	if choice is None:
+		return None
+	selected = formats[choice - 1]
+	return selected["ext"], selected["codec"]
+
+def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=None, cap=None):
 	"""
 	Splits a single multi-channel audio file into individual mono tracks.
 
@@ -144,7 +129,8 @@ def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=N
 	filename = os.path.basename(abs_path)
 	
 	try:
-		print(f"\nLoading {CLR_ORANGE}{filename}{CLR_RESET}...")
+		print("\nLoading {}...".format(
+			tui.style(filename, fg="accent", cap=cap)))
 		audio = AudioSegment.from_file(abs_path)
 		
 		channel_count = audio.channels
@@ -178,17 +164,18 @@ def split_audio_file(file_path, output_dir=None, custom_ext=None, custom_codec=N
 				export_kwargs["codec"] = custom_codec
 				
 			track.export(final_out_path, **export_kwargs)
-			print(f"{CLR_GREEN}[Success] Saved: {os.path.basename(final_out_path)}{CLR_RESET}")
+			print(tui.style(f"[Success] Saved: {os.path.basename(final_out_path)}",
+							fg="success", cap=cap))
 
 	except Exception as e:
-		print(f"{CLR_RED}An error occurred with '{filename}': {e}{CLR_RESET}")
+		print(tui.style(f"An error occurred with '{filename}': {e}",
+						fg="error", cap=cap))
 		return False
 
 	return True
 
 def main():
-	init_ansi()
-	parser = ColoredArgumentParser(description="Split multi-channel audio into individual tracks.")
+	parser = argparse.ArgumentParser(description="Split multi-channel audio into individual tracks.")
 	
 	parser.add_argument("file", nargs="?", help="Path to a single audio file.")
 	parser.add_argument("-a", "--all", action="store_true",
@@ -204,24 +191,34 @@ def main():
 
 	args = parser.parse_args()
 
+	# Capabilities are resolved once: every message in the run shares them.
+	tui.init_ansi()
+	cap = tui.detect()
+
 	# pydub is optional for --help/usage flows: load it only for a real run.
 	global AudioSegment
 	try:
 		from pydub import AudioSegment
 	except ImportError:
-		print(f"{CLR_RED}Error: 'pydub' library is not installed.{CLR_RESET}")
+		print(tui.style("Error: 'pydub' library is not installed.",
+						fg="error", cap=cap))
 		print("Please install it using: pip install pydub")
 		sys.exit(1)
 
 	if not check_ffmpeg():
-		print(f"\n{CLR_ORANGE}FFmpeg is missing or not found.{CLR_RESET}")
+		print()
+		print(tui.style("FFmpeg is missing or not found.", fg="warn", cap=cap))
 		print("Pydub requires FFmpeg for audio processing. Place it in the script folder or add to PATH.")
 		sys.exit(1)
 
 	# Handle configuration selection
 	out_ext, out_codec = (None, None)
 	if args.codec:
-		out_ext, out_codec = interactive_codec_menu()
+		chosen = interactive_codec_menu(cap)
+		if chosen is None:
+			print("Cancelled.")
+			return 0
+		out_ext, out_codec = chosen
 
 	# Determine file list
 	files_to_process = []
@@ -229,7 +226,8 @@ def main():
 		if os.path.isfile(args.file):
 			files_to_process.append(args.file)
 		else:
-			print(f"{CLR_RED}Error: File '{args.file}' not found.{CLR_RESET}")
+			print(tui.style(f"Error: File '{args.file}' not found.",
+							fg="error", cap=cap))
 			sys.exit(1)
 	elif args.all or args.wildcard or args.ext:
 		allowed = None
@@ -237,23 +235,25 @@ def main():
 			ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
 			allowed = (ext_filter.lower(),)
 		
-		files_to_process = get_target_files(allowed, include_all=False, wildcard_pattern=args.wildcard)
+		files_to_process = get_target_files(allowed, include_all=False,
+											wildcard_pattern=args.wildcard, cap=cap)
 	else:
 		parser.print_help()
 		sys.exit(0)
 
 	if not files_to_process:
-		print("No matching files found.")
+		print(tui.style("No matching files found.", fg="warn", cap=cap))
 		sys.exit(1)
 
 	print(f"Targeting {len(files_to_process)} files.")
 
 	failures = 0
 	for file in files_to_process:
-		if not split_audio_file(file, args.directory, out_ext, out_codec):
+		if not split_audio_file(file, args.directory, out_ext, out_codec, cap=cap):
 			failures += 1
 
-	print(f"\n{CLR_BLUE}Processing complete.{CLR_RESET}")
+	print()
+	print(tui.section("Processing complete.", cap=cap))
 	# Any per-file error makes the whole run a failure even though processing
 	# continued to the next file.
 	if failures:
