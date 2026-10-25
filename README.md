@@ -12,7 +12,7 @@
 
 - **`alias`**: create an alias for catro-scripts (.bat and .sh) for convenience/personalization
 
-- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI.
+- **`action`**: macro runner for the commands stored in `actions.json`. Run a saved macro with `catro-scripts . <name> [args...]`, list them with `catro-scripts action list`, and add or remove them through an interactive mini-TUI. Each entry is `{"<name>": {"command": "<shell command>", "description": "<one line>"}}`; a malformed file is reported once with a non-zero exit, and an entry missing `command`/`description` only warns. `actions.json` itself is local and gitignored: `actions-template.json` is the tracked example and the bootstrap defaults written when the file is missing mirror it.
 
 - **`audiosplit`**: Splits multi-channel audio files into individual mono tracks. Supports multiple formats (MP3, WAV, FLAC, AAC, OGG, M4A, etc.) with batch processing, wildcard filtering, and interactive options.
 
@@ -42,7 +42,7 @@
 
 - **`mdreader`**: (New) A lightweight markdown reader/renderer for terminal use. Supports rendering headers, code blocks, lists, and basic formatting for quick previews of README and notes files.
 
-- **`netconfig`**: Cross-platform network interface manager. Seamlessly toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter switching.
+- **`netconfig`**: Network interface manager for **Windows (netsh)** and **Linux with NetworkManager (nmcli)** only. Toggle adapters between DHCP and Static IP modes, save manual configurations to a local JSON database, and perform quick adapter switching. Unsupported systems exit non-zero, and a missing `nmcli`/`ip` is reported as a failure naming the tool instead of a fake success.
 
 - **`newfile`**: Creates new files with optional content templates and directory structure initialization.
 
@@ -56,7 +56,7 @@
 
 - **`sanitize`**: Rewrites full git history to replace a leaked secret with a placeholder (file contents + commit messages), then expires reflogs and GCs. Pre-checks history to avoid no-op rewrites and verifies afterwards. *Requires: git + git-filter-repo*
 
-- **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling.
+- **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. On Linux/macOS it uses `sudo` unless already root, finds `shutdown` on PATH or in `/sbin`/`/usr/sbin`, and exits 1 with one error line when the command is missing or fails.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems use conventional timestamp modification.
 
@@ -109,10 +109,11 @@ The runner builds `tests/container/Dockerfile` twice - `EXTRAS=0` (stdlib only,
 the acceptance gate: every script must import cleanly and answer `--help`) and
 `EXTRAS=1` (adds `pillow`, `piexif`, `pydub`) - then runs the smoke suite plus
 the Linux column of the cross-platform sweep inside each image, read-only and
-without network. Exit code is non-zero on a failing suite or a hanging/crashing
-probe. Evidence lands in `.devteam/artifacts/container/` (`.devteam/` is not
-tracked). Details, including the deliberately skipped `decord`/`ffmpeg` extras,
-are in `tests/container/README.md`.
+without network. Exit code is non-zero on a failing suite, a hanging or crashing
+probe, or a probe that exits 0 after printing an error line. Evidence lands in
+`.devteam/artifacts/container/` (`.devteam/` is not tracked). Details, including
+the deliberately skipped `decord`/`ffmpeg` extras, are in
+`tests/container/README.md`.
 
 WSL is *not* covered: the container is the POSIX oracle, and the wrappers were
 not exercised natively inside WSL.

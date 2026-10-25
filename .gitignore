@@ -3,8 +3,7 @@
 .continue/
 __pycache__/
 
-# Entry-point wrappers generated per-OS
-cs.sh
+# Entry-point wrapper generated per-OS
 cs.bat
 
 # Local binaries

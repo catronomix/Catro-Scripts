@@ -53,9 +53,26 @@ def create_alias(alias_name):
 	bat_content = "@echo off\r\ncall \"%~dp0catro-scripts.bat\" %*\r\n"
 
 	# Content for .sh file
-	# Preserves working directory and passes all arguments.
-	# Line endings are spelled out as LF because bash fails on a CR before "\n".
-	sh_content = "#!/bin/bash\n\"$(dirname \"$0\")/catro-scripts.sh\" \"$@\"\n"
+	# Preserves working directory and passes all arguments. The target is
+	# resolved through any symlink chain first, because a generated alias is
+	# commonly symlinked into a PATH directory; plain `readlink` (no -f) keeps
+	# this valid on macOS bash 3.2 and busybox.
+	sh_content = (
+		"#!/bin/bash\n"
+		"# Resolve this alias through any symlink chain so the real\n"
+		"# catro-scripts.sh is found when the alias is symlinked into PATH.\n"
+		"_self=\"$0\"\n"
+		"_hops=0\n"
+		"while [ -L \"$_self\" ] && [ \"$_hops\" -lt 40 ]; do\n"
+		"\t_link=\"$(readlink \"$_self\")\"\n"
+		"\tcase \"$_link\" in\n"
+		"\t\t/*) _self=\"$_link\" ;;\n"
+		"\t\t*) _self=\"$(dirname \"$_self\")/$_link\" ;;\n"
+		"\tesac\n"
+		"\t_hops=$((_hops + 1))\n"
+		"done\n"
+		"\"$(cd -P \"$(dirname \"$_self\")\" && pwd)/catro-scripts.sh\" \"$@\"\n"
+	)
 
 	try:
 		# Create Windows .bat. newline="" disables the platform translation,

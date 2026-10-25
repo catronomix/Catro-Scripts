@@ -24,13 +24,20 @@ Time Input Examples:
 Requirements:
 	- No external libraries required; uses standard Python modules.
 	- On Linux/macOS, scheduling a shutdown may require 'sudo' privileges,
-	  and the script will attempt to use 'sudo'.
+	  and the script will attempt to use 'sudo'. If 'sudo' or 'shutdown' is
+	  missing, or the command fails, the script prints one error line and
+	  exits 1 instead of reporting success.
 """
 import os
 import platform
 import re
+import shutil
 import sys
 import subprocess
+
+# Directories that hold `shutdown` on Unix but are not always on the PATH a
+# wrapper inherits (minimal shells, services). POSIX-only: never read on Windows.
+SBIN_DIRS = ("/sbin", "/usr/sbin")
 
 def parse_duration(duration_str):
 	"""
@@ -60,42 +67,98 @@ def parse_duration(duration_str):
 		
 	return total_seconds if found else None
 
+def find_posix_program(name):
+	"""
+	Locates a POSIX program on PATH, then in the sbin directories.
+
+	POSIX-only helper: the Windows branch never calls it, so no `sudo`/`/sbin`
+	lookup can happen on `os.name == "nt"`.
+	"""
+	found = shutil.which(name)
+	if found:
+		return found
+	for directory in SBIN_DIRS:
+		candidate = os.path.join(directory, name)
+		if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+			return candidate
+	return None
+
+def find_windows_shutdown():
+	"""
+	Resolves shutdown.exe through %SystemRoot%\\System32 (the documented location)
+	and falls back to the bare name, which lets CreateProcess do its own search.
+
+	No shutil.which/sudo/geteuid: the Windows path stays exactly as it was.
+	"""
+	system_root = os.environ.get("SystemRoot", r"C:\Windows")
+	candidate = os.path.join(system_root, "System32", "shutdown.exe")
+	return candidate if os.path.isfile(candidate) else "shutdown"
+
 def schedule_shutdown(seconds):
 	"""
 	Executes platform-specific shutdown commands.
+
+	Returns True only when the command actually ran. Every failure path prints
+	one diagnosis and returns False, so main() can exit non-zero instead of
+	reporting success for a shutdown that was never scheduled.
 	"""
 	system = platform.system().lower()
 	minutes = max(1, round(seconds / 60))
-	
-	try:
-		if system == "windows":
-			# Windows uses seconds for /t
-			subprocess.run(["shutdown", "/s", "/t", str(seconds)], check=True)
-			print(f"\n[Success] Shutdown scheduled in {seconds} seconds.")
-			print("To cancel, type: shutdown /a")
-			
-		elif system == "linux" or system == "darwin": # Darwin is macOS
-			# Unix-like systems usually take minutes for +m
-			# Note: This may require sudo privileges
-			print(f"\n[Note] Scheduling for {minutes} minute(s). System may prompt for password.")
-			
-			if system == "darwin":
-				# macOS syntax: shutdown -h +minutes
-				subprocess.run(["sudo", "shutdown", "-h", f"+{minutes}"], check=True)
-			else:
-				# Linux syntax: shutdown +minutes
-				subprocess.run(["sudo", "shutdown", "-h", f"+{minutes}"], check=True)
-				
-			print(f"\n[Success] Shutdown scheduled in {minutes} minute(s).")
-			print("To cancel, type: sudo shutdown -c")
-			
+
+	if system == "windows":
+		# Windows uses seconds for /t
+		program = find_windows_shutdown()
+		argv = [program, "/s", "/t", str(seconds)]
+		success = f"\n[Success] Shutdown scheduled in {seconds} seconds."
+		cancel_hint = "To cancel, type: shutdown /a"
+	elif system == "linux" or system == "darwin": # Darwin is macOS
+		# Unix-like systems usually take minutes for +m
+		program = find_posix_program("shutdown")
+		if program is None:
+			print("\n[Error] 'shutdown' was not found on this system "
+				  f"(looked on PATH, {', '.join(SBIN_DIRS)}).")
+			return False
+
+		argv = [program, "-h", f"+{minutes}"]
+		geteuid = getattr(os, "geteuid", None)
+		if geteuid is not None and geteuid() == 0:
+			# Already root: call the command directly, no sudo needed.
+			pass
 		else:
-			print(f"Unsupported operating system: {system}")
-			
-	except subprocess.CalledProcessError as e:
-		print(f"\n[Error] Failed to schedule shutdown: {e}")
-	except PermissionError:
-		print("\n[Error] Insufficient permissions. Please run the script with administrative/sudo privileges.")
+			sudo = shutil.which("sudo")
+			if sudo is None:
+				print("\n[Error] 'sudo' is required but not installed, and this "
+					  "process is not root; cannot schedule a shutdown.")
+				return False
+			argv.insert(0, sudo)
+			print(f"\n[Note] Scheduling for {minutes} minute(s). System may prompt for password.")
+
+		success = f"\n[Success] Shutdown scheduled in {minutes} minute(s)."
+		cancel_hint = "To cancel, type: sudo shutdown -c"
+	else:
+		print(f"Unsupported operating system: {system}")
+		return False
+
+	try:
+		subprocess.run(argv, check=True)
+	except (OSError, subprocess.SubprocessError) as exc:
+		# One handler, two distinct diagnoses: the program never launched
+		# (missing binary) versus it ran and refused (permissions/returncode).
+		if isinstance(exc, FileNotFoundError):
+			print(f"\n[Error] '{argv[0]}' was not found on this system "
+				  f"(argv: {' '.join(argv)}).")
+		else:
+			returncode = getattr(exc, "returncode", None)
+			reason = ("insufficient permissions"
+					  if isinstance(exc, PermissionError)
+					  else f"returncode {returncode}")
+			print(f"\n[Error] '{argv[0]}' failed with {reason} "
+				  f"(argv: {' '.join(argv)}).")
+		return False
+
+	print(success)
+	print(cancel_hint)
+	return True
 
 def main():
 	print("=== Cross-Platform Shutdown Timer ===")
@@ -117,7 +180,10 @@ def main():
 		if seconds is not None and seconds > 0:
 			confirm = input(f"Confirm shutdown in approx. {seconds // 60} minutes? (y/n): ")
 			if confirm.lower() == 'y':
-				schedule_shutdown(seconds)
+				if not schedule_shutdown(seconds):
+					# A failed schedule must not look like success to the
+					# wrapper or to any script chaining off this one.
+					sys.exit(1)
 				break
 			else:
 				print("Cancelled.")

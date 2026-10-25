@@ -47,30 +47,76 @@ class Colors:
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ACTIONS_FILE = os.path.join(SCRIPT_DIR, "actions.json")
 
+# Bootstrap actions written when actions.json does not exist yet. The tracked
+# actions-template.json is the example file and must stay identical to this.
+DEFAULT_ACTIONS = {
+    "ping": {
+        "command": "ping 127.0.0.1",
+        "description": "Ping local loopback interface",
+    },
+    "echo-test": {
+        "command": "echo Macro system operational!",
+        "description": "Test command output",
+    },
+}
+
+
+def warn_malformed(actions):
+    """Warns about entries that cannot be run, instead of crashing on them."""
+    for name, details in actions.items():
+        if not isinstance(details, dict):
+            print(
+                f"{Colors.YELLOW}Warning: action '{name}' is not an object with "
+                f"'command' and 'description'; it will be skipped.{Colors.END}",
+                file=sys.stderr,
+            )
+            continue
+        missing = [
+            key
+            for key in ("command", "description")
+            if not isinstance(details.get(key), str) or not details.get(key).strip()
+        ]
+        if missing:
+            print(
+                f"{Colors.YELLOW}Warning: action '{name}' is missing "
+                f"{', '.join(missing)}.{Colors.END}",
+                file=sys.stderr,
+            )
+
 
 def load_actions():
-    """Loads macros from the actions.json file."""
+    """Loads macros from the actions.json file.
+
+    A missing file is bootstrapped from DEFAULT_ACTIONS. A file that is not
+    readable JSON, or whose top level is not an object, is a hard error: one
+    clear message and exit 1, never a traceback or a silently empty menu.
+    Entries missing 'command'/'description' only warn; they still list.
+    """
     if not os.path.exists(ACTIONS_FILE):
         # Default initial template actions if file doesn't exist
-        default_actions = {
-            "ping": {
-                "command": "ping 127.0.0.1",
-                "description": "Ping local loopback interface",
-            },
-            "echo-test": {
-                "command": "echo Macro system operational!",
-                "description": "Test command output",
-            },
-        }
-        save_actions(default_actions)
-        return default_actions
+        save_actions(DEFAULT_ACTIONS)
+        return {name: dict(details) for name, details in DEFAULT_ACTIONS.items()}
 
     try:
         with open(ACTIONS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"{Colors.RED}Error loading '{ACTIONS_FILE}': {e}{Colors.END}")
-        return {}
+            actions = json.load(f)
+    except (OSError, ValueError) as e:
+        print(
+            f"{Colors.RED}Error: cannot read '{ACTIONS_FILE}': {e}{Colors.END}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not isinstance(actions, dict):
+        print(
+            f"{Colors.RED}Error: '{ACTIONS_FILE}' must contain a JSON object "
+            f"mapping action names to {{command, description}}.{Colors.END}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    warn_malformed(actions)
+    return actions
 
 
 def save_actions(actions):
@@ -97,7 +143,16 @@ def run_action(action_name, extra_args):
         )
         sys.exit(1)
 
-    base_command = actions[action_name]["command"].strip()
+    entry = actions.get(action_name)
+    base_command = entry.get("command") if isinstance(entry, dict) else None
+    if not isinstance(base_command, str) or not base_command.strip():
+        print(
+            f"{Colors.RED}Error: Action '{action_name}' has no command. "
+            f"Fix it with {Colors.PURPLE}python action.py add {action_name}{Colors.RED}."
+            f"{Colors.END}"
+        )
+        sys.exit(1)
+    base_command = base_command.strip()
 
     # Append extra CLI args passed during invocation
     if extra_args:
@@ -176,8 +231,10 @@ def list_actions():
     print(mid_border)
 
     for i, (name, details) in enumerate(actions.items(), 1):
-        cmd = details.get("command", "")
-        desc = details.get("description", "No description")
+        # A malformed entry still lists; load_actions() already warned about it.
+        entry = details if isinstance(details, dict) else {}
+        cmd = entry.get("command", "") or ""
+        desc = entry.get("description", "") or "No description"
 
         # Truncate long strings for tabular layout
         cmd_disp = (cmd[: w_cmd - 2] + "..") if len(cmd) > w_cmd else cmd
@@ -239,8 +296,10 @@ def interactive_add(target_name=None):
         return
 
     is_edit = target_name in actions
-    existing_cmd = actions[target_name]["command"] if is_edit else ""
-    existing_desc = actions[target_name]["description"] if is_edit else ""
+    existing = actions.get(target_name) if is_edit else {}
+    existing = existing if isinstance(existing, dict) else {}
+    existing_cmd = existing.get("command", "") or ""
+    existing_desc = existing.get("description", "") or ""
 
     if is_edit:
         print(
