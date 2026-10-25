@@ -22,8 +22,11 @@ Instructions:
 Requirements:
 	- Source VENV must have pip installed.
 	- Target system must have an identical base Python version.
-	- Generated reports ('venv_info.txt') are plain text: no colour and no
-	  box drawing, so they stay readable in any editor.
+	- Generated reports ('venv_info.txt') are TAB-separated plain records: no
+	  colour, no box drawing and no `=`/`-` rules, so they stay readable in any
+	  editor and parseable by other tools. The generated `recreate_venv.py` is
+	  plain text too - it runs in the target project, outside catro-scripts,
+	  where the shared `tui` package is not importable.
 
 Flags:
 	-v, --verbose    Show full output from pip commands and subprocesses.
