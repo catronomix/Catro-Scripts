@@ -14,30 +14,35 @@ This document provides instructions for AI agents working on the `catro-scripts`
   - The screensaver system functions as a recursive wrapper:
     1. `screensaver.py` acts as the entrypoint for all `.screensaver` files.
     2. It parses the target file, which contains custom logic or configuration.
-    3. The wrapper handles the lifecycle (start, run, stop) and standardizes display interactions.
+    3. The wrapper handles the lifecycle (start, run, stop) and standardizes display interactions: plugins receive a `tui.TerminalRenderer` and must keep working through `draw_char`/`draw_text`/`render`/`clear`.
   - **Rule**: Never modify core screensaver loop logic without ensuring backward compatibility for existing `.screensaver` files.
 
 ## Coding Standards & Conventions
 - **House Style**: Scripts should utilize full-color text output (where applicable), clean terminal layouts, and structured tables for data representation.
-  - To ensure a consistent user experience, all scripts must follow the visual identity defined in `list.py`.
-  - **ANSI Color Palette**: Avoid hardcoding raw escape codes in every script. Standardize on the `Colors` class approach seen in `list.py`:
-    ```python
-    class Colors:
-        PURPLE = '\033[38;2;170;0;255m'
-        LIGHT_BLUE = '\033[38;2;173;216;230m'
-        BG_BLACK = '\033[48;2;0;0;0m'
-        BG_GREY = '\033[48;2;45;45;45m'
-        BOLD = '\033[1m'
-        END = '\033[0m'
-    ```
+  - Terminal presentation lives in the `tui/` package. Its behavior is pinned by
+    the `tui` feature contract (`.devteam/contracts/tui.md`, local dev-team
+    tooling, not tracked); read it before changing anything in `tui/` and treat
+    it as the source of truth for detection precedence, the palette, table
+    composition and pipe behavior.
+  - **No private ANSI**: Do not hardcode escape codes or define a local `Colors`
+    class in a script. Use `tui.style()`/`tui.prefix()` with semantic palette
+    keys (`header`, `border`, `fg`, `muted`, `success`, `warning`, `error`, ...),
+    and `tui.init_ansi()` for the Windows console bootstrap.
+  - **Detection once per run**: `tui.detect()` (and `tui.theme()`) re-read
+    `config.ini`, so resolve `cap = tui.detect()` once in `main()` and pass it to
+    the helpers instead of calling per line.
   - **Visual Layout**:
-    - **Tables**: Use Unicode box-drawing characters (`┌`, `─`, `┐`, `│`, etc.) for all data-heavy displays.
-    - **Consistency**: Maintain a header/footer structure similar to `list.py`.
-    - **Windows Compatibility**: When using colors in Python, ensure the console is initialized for ANSI:
-      ```python
-      if os.name == 'nt':
-          os.system('')
-      ```
+    - **Tables**: Use `tui.render_table()`/`print_table()` (box glyphs, ASCII
+      fallback) or `tui.key_values()`/`banner()`/`section()` instead of drawing
+      borders by hand. Keep the header/footer structure seen in `list.py`.
+    - **Pipes**: The library already emits plain TAB-separated output when
+      stdout is not a tty - no ANSI, glyphs or padding. Do not special-case
+      `isatty()` in a script.
+    - **Themes**: Both `dark` and `light` are first class; colors come from the
+      palette so every colour level (`16`/`256`/`true`) downgrades automatically.
+  - **Automation**: When a script needs styled output and the helpers do not
+    cover it, add the seam to `tui/` (with a test in `tests/test_tui_*.py`)
+    rather than growing a private renderer.
 - **Documentation**: 
   - Every script must have a clear title and a docstring using specific tab spacing for readability.
   - **Headers**: Every script must start with a descriptive comment title, followed by a Python docstring.
