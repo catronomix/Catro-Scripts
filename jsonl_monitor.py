@@ -682,7 +682,7 @@ def _legend_heading(text, cap):
 def _legend_frame(title, sections, cap):
     """One closed box: top rule, title, separators, samples, bottom rule.
 
-    The old legend was a single `Ã¢â€Å’ Ã¢â€Å“ Ã¢â€â€` frame; the shared banner helper returns
+    The old legend was a single `┌ ├ └` frame; the shared banner helper returns
     a three-line block of its own, so stacking it produced a box that closed
     under the title. Compose the frame here instead, from the capability's own
     glyph set, so it stays one box at every level and in ASCII mode.
