@@ -32,7 +32,7 @@ from . import caps, config, keys, loop, palette, pager, progress, prompts, scree
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .loop import FrameLoop, ScreensaverHost
 from .pager import page
-from .palette import DARK, LIGHT, THEMES, style, theme
+from .palette import DARK, LIGHT, RESET, THEMES, prefix, style, theme
 from .progress import LiveRegion, ProgressBar, Spinner
 from .prompts import ask_choice, ask_int, ask_text
 from .screen import Canvas, Screen, TerminalRenderer
@@ -43,7 +43,7 @@ __all__ = [
 	"caps", "config", "keys", "loop", "palette", "pager", "progress",
 	"prompts", "screen", "table", "text",
 	"Capabilities", "detect", "init_ansi", "require_tty",
-	"DARK", "LIGHT", "THEMES", "style", "theme",
+	"DARK", "LIGHT", "RESET", "THEMES", "prefix", "style", "theme",
 	"display_width", "pad", "strip_ansi", "truncate", "wrap",
 	"banner", "key_values", "print_table", "render_table", "section",
 	"Canvas", "Screen", "TerminalRenderer",

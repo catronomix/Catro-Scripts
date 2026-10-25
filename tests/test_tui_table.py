@@ -23,7 +23,15 @@ if str(REPO) not in sys.path:
 from tui import caps, palette, table  # noqa: E402  (import after sys.path setup)
 from tui.text import display_width  # noqa: E402
 
-LIST_SOURCE = (REPO / "list.py").read_text(encoding="utf-8")
+# The escape codes the pre-migration `list.py` `Colors` class emitted. They are
+# pinned literally: `list.py` itself renders through `tui` now, so scraping its
+# source would only ever prove that the library agrees with itself.
+PURPLE = "\033[38;2;170;0;255m"
+LIGHT_BLUE = "\033[38;2;173;216;230m"
+BG_BLACK = "\033[48;2;0;0;0m"
+BG_GREY = "\033[48;2;45;45;45m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 TRUE = caps.Capabilities(level="true", unicode=True, width=None,
 						 isatty=True, plain=False, reason="test")
@@ -31,12 +39,6 @@ ASCII = caps.Capabilities(level="true", unicode=False, width=None,
 						  isatty=True, plain=False, reason="test")
 PIPE = caps.Capabilities(level="none", unicode=False, width=None,
 						 isatty=False, plain=True, reason="pipe")
-
-
-def list_code(name):
-	"""The escape sequence `Colors.<name>` holds in list.py today."""
-	match = re.search(name + r"\s*=\s*'([^']+)'", LIST_SOURCE)
-	return match.group(1).encode("latin-1").decode("unicode_escape")
 
 
 class PlainModeTests(unittest.TestCase):
@@ -69,49 +71,76 @@ class PlainModeTests(unittest.TestCase):
 
 
 class GoldenBytesTests(unittest.TestCase):
-	"""Rebuild list.py's exact row strings from the tui primitives."""
-
-	purple = list_code("PURPLE")
-	light_blue = list_code("LIGHT_BLUE")
-	bold = list_code("BOLD")
-	reset = list_code("END")
-	bg_black = list_code("BG_BLACK")
-	bg_grey = list_code("BG_GREY")
+	"""Rebuild the pre-migration list.py row bytes from the tui primitives."""
 
 	def test_border_row_is_one_purple_run(self):
 		out = table.render_table(["A"], [["b"]], cap=TRUE, theme="dark")
 		border = out.split("\n")[0]
-		self.assertEqual(border, self.purple + "\u250c" + "\u2500" * 6 + "\u2510" + self.reset)
+		self.assertEqual(border, PURPLE + "\u250c" + "\u2500" * 6 + "\u2510" + RESET)
 
 	def test_header_row_matches_list_py(self):
-		out = table.render_table(["A"], [["b"]], cap=TRUE, theme="dark")
+		out = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE, theme="dark")
 		header = out.split("\n")[1]
-		expected = "".join([
-			self.purple, "\u2502", self.reset,
-			self.purple, self.bold, " A    ", self.reset,
-			self.purple, "\u2502", self.reset,
-		])
+		# Border colour, leading border, then bold: one span, one reset.
+		expected = PURPLE + "\u2502" + BOLD + " A    \u2502 B    \u2502" + RESET
 		self.assertEqual(header, expected)
 
 	def test_zebra_rows_match_list_py(self):
-		out = table.render_table(["A"], [["x"], ["y"]], cap=TRUE, theme="dark")
+		out = table.render_table(["A", "B"], [["x", "y"], ["z", "w"]],
+								 cap=TRUE, theme="dark")
 
-		def expected(cell, background):
+		def expected(first, second, background):
+			cell = LIGHT_BLUE + background
 			return "".join([
-				self.purple, "\u2502", self.reset,
-				self.light_blue, background, cell, self.reset,
-				self.purple, "\u2502", self.reset,
+				PURPLE, "\u2502", cell, " " + first.ljust(4) + " ",
+				PURPLE, "\u2502", cell, " " + second.ljust(4) + " ",
+				RESET, PURPLE, "\u2502", RESET,
 			])
 
-		self.assertEqual(out.split("\n")[3], expected(" x    ", self.bg_black))
-		self.assertEqual(out.split("\n")[4], expected(" y    ", self.bg_grey))
+		lines = out.split("\n")
+		self.assertEqual(lines[3], expected("x", "y", BG_BLACK))
+		self.assertEqual(lines[4], expected("z", "w", BG_GREY))
+
+	def test_data_row_has_two_resets_only(self):
+		row = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE).split("\n")[3]
+		self.assertEqual(row.count(RESET), 2)
 
 	def test_divider_and_bottom_use_the_border_colour(self):
 		lines = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE).split("\n")
-		self.assertTrue(lines[2].startswith(self.purple + "\u251c"))
-		self.assertTrue(lines[-1].startswith(self.purple + "\u2514"))
+		self.assertTrue(lines[2].startswith(PURPLE + "\u251c"))
+		self.assertTrue(lines[-1].startswith(PURPLE + "\u2514"))
 		self.assertIn("\u253c", lines[2])
 		self.assertIn("\u2534", lines[-1])
+
+
+class ForcedWidthTests(unittest.TestCase):
+	"""`widths=` pins the layout so a caller can keep exact bytes."""
+
+	def test_widths_are_used_verbatim(self):
+		out = table.render_table(["ID", "Name"], [["1", "x" * 20]],
+								 widths=[4, 6], truncate=False, cap=TRUE)
+		lines = out.split("\n")
+		self.assertEqual(display_width(re.sub(r"\x1b\[[0-9;]*m", "", lines[0])),
+						 sum([4, 6]) + 3 * 2 + 1)
+		self.assertIn("x" * 20, lines[3])
+
+	def test_widths_are_not_shrunk_to_the_terminal(self):
+		cap = caps.Capabilities(level="true", unicode=True, width=20,
+								isatty=True, plain=False, reason="test")
+		out = table.render_table(["A", "B"], [["x", "y"]], widths=[10, 10],
+								 cap=cap, theme="dark")
+		self.assertEqual(len(re.sub(r"\x1b\[[0-9;]*m", "", out.split("\n")[0])),
+						 10 + 10 + 3 * 2 + 1)
+
+	def test_plain_mode_ignores_widths_and_truncation(self):
+		out = table.render_table(["A"], [["x" * 90]], widths=[4], truncate=False,
+								 cap=PIPE)
+		self.assertEqual(out, "A\n" + "x" * 90)
+
+	def test_missing_widths_pad_with_the_minimum_column(self):
+		out = table.render_table(["A", "B"], [["x", "y"]], widths=[8], cap=TRUE)
+		self.assertIn(" x       ", out.split("\n")[3])
+		self.assertIn(" y    ", out.split("\n")[3])
 
 
 class LayoutTests(unittest.TestCase):
@@ -193,7 +222,7 @@ class BlockTests(unittest.TestCase):
 		self.assertEqual(len(out.split("\n")), 3)
 		self.assertIn("TITLE", out)
 		self.assertIn("\u250c", out)
-		self.assertIn(list_code("PURPLE"), out)
+		self.assertIn(PURPLE, out)
 
 	def test_banner_plain_is_the_title(self):
 		self.assertEqual(table.banner("TITLE", cap=PIPE), "TITLE")
@@ -202,7 +231,6 @@ class BlockTests(unittest.TestCase):
 		self.assertEqual(table.section("Part", cap=PIPE), "Part")
 		self.assertIn(palette.style("Part", fg="header", bold=True, cap=TRUE, theme="dark"),
 					  table.section("Part", cap=TRUE, theme="dark"))
-
 
 if __name__ == "__main__":
 	unittest.main()

@@ -10,6 +10,11 @@ light-background pair. Neither is derived from the other.
 foreground, background, attributes, text, reset. Dark at level "true" therefore
 reproduces `list.py` exactly, and every downgrade (256, 16, none) is
 deterministic: the same hex always resolves to the same code.
+
+`prefix()` is the same codes without the text and without the reset. It exists
+for callers that must re-assert a style between cells without paying a reset -
+the table renderer's rows are such a caller - and `style()` is defined in terms
+of it so the two can never drift.
 """
 
 import os
@@ -46,6 +51,10 @@ LIGHT = {
 
 THEMES = {"dark": DARK, "light": LIGHT}
 
+# The only reset this package emits; callers composing their own spans use it
+# instead of hardcoding the escape.
+RESET = "\033[0m"
+
 _BASE16 = (
 	(0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0),
 	(0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192),
@@ -78,10 +87,25 @@ def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
 	unparseable falls back to the palette's own `fg`/`bg` instead of raising.
 	Level "none" returns the bare text, with no reset code.
 	"""
-	cap = cap or caps.detect()
 	plain = "" if text is None else str(text)
-	if cap.level == "none":
+	lead = prefix(fg=fg, bg=bg, bold=bold, dim=dim, reverse=reverse,
+				  cap=cap, theme=theme)
+	if not lead:
 		return plain
+	return lead + plain + RESET
+
+
+def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
+		   cap=None, theme=None):
+	"""The SGR codes `style()` would emit, with no text and no reset code.
+
+	This is the seam for callers that compose a run of cells and must re-assert
+	the style after each border without a reset in between (the table rows, and
+	any full-screen caller driving a canvas).
+	"""
+	cap = cap or caps.detect()
+	if cap.level == "none":
+		return ""
 	colours = palette(theme)
 	parts = []
 	if fg is not None:
@@ -94,9 +118,7 @@ def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
 		parts.append("\033[2m")
 	if reverse:
 		parts.append("\033[7m")
-	if not parts:
-		return plain
-	return "".join(parts) + plain + "\033[0m"
+	return "".join(parts)
 
 
 def _theme_name(mode=None):

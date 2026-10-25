@@ -6,6 +6,10 @@ One renderer for the house table: Unicode box borders at a terminal, and one
 TAB-separated record per line when the stream is a pipe (`cap.plain`), where
 `catro-scripts list | cut -f2` becomes a supported use.
 
+`widths=` forces exact columns (no measuring, no terminal fitting) so a caller
+can keep a fixed layout and therefore exact bytes; such a caller normally passes
+`truncate=False` and applies its own truncation rule.
+
 Rendering never prints, never raises on ragged rows (short rows pad, extra cells
 are dropped) and never truncates plain output. Cell values are str()-ified and
 their newlines flattened to spaces.
@@ -29,9 +33,18 @@ ASCII_GLYPHS = {
 MIN_COLUMN = 4
 
 
+# A borderless/plain cell join and the pinned span shape live below; see the
+# contract for why the borders are prefixed inside the row instead of resetting.
+
 def render_table(headers, rows, *, box=True, zebra=True, truncate=True,
-				 cap=None, theme=None):
-	"""Render a table; returns text without a trailing newline."""
+				 widths=None, cap=None, theme=None):
+	"""Render a table; returns text without a trailing newline.
+
+	`widths` forces exact column widths and skips both auto-sizing and terminal
+	fitting, which is how `list` keeps its fixed 4/25/10/50 layout (and its exact
+	bytes). A caller with its own truncation rule passes `truncate=False` and
+	pre-truncates the cell.
+	"""
 	cap = cap or caps.detect()
 	theme = palette.theme(theme)
 	labels = [_flat(value) for value in headers]
@@ -44,21 +57,24 @@ def render_table(headers, rows, *, box=True, zebra=True, truncate=True,
 		lines += ["\t".join(cells) for cells in data]
 		return "\n".join(lines)
 
-	widths = _column_widths(labels, data)
-	if cap.width:
-		widths = _fit(widths, cap.width)
+	if widths is None:
+		widths = _column_widths(labels, data)
+		if cap.width:
+			widths = _fit(widths, cap.width)
+	else:
+		widths = _explicit_widths(widths, len(labels))
 	glyphs = glyphs_for(cap)
 	if not box:
 		return "\n".join(_bare_rows(labels, data, widths, cap, theme, zebra))
 
 	lines = [_rule(glyphs, widths, "tl", "tm", "tr", cap, theme)]
-	lines.append(_row(glyphs, widths, labels, cap, theme, fg="header", bold=True))
+	lines.append(_header_row(glyphs, widths, labels, cap, theme))
 	lines.append(_rule(glyphs, widths, "ml", "mm", "mr", cap, theme))
 	for index, cells in enumerate(data):
 		background = None
 		if zebra:
 			background = "bg" if index % 2 == 0 else "surface"
-		lines.append(_row(glyphs, widths, cells, cap, theme, fg="fg",
+		lines.append(_row(glyphs, widths, cells, cap, theme,
 						  bg=background, truncate_cells=truncate))
 	lines.append(_rule(glyphs, widths, "bl", "bm", "br", cap, theme))
 	return "\n".join(lines)
@@ -147,6 +163,12 @@ def _column_widths(labels, data):
 	return [max(MIN_COLUMN, width) for width in widths]
 
 
+def _explicit_widths(widths, count):
+	"""Caller-supplied widths: exact, never measured, never fitted."""
+	forced = [max(0, int(width)) for width in list(widths)[:count]]
+	return forced + [MIN_COLUMN] * (count - len(forced))
+
+
 def _fit(widths, limit):
 	"""Shrink the widest columns until the box fits `limit` cells."""
 	widths = list(widths)
@@ -164,17 +186,44 @@ def _rule(glyphs, widths, left, middle, right, cap, theme):
 						 cap=cap, theme=theme)
 
 
-def _row(glyphs, widths, cells, cap, theme, fg="fg", bg=None, bold=False,
-		 truncate_cells=False):
-	parts = [palette.style(glyphs["v"], fg="border", cap=cap, theme=theme)]
+def _header_row(glyphs, widths, labels, cap, theme):
+	"""One span over the whole row: border, then the first border, then bold.
+
+	This is the pre-migration `list.py` header byte for byte: the border colour
+	is emitted once, the leading `|` is inside it, and only then does bold begin,
+	so the rest of the row (inner borders included) is bold until the reset.
+	"""
+	body = glyphs["v"].join(" " + pad(cell, width) + " "
+							for cell, width in zip(labels, widths))
+	return (palette.prefix(fg="border", cap=cap, theme=theme) + glyphs["v"]
+			+ palette.prefix(bold=True, cap=cap, theme=theme) + body + glyphs["v"]
+			+ _reset(cap))
+
+
+def _row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
+	"""Zebra data row, composed exactly like the old `list.py` row.
+
+	Each cell re-asserts its own colours after the border (`border | cell-style
+	text`), and only the closing border is preceded by a reset, so the row
+	carries the same escapes in the same order as the hand-built table did.
+	"""
+	border = palette.prefix(fg="border", cap=cap, theme=theme)
+	cell_style = palette.prefix(fg="fg", bg=bg, cap=cap, theme=theme)
+	reset = _reset(cap)
+	parts = []
 	for index, width in enumerate(widths):
 		cell = cells[index]
 		if truncate_cells:
 			cell = _truncate(cell, width)
-		parts.append(palette.style(" " + pad(cell, width) + " ", fg=fg, bg=bg,
-								   bold=bold, cap=cap, theme=theme))
-		parts.append(palette.style(glyphs["v"], fg="border", cap=cap, theme=theme))
+		parts.append(border + glyphs["v"] + cell_style)
+		parts.append(" " + pad(cell, width) + " ")
+	parts.append(reset + border + glyphs["v"] + reset)
 	return "".join(parts)
+
+
+def _reset(cap):
+	"""The reset code, or "" when the caller asked for no styling at all."""
+	return "" if cap.level == "none" else palette.RESET
 
 
 def _bare_rows(labels, data, widths, cap, theme, zebra):

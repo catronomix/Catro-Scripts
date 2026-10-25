@@ -2,11 +2,13 @@
 """
 		PALETTE AND BYTE IDENTITY
 		==========================
-The dark palette has to reproduce the bytes the old per-script `Colors` class in
-`list.py` emitted, so this module reads those escape codes straight out of
-`list.py` instead of trusting a copy. It also pins the fixed emission order
-(foreground, background, attributes, text, reset), the 256/16 downgrade
-determinism, custom colours and the level-"none" bare-text path.
+The dark palette has to reproduce the bytes the pre-migration per-script
+`Colors` class in `list.py` emitted, so those escape codes are pinned here
+literally instead of scraped out of `list.py` (which now renders through `tui`
+and would only prove that the library agrees with itself). It also pins the
+fixed emission order (foreground, background, attributes, text, reset), the
+`prefix()` seam, the 256/16 downgrade determinism, custom colours and the
+level-"none" bare-text path.
 """
 
 import io
@@ -24,7 +26,13 @@ if str(REPO) not in sys.path:
 
 from tui import caps, config, palette  # noqa: E402  (import after sys.path setup)
 
-LIST_SOURCE = (REPO / "list.py").read_text(encoding="utf-8")
+# The escape codes the pre-migration `list.py` emitted, byte for byte.
+PURPLE = "\033[38;2;170;0;255m"
+LIGHT_BLUE = "\033[38;2;173;216;230m"
+BG_BLACK = "\033[48;2;0;0;0m"
+BG_GREY = "\033[48;2;45;45;45m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 TRUE = caps.Capabilities(level="true", unicode=True, width=None,
 						 isatty=True, plain=False, reason="test")
@@ -36,14 +44,6 @@ NONE = caps.Capabilities(level="none", unicode=False, width=None,
 						 isatty=False, plain=True, reason="test")
 
 
-def list_code(name):
-	"""(actual escape sequence) for `Colors.<name>` in list.py."""
-	match = re.search(name + r"\s*=\s*'([^']+)'", LIST_SOURCE)
-	if match is None:
-		raise AssertionError("list.py no longer defines Colors.{}".format(name))
-	return match.group(1).encode("latin-1").decode("unicode_escape")
-
-
 def rgb_of(escape):
 	match = re.search(r"[34]8;2;(\d+);(\d+);(\d+)", escape)
 	if match is None:
@@ -52,7 +52,7 @@ def rgb_of(escape):
 
 
 class DarkByteIdentityTests(unittest.TestCase):
-	"""style() at level true must spell list.py's escape codes, in order."""
+	"""style() at level true must spell the old list.py escape codes, in order."""
 
 	def style(self, text="x", **kw):
 		kw.setdefault("cap", TRUE)
@@ -60,37 +60,57 @@ class DarkByteIdentityTests(unittest.TestCase):
 		return palette.style(text, **kw)
 
 	def test_border_and_header_codes_match_list_py(self):
-		purple, sgr_reset = list_code("PURPLE"), list_code("END")
-		self.assertEqual(self.style(fg="border"), purple + "x" + sgr_reset)
-		self.assertEqual(self.style(fg="header"), purple + "x" + sgr_reset)
-		self.assertEqual(self.style(fg="accent"), purple + "x" + sgr_reset)
+		self.assertEqual(self.style(fg="border"), PURPLE + "x" + RESET)
+		self.assertEqual(self.style(fg="header"), PURPLE + "x" + RESET)
+		self.assertEqual(self.style(fg="accent"), PURPLE + "x" + RESET)
 		self.assertEqual(self.style(fg="header", bold=True),
-						 purple + list_code("BOLD") + "x" + sgr_reset)
+						 PURPLE + BOLD + "x" + RESET)
 
 	def test_zebra_row_codes_match_list_py(self):
-		fg, reset = list_code("LIGHT_BLUE"), list_code("END")
-		odd = fg + list_code("BG_BLACK") + "x" + reset
-		even = fg + list_code("BG_GREY") + "x" + reset
+		odd = LIGHT_BLUE + BG_BLACK + "x" + RESET
+		even = LIGHT_BLUE + BG_GREY + "x" + RESET
 		self.assertEqual(self.style(fg="fg", bg="bg"), odd)
 		self.assertEqual(self.style(fg="fg", bg="surface"), even)
 
 	def test_emission_order_is_fg_bg_attrs_text_reset(self):
-		expected = (list_code("LIGHT_BLUE") + list_code("BG_GREY")
-					+ list_code("BOLD") + "x" + list_code("END"))
+		expected = LIGHT_BLUE + BG_GREY + BOLD + "x" + RESET
 		self.assertEqual(self.style(fg="fg", bg="surface", bold=True), expected)
 
 	def test_dark_palette_values_match_list_py_bytes(self):
-		self.assertEqual(rgb_of(list_code("PURPLE")), (170, 0, 255))
+		self.assertEqual(rgb_of(PURPLE), (170, 0, 255))
 		self.assertEqual(palette.DARK["border"], "#AA00FF")
 		self.assertEqual(palette.DARK["header"], "#AA00FF")
 		self.assertEqual(palette.DARK["accent"], "#AA00FF")
-		self.assertEqual(rgb_of(list_code("LIGHT_BLUE")), (173, 216, 230))
+		self.assertEqual(rgb_of(LIGHT_BLUE), (173, 216, 230))
 		self.assertEqual(palette.DARK["fg"], "#ADD8E6")
-		self.assertEqual(rgb_of(list_code("BG_BLACK")), (0, 0, 0))
+		self.assertEqual(rgb_of(BG_BLACK), (0, 0, 0))
 		self.assertEqual(palette.DARK["bg"], "#000000")
-		self.assertEqual(rgb_of(list_code("BG_GREY")), (45, 45, 45))
+		self.assertEqual(rgb_of(BG_GREY), (45, 45, 45))
 		self.assertEqual(palette.DARK["surface"], "#2D2D2D")
 		self.assertEqual(palette.DARK["zebra_bg"], "#2D2D2D")
+
+
+class PrefixSeamTests(unittest.TestCase):
+	"""`prefix()` is the SGR-only half of `style()`; the two cannot drift."""
+
+	def test_style_is_prefix_plus_text_plus_reset(self):
+		for kw in ({"fg": "fg", "bg": "surface"}, {"fg": "border", "bold": True},
+				   {"fg": "error", "reverse": True, "dim": True}):
+			with self.subTest(kw=kw):
+				self.assertEqual(palette.style("abc", cap=TRUE, theme="dark", **kw),
+								 palette.prefix(cap=TRUE, theme="dark", **kw)
+								 + "abc" + palette.RESET)
+
+	def test_prefix_emits_no_text_and_no_reset(self):
+		lead = palette.prefix(fg="fg", bg="bg", cap=TRUE, theme="dark")
+		self.assertEqual(lead, LIGHT_BLUE + BG_BLACK)
+		self.assertNotIn(RESET, lead)
+
+	def test_prefix_is_empty_without_a_colour_or_attribute(self):
+		self.assertEqual(palette.prefix(cap=TRUE, theme="dark"), "")
+
+	def test_prefix_is_empty_at_level_none(self):
+		self.assertEqual(palette.prefix(fg="fg", bg="bg", bold=True, cap=NONE), "")
 
 
 class ThemeTests(unittest.TestCase):
