@@ -17,3 +17,9 @@ cs text eol=lf
 # Explicitly enforce CRLF for Windows batch scripts
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Byte fixtures are data, not lines: the golden files under
+# tests/fixtures/ pin exact renderer output, so no EOL conversion may touch
+# them (a Windows checkout would otherwise materialise CRLF and the "bytes"
+# assertion would silently be comparing normalised text).
+*.tty -text
