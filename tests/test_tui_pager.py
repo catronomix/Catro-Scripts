@@ -8,8 +8,13 @@ advance the offset and flash every page past the reader. These tests drive the
 real read path over a pipe and record what `select()` was asked for, with a fake
 select that blocks until the feeder writes (so the test stays portable: real
 select() cannot wait on a pipe on Windows).
+
+The raw-mode lifecycle is unit-tested with a recording context manager and fake
+key tokens; a real POSIX terminal smoke (actual cbreak settings restored) is
+still owed and cannot run on this Windows host.
 """
 
+import contextlib
 import io
 import os
 import sys
@@ -102,6 +107,7 @@ class PagerTests(unittest.TestCase):
 		try:
 			with mock.patch("select.select", fake_select), \
 					mock.patch.object(keys, "os", posix), \
+					mock.patch.object(keys, "raw_mode", contextlib.nullcontext), \
 					mock.patch.object(sys, "stdin", PipeStream(read_fd)):
 				pager.page(lines, page_size=page_size, stream=stream)
 		finally:
@@ -131,6 +137,64 @@ class PagerTests(unittest.TestCase):
 		out, _ = self.run_page(lines, ("q",))
 		self.assertIn("line-0\n", out)
 		self.assertNotIn("line-8", out)
+
+
+class RawModeLifecycleTests(unittest.TestCase):
+	"""The interactive loop owns raw mode and always hands the terminal back."""
+
+	def run_with_tokens(self, tokens, lines=None, page_size=2):
+		events = []
+
+		class RecordingRawMode:
+			def __enter__(self):
+				events.append("enter")
+
+			def __exit__(self, *exc_info):
+				events.append("exit")
+				return False
+
+		def reader():
+			return tokens.pop(0) if tokens else None
+
+		stream = FakeStream(tty=True)
+		with mock.patch.object(keys, "raw_mode", RecordingRawMode), \
+				mock.patch.object(keys, "read_key", reader):
+			pager.page(lines or ["a", "b", "c"], page_size=page_size,
+					   stream=stream)
+		return stream.getvalue(), events
+
+	def test_page_enters_raw_mode_and_restores_it(self):
+		out, events = self.run_with_tokens(["q"])
+		self.assertEqual(events, ["enter", "exit"])
+		self.assertIn("a\n", out)
+
+	def test_key_tokens_move_a_page_forward_and_back(self):
+		lines = ["line-{}".format(index) for index in range(5)]
+		out, events = self.run_with_tokens(["pagedown", "pageup", "q"],
+										   lines=lines)
+		self.assertEqual(events, ["enter", "exit"])
+		# Forward reached the second page, back returned to the first.
+		self.assertIn("line-2\n", out)
+		self.assertEqual(out.count("line-0\n"), 2, "pageup did not go back")
+		self.assertEqual(out.count("line-2\n"), 1, "pagedown did not advance")
+
+	def test_raw_mode_is_restored_when_a_read_fails(self):
+		events = []
+
+		class RecordingRawMode:
+			def __enter__(self):
+				events.append("enter")
+
+			def __exit__(self, *exc_info):
+				events.append("exit")
+				return False
+
+		with mock.patch.object(keys, "raw_mode", RecordingRawMode), \
+				mock.patch.object(keys, "read_key",
+								  mock.Mock(side_effect=RuntimeError("gone"))):
+			with self.assertRaises(RuntimeError):
+				pager.page(["a", "b"], page_size=2, stream=FakeStream(tty=True))
+		self.assertEqual(events, ["enter", "exit"], "raw mode was not restored")
 
 
 if __name__ == "__main__":

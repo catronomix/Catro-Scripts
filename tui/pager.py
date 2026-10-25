@@ -4,7 +4,9 @@
 			======
 `page()` shows long output one screen at a time on a tty (space/enter/n/pgdn
 forward, b/p/pgup back, q/ESC exits) and prints everything unchanged when the
-stream is not a tty. The alternate screen is always restored.
+stream is not a tty. The interactive loop runs in `keys.raw_mode()` so keys
+arrive one at a time (no Enter needed), and both the alternate screen and the
+terminal settings are always restored, including on an exception.
 """
 
 import sys
@@ -28,7 +30,7 @@ def page(lines, page_size=None, stream=None):
 		return
 	size = int(page_size or max(1, terminal_size(stream)[1] - 1))
 	offset = 0
-	with Screen(stream) as screen:
+	with Screen(stream) as screen, keys.raw_mode():
 		while True:
 			screen.clear()
 			visible = lines[offset:offset + size]
