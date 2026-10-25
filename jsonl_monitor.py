@@ -581,6 +581,20 @@ LEGEND_WIDTH = 46
 LEGEND_INNER = LEGEND_WIDTH - 2
 
 
+def legend_fits(cols):
+    """True when the legend frame fits the terminal width.
+
+    The legend is an optional help overlay, so a terminal narrower than the
+    frame simply does not get one. Clipping an already-styled line here would
+    be wrong: `tui.truncate()` measures characters, so escape bytes would count
+    as cells and a sequence could be cut mid-form with no closing reset.
+
+    One spare cell is required: the popup is inset by at least one column, so
+    a 46-column terminal cannot hold a 46-cell frame starting at column 1.
+    """
+    return cols >= LEGEND_WIDTH + 1
+
+
 def _legend_rule(glyphs, left, right, cap):
     """A horizontal legend rule, exactly LEGEND_WIDTH cells wide."""
     border = tui.prefix(fg="border", cap=cap)
@@ -755,18 +769,12 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
     reset = _reset(cap)
     colours = tui.palette.palette(cap=cap)
 
+    show_popup = monitor.show_legend and legend_fits(cols)
+    popup_lines = legend_lines(monitor.parser_name, cap) if show_popup else []
     popup_width = LEGEND_WIDTH
-    popup_lines = []
-    if monitor.show_legend:
-        popup_lines = legend_lines(monitor.parser_name, cap)
-
-    popup_height = len(popup_lines) if monitor.show_legend else 0
+    popup_height = len(popup_lines)
     popup_start_x = max(1, (cols - popup_width) // 2)
     popup_start_y = max(1, (max_visible_lines - popup_height) // 2)
-    if popup_lines:
-        # A terminal narrower than the legend: clip rather than wrap.
-        room = max(1, cols - popup_start_x)
-        popup_lines = [tui.truncate(line, room) for line in popup_lines]
 
     # Adjust scroll_top_index to keep selected_index in view
     if monitor.selected_index < monitor.scroll_top_index:
@@ -871,7 +879,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
             )
 
         if (
-            monitor.show_legend
+            show_popup
             and popup_start_y <= ui_row + 1 < popup_start_y + popup_height
         ):
             last_rendered_rows[ui_row] = None
@@ -881,7 +889,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
                 screen.write(row_str)
                 last_rendered_rows[ui_row] = row_str
 
-    if monitor.show_legend:
+    if show_popup:
         for i, line_str in enumerate(popup_lines):
             popup_y = popup_start_y + i
             cache_key = f"popup_{popup_y}"
@@ -1027,15 +1035,13 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
             screen.write(full_row_str)
             last_rendered_rows[cache_key] = full_row_str
 
-    # 3. Popup Legend Overlay
-    if monitor.show_legend:
+    # 3. Popup Legend Overlay (skipped when the frame does not fit)
+    if monitor.show_legend and legend_fits(cols):
         popup_width = LEGEND_WIDTH
         popup_lines = legend_lines(monitor.parser_name, cap)
         popup_height = len(popup_lines)
         popup_start_x = max(1, (cols - popup_width) // 2)
         popup_start_y = max(1, (viewport_height - popup_height) // 2 + 1)
-        room = max(1, cols - popup_start_x)
-        popup_lines = [tui.truncate(line, room) for line in popup_lines]
 
         for i, line_str in enumerate(popup_lines):
             popup_y = popup_start_y + i
