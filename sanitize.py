@@ -165,8 +165,9 @@ def restore_remotes(saved):
 			continue
 		a = run(["git", "remote", "add", name, fetch_url])
 		if a.returncode != 0:
-			print(tui.style(f"WARNING: could not restore remote "
-							f"'{name}': {a.stderr.strip()}", fg="warn"),
+			print(tui.status(
+				"warn", f"could not restore remote '{name}': "
+				f"{a.stderr.strip()}"),
 				  file=sys.stderr)
 			continue
 		push_url = urls.get("push")
@@ -184,19 +185,20 @@ def main(argv=None) -> int:
 
 	# Validate input: empty secrets or filter-repo delimiter sequences are rejected.
 	if not secret:
-		print(tui.style("Error: secret must not be empty.", fg="error", cap=cap),
+		print(tui.status("error", "Error: secret must not be empty.", cap=cap),
 			  file=sys.stderr)
 		return 2
 	if "\n" in secret or "==>" in secret:
-		print(tui.style("Error: secret must not contain a newline or '==>'.",
-						fg="error", cap=cap),
+		print(tui.status("error",
+						 "Error: secret must not contain a newline or '==>'.",
+						 cap=cap),
 			  file=sys.stderr)
 		return 2
 
 	# Confirm we are inside a repo before doing anything destructive.
 	repo_root, err = find_repo_root()
 	if repo_root is None:
-		print(tui.style(f"Error: {err}", fg="error", cap=cap), file=sys.stderr)
+		print(tui.status("error", f"Error: {err}", cap=cap), file=sys.stderr)
 		if "not inside" in err:
 			print("Hint: cd to the repo root, or run: git init", file=sys.stderr)
 		return 1
@@ -204,8 +206,9 @@ def main(argv=None) -> int:
 	# Confirm the rewrite backend exists before warning or scanning.
 	filter_repo_cmd = find_filter_repo()
 	if filter_repo_cmd is None:
-		print(tui.style("Error: git-filter-repo not found. Install it with:",
-						fg="error", cap=cap),
+		print(tui.status("error",
+						 "Error: git-filter-repo not found. Install it with:",
+						 cap=cap),
 			  file=sys.stderr)
 		print("    pip install git-filter-repo", file=sys.stderr)
 		return 1
@@ -220,14 +223,15 @@ def main(argv=None) -> int:
 	# Warn about dirty trees; rewriting with uncommitted work risks losing it.
 	r = run(["git", "status", "--porcelain"])
 	if r.returncode == 0 and r.stdout.strip() and not args.yes:
-		print(tui.style("WARNING: working tree has uncommitted changes. "
-						"Commit or stash first.", fg="warn", cap=cap))
+		print(tui.status("warn",
+						 "WARNING: working tree has uncommitted changes. "
+						 "Commit or stash first.", cap=cap))
 		ans = input("Continue anyway? [y/N] ").strip().lower()
 		if ans not in ("y", "yes"):
 			print("Aborted.")
 			return 1
-	print(tui.style("WARNING: this rewrites ALL history. Back up first and "
-					"force-push afterwards.", fg="warn", cap=cap))
+	print(tui.status("warn", "WARNING: this rewrites ALL history. Back up first "
+					 "and force-push afterwards.", cap=cap))
 	if not args.yes:
 		ans = input("Rewrite full history now? [y/N] ").strip().lower()
 		if ans not in ("y", "yes"):
@@ -236,10 +240,10 @@ def main(argv=None) -> int:
 
 	# Pre-check avoids a destructive no-op (filter-repo drops origin, expires
 	# reflogs, GCs) paired with a misleading SUCCESS message.
-	print(tui.style("Scanning history for secret...", fg="fg", cap=cap))
+	print(tui.status("info", "Scanning history for secret...", cap=cap))
 	if not secret_in_history(secret):
-		print(tui.style("Secret not found in repo history. Nothing to do "
-						"(exit 0).", fg="success", cap=cap))
+		print(tui.status("ok", "Secret not found in repo history. Nothing to do "
+						 "(exit 0).", cap=cap))
 		return 0
 
 	# Snapshot remotes: git-filter-repo strips `origin` by design, so save
@@ -261,10 +265,10 @@ def main(argv=None) -> int:
 			"--replace-message", replace_file,
 			"--force",
 		]
-		print(tui.style(f"Running: {' '.join(cmd)}", fg="fg", cap=cap))
+		print(tui.field("Running:", " ".join(cmd), cap=cap))
 		p = subprocess.run(cmd)
 		if p.returncode != 0:
-			print(tui.style("git-filter-repo failed.", fg="error", cap=cap),
+			print(tui.status("error", "git-filter-repo failed.", cap=cap),
 				  file=sys.stderr)
 			return 1
 
@@ -278,13 +282,13 @@ def main(argv=None) -> int:
 		if saved_remotes and restored:
 			detail = ", ".join(
 				n + " -> " + saved_remotes[n].get("fetch", "") for n in restored)
-			print(tui.style(f"Restored remote(s): {detail}", fg="fg", cap=cap))
+			print(tui.field("Restored remote(s):", detail, cap=cap))
 		elif saved_remotes:
-			print(tui.style("Remotes already present, nothing to restore.",
-							fg="fg", cap=cap))
+			print(tui.status("info", "Remotes already present, nothing to restore.",
+							 cap=cap))
 
 		# Verify the secret is gone: searchable history plus a blob-by-blob scan.
-		print(tui.style("Verifying rewrite...", fg="fg", cap=cap))
+		print(tui.status("info", "Verifying rewrite...", cap=cap))
 		v = run(["git", "log", "--all", "-p", "--", "."])
 		g = run(["git", "grep", "-F", secret, "--", "HEAD"])
 		leaks = []
@@ -297,8 +301,9 @@ def main(argv=None) -> int:
 		history_still_has_it = secret in (v.stdout or "")
 		head_has_it = g.returncode == 0 and g.stdout.strip()
 		if history_still_has_it or leaks or head_has_it:
-			print(tui.style("WARNING: secret string still found after rewrite!",
-							fg="error", cap=cap), file=sys.stderr)
+			print(tui.status("error",
+							 "Secret string still found after rewrite!",
+							 cap=cap), file=sys.stderr)
 			print("The secret may exist in untracked files, tags, stash, or "
 				  "filenames (use --path renames for filenames).", file=sys.stderr)
 			if leaks:
@@ -306,8 +311,9 @@ def main(argv=None) -> int:
 			return 1
 
 		# Report success with the force-push / rotation steps that must follow.
-		print(tui.style(f"SUCCESS: secret replaced with '{placeholder}' in full "
-						f"history.", fg="success", bold=True, cap=cap))
+		print(tui.status("ok",
+						 f"Secret replaced with '{placeholder}' in full history.",
+						 cap=cap))
 		print(tui.key_values("NEXT STEPS", [
 			("1. Force-push", "git push --force --all && git push --force --tags"),
 			("2. Teammates", "Everyone else must re-clone"),
