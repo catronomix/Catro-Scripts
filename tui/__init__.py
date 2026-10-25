@@ -12,6 +12,7 @@ Layout:
 	text      display width, truncate, pad, wrap, strip ANSI
 	palette   soft and contrast palettes, style() and level downgrade
 	table     box/plain tables, banner, section, key-value blocks
+	chrome    masthead, panel, rule, field, status, fill, menu
 	prompts   ask_text, ask_int, ask_choice
 	screen    Screen, Canvas, TerminalRenderer
 	keys      raw mode, key decoding, background KeyReader
@@ -22,17 +23,20 @@ Layout:
 Importing this package is inert: no printing, no config write, no terminal mode
 change, no third-party import. Submodules keep their module names as attributes
 (`tui.palette` is the module; use `tui.palette.palette()` for the palette dict),
-and the common helpers are re-exported at the top level.
+and the common helpers are re-exported at the top level. `tui.chrome` is the
+page-chrome module and its helpers are re-exported by name; `tui.page` is still
+the pager helper, not a module.
 
 Usage:
 	from tui import caps, palette, table
 """
 
-from . import caps, config, keys, loop, palette, pager, progress, prompts, screen, table, text
+from . import caps, chrome, config, keys, loop, palette, pager, progress, prompts, screen, table, text
 from .caps import Capabilities, detect, init_ansi, require_tty
+from .chrome import field, fill, header, menu, panel, rule, status
 from .loop import FrameLoop, ScreensaverHost
-from .pager import page
 from .palette import CONTRAST_DARK, CONTRAST_LIGHT, RESET, SOFT, THEMES, prefix, style, theme
+from .pager import page
 from .progress import LiveRegion, ProgressBar, Spinner
 from .prompts import ask_choice, ask_int, ask_text
 from .screen import Canvas, Screen, TerminalRenderer
@@ -40,13 +44,14 @@ from .table import banner, key_values, print_table, render_table, section
 from .text import display_width, pad, strip_ansi, truncate, wrap
 
 __all__ = [
-	"caps", "config", "keys", "loop", "palette", "pager", "progress",
+	"caps", "chrome", "config", "keys", "loop", "palette", "pager", "progress",
 	"prompts", "screen", "table", "text",
 	"Capabilities", "detect", "init_ansi", "require_tty",
 	"CONTRAST_DARK", "CONTRAST_LIGHT", "RESET", "SOFT", "THEMES", "prefix",
 	"style", "theme",
 	"display_width", "pad", "strip_ansi", "truncate", "wrap",
 	"banner", "key_values", "print_table", "render_table", "section",
+	"header", "panel", "rule", "field", "status", "fill", "menu",
 	"Canvas", "Screen", "TerminalRenderer",
 	"ask_choice", "ask_int", "ask_text",
 	"LiveRegion", "ProgressBar", "Spinner",

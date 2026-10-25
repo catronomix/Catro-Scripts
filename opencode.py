@@ -95,18 +95,17 @@ def run_opencode(opencode_bin, args):
 def print_not_installed(cap=None):
 	# Install guidance shown when `opencode` is not on PATH.
 	cap = cap or tui.detect()
-	url = lambda text: tui.style(text, fg="fg", cap=cap)
 	command = lambda text: tui.style(text, fg="success", cap=cap)
 	print()
-	print(tui.style("--- OPENCODE NOT FOUND ---", fg="header", bold=True, cap=cap))
-	print(tui.style("The `opencode` CLI is not installed or not on your PATH.",
-					fg="error", cap=cap))
+	print(tui.header("--- OPENCODE NOT FOUND ---", cap=cap))
+	print(tui.status("error",
+					 "The `opencode` CLI is not installed or not on your PATH.",
+					 cap=cap))
 	print()
-	print("{} {}".format(tui.style("Get it here:", bold=True, cap=cap),
-						 url("https://opencode.ai")))
-	print("{} {}\n".format(tui.style("Docs (CLI):", bold=True, cap=cap),
-						   url("https://opencode.ai/docs/cli")))
-	print("{}".format(tui.style("Install options:", bold=True, cap=cap)))
+	print(tui.field("Get it here:", "https://opencode.ai", cap=cap))
+	print(tui.field("Docs (CLI):", "https://opencode.ai/docs/cli", cap=cap))
+	print()
+	print(tui.section("Install options:", cap=cap))
 	print("  {}   (macOS/Linux)".format(
 		command("curl -fsSL https://opencode.ai/install | bash")))
 	print("  {}                              (npm, cross-platform)".format(
@@ -135,7 +134,7 @@ def print_usage(default_model, cap=None):
 	cap = cap or tui.detect()
 	command = lambda text: tui.style(text, fg="success", cap=cap)
 	print()
-	print(tui.style("--- USAGE ---", fg="header", bold=True, cap=cap))
+	print(tui.header("--- USAGE ---", cap=cap))
 	print("  {}".format(command('catro-scripts opencode "<instruction>"')))
 	print("  {}  (script joins + quotes for you)".format(
 		command("catro-scripts opencode <unbracketed words>")))
@@ -145,13 +144,12 @@ def print_usage(default_model, cap=None):
 		command("catro-scripts opencode -m <provider/model[#variant]>")))
 	if default_model:
 		print()
-		print("{} {} (from opencode.default)".format(
-			tui.style("Default model:", bold=True, cap=cap),
-			tui.style(default_model, fg="fg", cap=cap)))
+		print(tui.field("Default model:",
+						"{} (from opencode.default)".format(default_model),
+						cap=cap))
 	else:
 		print()
-		print("{} (none saved yet)".format(
-			tui.style("Default model:", bold=True, cap=cap)))
+		print(tui.field("Default model:", "(none saved yet)", cap=cap))
 
 
 def list_models(opencode_bin, cap=None):
@@ -159,16 +157,15 @@ def list_models(opencode_bin, cap=None):
 	cap = cap or tui.detect()
 	default_model = read_default_model()
 	print()
-	print(tui.style("--- AVAILABLE MODELS ---", fg="header", bold=True, cap=cap))
+	print(tui.header("--- AVAILABLE MODELS ---", cap=cap))
 	if default_model:
-		print("{} {}".format(tui.style("Default:", bold=True, cap=cap),
-							 tui.style(default_model, fg="fg", cap=cap)))
+		print(tui.field("Default:", default_model, cap=cap))
 	try:
 		result = run_opencode(opencode_bin, ['models'])
 		sys.exit(result.returncode)
 	except OSError as e:
-		print(tui.style(f"Failed to run `opencode models`: {e}", fg="error",
-						cap=cap))
+		print(tui.status("error", f"Failed to run `opencode models`: {e}",
+						 cap=cap))
 		sys.exit(1)
 	finally:
 		print_usage(read_default_model(), cap)
@@ -182,13 +179,12 @@ def run_instruction(opencode_bin, model, instruction, cap=None):
 		cmd += ['-m', model]
 	cmd += [instruction]
 	label = f" with model {model}" if model else ""
-	print(tui.style(f"-> Running opencode{label}...", fg="border", bold=True,
-					cap=cap))
+	print(tui.status("info", f"Running opencode{label}...", cap=cap))
 	try:
 		result = run_opencode(opencode_bin, cmd[1:])
 		sys.exit(result.returncode)
 	except OSError as e:
-		print(tui.style(f"Failed to launch opencode: {e}", fg="error", cap=cap))
+		print(tui.status("error", f"Failed to launch opencode: {e}", cap=cap))
 		sys.exit(1)
 
 
@@ -203,8 +199,10 @@ def parse_args(argv):
 		if token in ('-m', '--model'):
 			# Model flag consumes the next token as the model reference.
 			if i + 1 >= len(argv) or argv[i + 1].startswith('-'):
-				print(tui.style("Error: -m requires a model argument "
-								"(provider/model[#variant]).", fg="error"))
+				print(tui.status(
+					"error",
+					"Error: -m requires a model argument "
+					"(provider/model[#variant])."))
 				sys.exit(2)
 			model = argv[i + 1].strip()
 			i += 2
@@ -232,8 +230,8 @@ def main():
 	if model and not instruction:
 		# `-m <model>` alone persists the default model for future runs.
 		write_default_model(model)
-		print("{} (opencode.default)".format(
-			tui.style(f"Saved default model: {model}", fg="success", cap=cap)))
+		print(tui.status(
+			"ok", f"Saved default model: {model} (opencode.default)", cap=cap))
 		return
 
 	if not instruction:

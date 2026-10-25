@@ -73,7 +73,7 @@ def distribute_files(folder_path, counts, allowed_extensions, include_all, prefi
 	files = get_target_files(folder_path, allowed_extensions, include_all)
 	
 	if not files:
-		print("No matching files found. Nothing to do.")
+		print(tui.status("warn", "No matching files found. Nothing to do.", cap=cap))
 		return
 
 	random.shuffle(files)
@@ -162,12 +162,12 @@ def main():
 		# closed stdin with the shared preflight instead of letting input()
 		# raise EOFError in the middle of a destructive run.
 		tui.require_tty("randomsorter --all")
-		print(tui.style(
+		print(tui.status("error",
 			"WARNING: You are using the --all flag. This will process system files and scripts.",
-			fg="error", cap=cap))
+			cap=cap))
 		confirm = tui.ask_text("Are you sure? (y/n): ")
 		if confirm.lower() != 'y':
-			print("Operation cancelled.")
+			print(tui.status("info", "Operation cancelled.", cap=cap))
 			sys.exit()
 
 	allowed = None
@@ -187,7 +187,8 @@ def main():
 		args.prefix, args.keep, args.digits, args.scramble, cap
 	)
 	
-	print("\nProcessing complete.")
+	print()
+	print(tui.section("Processing complete.", cap=cap))
 
 if __name__ == "__main__":
 	main()

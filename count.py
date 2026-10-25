@@ -175,8 +175,9 @@ def main():
 	target_path = os.path.abspath(args.directory)
 
 	if not os.path.isdir(target_path):
-		print(tui.style(f"Error: '{target_path}' is not a valid directory.",
-						fg="error", cap=cap))
+		print(tui.status("error",
+						 f"Error: '{target_path}' is not a valid directory.",
+						 cap=cap))
 		sys.exit(1)
 
 	is_dir_mode = args.dirs is not None
@@ -190,24 +191,32 @@ def main():
 		depth = args.subdirs if is_recursive else 0
 
 	print()
-	print("{} {}".format(tui.style("Scanning:", bold=True, cap=cap), target_path))
-	print("{} {}".format(tui.style("Target:", bold=True, cap=cap),
-						 "Directories" if is_dir_mode else "File Extensions"))
-	
 	if is_dir_mode:
 		depth_desc = f"Directories at depth {depth}"
 	else:
 		depth_desc = f"Recursive (up to {depth} levels)" if is_recursive else "Current folder contents"
-	print("{} {}".format(tui.style("Mode:", bold=True, cap=cap), depth_desc))
+
+	# The scan parameters are one key/value block: aligned muted keys on a
+	# terminal, the same space-joined lines as before on a pipe (the plain
+	# branch keeps the historical `key value` form, not a TAB record).
+	meta = [
+		("Scanning:", target_path),
+		("Target:", "Directories" if is_dir_mode else "File Extensions"),
+		("Mode:", depth_desc),
+	]
 	if args.all:
-		print("{} {}".format(tui.style("Options:", bold=True, cap=cap),
-							 "Including hidden items"))
+		meta.append(("Options:", "Including hidden items"))
+	if cap.plain:
+		for key, value in meta:
+			print("{} {}".format(key, value))
+	else:
+		print(tui.key_values(None, meta, cap=cap))
 	print()
 
 	stats = get_stats(target_path, mode=mode, recursive=is_recursive, max_depth=depth, show_hidden=args.all)
 
 	if not stats:
-		print("No matches found.")
+		print(tui.status("warn", "No matches found.", cap=cap))
 		# Helpful tip if the directory isn't actually empty but just has subdirectories
 		try:
 			content = os.listdir(target_path)
@@ -215,8 +224,11 @@ def main():
 				dirs_only = [c for c in content if os.path.isdir(os.path.join(target_path, c))]
 				if dirs_only:
 					print()
-					print("{} Found {} subdirectories. Use '-s' to recurse or '-d' to list them.".format(
-						tui.style("Tip:", bold=True, cap=cap), len(dirs_only)))
+					print(tui.status(
+						"info",
+						"Found {} subdirectories. Use '-s' to recurse or '-d' "
+						"to list them.".format(len(dirs_only)),
+						cap=cap))
 		except:
 			pass
 		return
@@ -241,21 +253,23 @@ def main():
 						 format_size(total_size, raw=args.raw))))
 		return
 
-	print(tui.style("{:<{}} {:<{}} {:<{}}".format(
+	# Column header and footer are chrome headings/band; the rules are the
+	# border role. The rows keep the pinned rainbow data colours.
+	print(tui.section("{:<{}} {:<{}} {:<{}}".format(
 		label, NAME_WIDTH, count_label, COUNT_WIDTH, "Total Size", SIZE_WIDTH),
-		bold=True, cap=cap))
-	print("-" * 70)
+		cap=cap))
+	print(tui.rule(70, cap=cap))
 
 	for i, row in enumerate(rows):
 		print(tui.style("{:<{}} {:<{}} {:<{}}".format(
 			row[0], NAME_WIDTH, row[1], COUNT_WIDTH, row[2], SIZE_WIDTH),
 			fg=RAINBOW[i % len(RAINBOW)], cap=cap))
 
-	print("-" * 70)
-	print(tui.style("{:<{}} {:<{}} {:<{}}".format(
+	print(tui.rule(70, cap=cap))
+	print(tui.fill("{:<{}} {:<{}} {:<{}}".format(
 		footer_label, NAME_WIDTH, total_count, COUNT_WIDTH,
 		format_size(total_size, raw=args.raw), SIZE_WIDTH),
-		bold=True, cap=cap))
+		width=70, bg="surface", fg="header", cap=cap))
 	print()
 
 if __name__ == "__main__":

@@ -168,6 +168,18 @@ PAIR_ROLES = (
     (9, "header", "surface"),  # table header row
 )
 
+# The full-screen furniture of the reader, named instead of numbered so the
+# frame and the bars cannot drift away from the palette roles: the window is
+# painted `bg`, the frame `border`, and the header/footer bars sit on `surface`
+# and `zebra_bg` exactly like a chrome.header/field page in the other scripts.
+CHROME_PAIRS = {
+    "window": 1,     # fg on bg: the whole-screen background fill
+    "frame": 8,      # border on bg: viewport frame and scroll track
+    "thumb": 6,      # header on surface: scroll thumb, same band as the status
+    "status": 6,     # header on surface: status bar
+    "shortcuts": 7,  # fg on zebra_bg: shortcut bar
+}
+
 
 def theme_id(theme_mode=0):
     """Shared theme id for a display mode (mode 0 is soft)."""
@@ -315,8 +327,8 @@ def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
     bot_inner = "║ ├" + "─" * (width - 6) + "┤ ║"
     bot_outer = "╚═╧" + "═" * (width - 6) + "╧═╝"
 
-    border_attr = curses.color_pair(8) | curses.A_BOLD
-    thumb_attr = curses.color_pair(6) | curses.A_BOLD
+    border_attr = curses.color_pair(CHROME_PAIRS["frame"]) | curses.A_BOLD
+    thumb_attr = curses.color_pair(CHROME_PAIRS["thumb"]) | curses.A_BOLD
 
     track_top = 2
     track_bottom = height - 3
@@ -485,7 +497,7 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
     theme_names = [name.replace("-", " ") for name in THEME_MODES]
 
     init_theme_colors(theme_mode, cap)
-    stdscr.bkgd(" ", curses.color_pair(1))
+    stdscr.bkgd(" ", curses.color_pair(CHROME_PAIRS["window"]))
 
     scroll_top = 0
     scroll_left = 0
@@ -605,7 +617,8 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
 
         try:
             stdscr.addstr(
-                status_y1, x_offset, status_bar, curses.color_pair(6) | curses.A_BOLD
+                status_y1, x_offset, status_bar,
+                curses.color_pair(CHROME_PAIRS["status"]) | curses.A_BOLD
             )
         except curses.error:
             pass
@@ -615,7 +628,8 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
 
         try:
             stdscr.addstr(
-                status_y2, x_offset, shortcuts_bar, curses.color_pair(7) | curses.A_BOLD
+                status_y2, x_offset, shortcuts_bar,
+                curses.color_pair(CHROME_PAIRS["shortcuts"]) | curses.A_BOLD
             )
         except curses.error:
             pass
@@ -633,7 +647,7 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
         elif key in (ord("c"), ord("C")):
             theme_mode = (theme_mode + 1) % len(THEME_MODES)
             init_theme_colors(theme_mode, cap)
-            stdscr.bkgd(" ", curses.color_pair(1))
+            stdscr.bkgd(" ", curses.color_pair(CHROME_PAIRS["window"]))
             stdscr.clear()
         elif key in (ord("["), ord("a"), ord("A"), curses.KEY_SLEFT):
             scroll_left = max(0, scroll_left - 4)

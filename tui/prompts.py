@@ -8,12 +8,15 @@ prompt label. Every helper returns the cancelled value instead of raising when
 stdin closes (EOF), and none of them touch terminal modes.
 """
 
-from . import caps, palette
+from . import caps, chrome, palette
 
 
 def _label(text):
+	"""Accent pointer plus a `header`-on-`surface` label, resolved once."""
 	cap = caps.detect()
-	return palette.style(text, fg="header", bold=True, cap=cap)
+	return "{} {}".format(
+		palette.style(">", fg="accent", cap=cap),
+		palette.style(text, fg="header", bg="surface", bold=True, cap=cap))
 
 
 _EOF = object()  # sentinel: a caller wants EOF told apart from a blank answer
@@ -66,9 +69,7 @@ def ask_choice(prompt, options):
 	if not options:
 		return None
 	cap = caps.detect()
-	for index, option in enumerate(options, 1):
-		print("{} {}. {}".format(palette.style(">", fg="accent", cap=cap), index,
-								 palette.style(str(option), fg="fg", cap=cap)))
+	print(chrome.menu(options, selected=None, cap=cap))
 	raw = ask_text("{} [1-{}, q to cancel]: ".format(prompt, len(options)))
 	if raw.lower() in ("q", "quit", "exit"):
 		return None

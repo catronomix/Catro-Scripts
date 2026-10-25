@@ -69,9 +69,9 @@ def check_requirements(cap=None):
                if not check_bin(binary)]
     if not missing:
         return True
-    print(tui.style(f"Error: {' and '.join(missing)} not installed or not found. "
+    print(tui.status("error", f"Error: {' and '.join(missing)} not installed or not found. "
                     "Place the binary in the script folder or add it to PATH.",
-                    fg="error", cap=cap), file=sys.stderr)
+                    cap=cap), file=sys.stderr)
     return False
 
 def _error_tail(stderr, fallback):
@@ -99,23 +99,23 @@ def get_audio_info(filepath, cap=None):
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except OSError as exc:
-        print(tui.style(f"Warning: could not run {os.path.basename(FFPROBE_BIN)}: "
+        print(tui.status("warn", f"could not run {os.path.basename(FFPROBE_BIN)}: "
                         f"{_error_tail(getattr(exc, 'stderr', None), exc)}",
-                        fg="warn", cap=cap), file=sys.stderr)
+                        cap=cap), file=sys.stderr)
         return _unknown_info()
 
     if result.returncode != 0:
-        print(tui.style(f"Warning: {os.path.basename(FFPROBE_BIN)} could not probe "
+        print(tui.status("warn", f"{os.path.basename(FFPROBE_BIN)} could not probe "
                         f"{os.path.basename(filepath)}: "
                         f"{_error_tail(result.stderr, f'exit status {result.returncode}')}",
-                        fg="warn", cap=cap), file=sys.stderr)
+                        cap=cap), file=sys.stderr)
         return _unknown_info()
 
     try:
         data = json.loads(result.stdout.decode('utf-8'))
     except (UnicodeDecodeError, ValueError):
-        print(tui.style(f"Warning: could not read {os.path.basename(FFPROBE_BIN)} output "
-                        f"for {os.path.basename(filepath)}", fg="warn", cap=cap),
+        print(tui.status("warn", f"could not read {os.path.basename(FFPROBE_BIN)} output "
+                        f"for {os.path.basename(filepath)}", cap=cap),
               file=sys.stderr)
         return _unknown_info()
 
@@ -170,9 +170,9 @@ def prompt_codec_settings(defaults, cap=None):
         '4': ('flac', 'flac', '.flac')
     }
 
-    print(tui.style("Select Target Format:", fg="fg", cap=cap))
-    for k, v in formats.items():
-        print(f"  {k}. {v[0]}")
+    print(tui.section("Select Target Format:", cap=cap))
+    print(tui.menu([value[0] for value in formats.values()], selected=None,
+                   cap=cap))
 
     choice = tui.ask_text("Choice (default=wav): ", '3')
     fmt_name, codec, ext = formats.get(choice, formats['3'])
@@ -193,8 +193,8 @@ def prompt_codec_settings(defaults, cap=None):
                           default_br)
         bit_settings = ['-b:a', br]
     elif fmt_name == 'wav':
-        print(tui.style("Select Bit Depth:\n  1. 16-bit\n  2. 24-bit\n  3. 32-bit",
-                        fg="fg", cap=cap))
+        print(tui.section("Select Bit Depth:", cap=cap))
+        print(tui.menu(["16-bit", "24-bit", "32-bit"], selected=None, cap=cap))
         depth = tui.ask_text("Choice (default=1): ", '1')
         depth_map = {'1': 'pcm_s16le', '2': 'pcm_s24le', '3': 'pcm_s32le'}
         codec = depth_map.get(depth, 'pcm_s16le')
@@ -213,8 +213,8 @@ def process_file(file_path, args, codec_settings, index=0, cap=None):
 
     # If we aren't re-encoding and can't find a stream, we must skip
     if not info and not codec_settings:
-        print(tui.style(f"[Skip] Could not find audio stream in: {file_path}",
-                        fg="warn", cap=cap))
+        print(tui.status("warn", f"Could not find audio stream in: {file_path}",
+                         cap=cap))
         return True
 
     # Determine base output name
@@ -265,12 +265,12 @@ def process_file(file_path, args, codec_settings, index=0, cap=None):
 
     # Only a stream copy gets a second chance; an explicit codec choice is final.
     if codec_settings:
-        print(tui.style(f"  - Error: could not convert {os.path.basename(file_path)}: "
-                        f"{encode_error}", fg="error", cap=cap), file=sys.stderr)
+        print(tui.status("error", f"  - Error: could not convert {os.path.basename(file_path)}: "
+                        f"{encode_error}", cap=cap), file=sys.stderr)
         return False
 
-    print(tui.style("  - Stream copy failed. Falling back to AAC re-encoding...",
-                    fg="warn", cap=cap))
+    print(tui.status("warn", "Stream copy failed. Falling back to AAC re-encoding...",
+                     cap=cap))
     out_path = os.path.splitext(out_path)[0] + ".m4a"
     out_path = get_unique_filename(out_path)
     cmd = [FFMPEG_BIN, '-i', file_path, '-vn', '-acodec', 'aac', out_path]
@@ -278,10 +278,10 @@ def process_file(file_path, args, codec_settings, index=0, cap=None):
         subprocess.run(cmd, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         return True
     except (subprocess.CalledProcessError, OSError) as exc:
-        print(tui.style(f"  - Error: could not extract audio from "
+        print(tui.status("error", f"  - Error: could not extract audio from "
                         f"{os.path.basename(file_path)}: "
                         f"{_error_tail(getattr(exc, 'stderr', None), exc)}",
-                        fg="error", cap=cap), file=sys.stderr)
+                        cap=cap), file=sys.stderr)
         return False
 
 def main(argv=None):
@@ -334,7 +334,7 @@ def main(argv=None):
             if is_audio(f): has_audio_input = True
 
     if not files_to_process:
-        print(tui.style("No valid files found to process.", fg="warn", cap=cap))
+        print(tui.status("warn", "No valid files found to process.", cap=cap))
         return 0
 
     # Nothing below can work without both binaries, so fail once and clearly.
@@ -343,8 +343,9 @@ def main(argv=None):
 
     # Automatically imply -c if audio files are present
     if has_audio_input and not args.codec:
-        print(tui.style("Audio files detected. Enabling interactive conversion mode.",
-                        fg="muted", cap=cap))
+        print(tui.status("info",
+                         "Audio files detected. Enabling interactive conversion mode.",
+                         cap=cap))
         args.codec = True
 
     codec_settings = None
@@ -353,8 +354,8 @@ def main(argv=None):
         first_info = get_audio_info(files_to_process[0], cap) or {'sample_rate': '44100', 'bit_rate': '192000'}
         codec_settings = prompt_codec_settings(first_info, cap)
 
-    print(tui.style(f"Found {len(files_to_process)} file(s). Starting...",
-                    fg="header", cap=cap))
+    print(tui.status("info", f"Found {len(files_to_process)} file(s). Starting...",
+                     cap=cap))
 
     failures = 0
     for i, file_path in enumerate(files_to_process):
@@ -362,9 +363,9 @@ def main(argv=None):
             failures += 1
 
     print()
-    print(tui.style("Done.", fg="success", cap=cap))
+    print(tui.status("ok", "Done.", cap=cap))
     if failures:
-        print(tui.style(f"{failures} file(s) failed.", fg="error", cap=cap),
+        print(tui.status("error", f"{failures} file(s) failed.", cap=cap),
               file=sys.stderr)
         return 1
     return 0

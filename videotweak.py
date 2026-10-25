@@ -153,16 +153,11 @@ def get_codec_choice(cap):
 	available_options.append(("SHOW_ALL", "[Show All Available System Encoders]"))
 
 	print()
-	print(tui.section("--- Select Output Codec ---", cap=cap))
-	for i, (cmd, desc) in enumerate(available_options, 1):
-		if cmd == "SHOW_ALL":
-			print("{} {}".format(tui.style("{}.", fg="accent", cap=cap),
-								 tui.style(desc, fg="warn", cap=cap)))
-		else:
-			print("{} {} - {}".format(
-				tui.style("{}.", fg="accent", cap=cap),
-				tui.style("{:<18}".format(cmd), bold=True, cap=cap),
-				desc))
+	labels = []
+	for cmd, desc in available_options:
+		labels.append(desc if cmd == "SHOW_ALL"
+					  else "{} - {}".format(cmd, desc))
+	print(tui.menu(labels, selected=None, title="Select Output Codec", cap=cap))
 	
 	codec = ""
 	while True:
@@ -175,12 +170,10 @@ def get_codec_choice(cap):
 			if selected_cmd == "SHOW_ALL":
 				all_enc = sorted(system_encoders.items())
 				print()
-				print(tui.section("--- All Available Video Encoders ---", cap=cap))
-				for j, (name, desc) in enumerate(all_enc, 1):
-					print("{} {} {}".format(
-						tui.style(f"{j:3}.", fg="accent", cap=cap),
-						tui.style(f"{name:<20}", bold=True, cap=cap),
-						desc[:60]))
+				print(tui.menu(["{} {}".format(name, desc[:60])
+								for name, desc in all_enc],
+							   selected=None,
+							   title="All Available Video Encoders", cap=cap))
 				sub_choice = input(f"\nSelect by number: ").strip()
 				if sub_choice.isdigit() and 1 <= int(sub_choice) <= len(all_enc):
 					codec = all_enc[int(sub_choice)-1][0]
@@ -188,17 +181,13 @@ def get_codec_choice(cap):
 				continue
 			codec = selected_cmd
 			break
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 	# Container selection based on compatible pairs
 	containers = CODEC_TO_CONTAINERS.get(codec, [(".mp4", "MP4"), (".mkv", "Matroska")])
 	print()
-	print(tui.section("--- Select Output Container ---", cap=cap))
-	for i, (ext, desc) in enumerate(containers, 1):
-		print("{} {} ({})".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<6}".format(ext), bold=True, cap=cap),
-			desc))
+	print(tui.menu(["{} ({})".format(ext, desc) for ext, desc in containers],
+				   selected=None, title="Select Output Container", cap=cap))
 	
 	while True:
 		choice = input(f"\nChoose Container (1-{len(containers)}) [1]: ").strip()
@@ -206,7 +195,7 @@ def get_codec_choice(cap):
 			return codec, containers[0][0]
 		if choice.isdigit() and 1 <= int(choice) <= len(containers):
 			return codec, containers[int(choice)-1][0]
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 def get_resize_choice(cap):
 	print()
@@ -234,12 +223,9 @@ def get_resize_choice(cap):
 		("limit", "Limit (Scale proportional within bounds)")
 	]
 	print()
-	print(tui.style("Select Resize Method:", fg="warn", cap=cap))
-	for i, (cmd, desc) in enumerate(methods, 1):
-		print("{} {} - {}".format(
-			tui.style("{}.", fg="accent", cap=cap),
-			tui.style("{:<8}".format(cmd), bold=True, cap=cap),
-			desc))
+	print(tui.section("Resize Method", cap=cap))
+	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in methods],
+				   selected=None, cap=cap))
 	
 	while True:
 		choice = input(f"\nChoose (1-{len(methods)}) [1]: ").strip()
@@ -249,15 +235,14 @@ def get_resize_choice(cap):
 		if choice.isdigit() and 1 <= int(choice) <= len(methods):
 			method = methods[int(choice)-1][0]
 			break
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 	quant = 2
 	if method == "limit":
 		q_opts = [0, 2, 4, 8, 16, 32, 64]
 		print()
-		print(tui.style("Select Edge Quantization (pixels):", fg="warn", cap=cap))
-		print("{} {}".format(tui.style("Options:", fg="accent", cap=cap),
-							 ", ".join(map(str, q_opts))))
+		print(tui.section("Select Edge Quantization (pixels)", cap=cap))
+		print(tui.section("Options: " + ", ".join(map(str, q_opts)), cap=cap))
 		while True:
 			q_in = input(f"Choose quantization [2]: ").strip()
 			if not q_in:
@@ -266,13 +251,12 @@ def get_resize_choice(cap):
 			if q_in.isdigit() and int(q_in) in q_opts:
 				quant = int(q_in)
 				break
-			print(tui.style("Invalid choice.", fg="error", cap=cap))
+			print(tui.status("error", "Invalid choice.", cap=cap))
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
 def get_effect_choice(cap):
 	print()
-	print(tui.section("--- Select Tweak Effect ---", cap=cap))
 	effects = [
 		"Reverse",
 		"Lower FPS (Drop frames, keep duration)",
@@ -281,14 +265,13 @@ def get_effect_choice(cap):
 		"Time Stretch (Exact Duration)",
 		"Passthrough (Transcode/Resize only)",
 	]
-	for i, desc in enumerate(effects, 1):
-		print("{} {}".format(tui.style("{}.", fg="accent", cap=cap), desc))
+	print(tui.menu(effects, selected=None, title="Select Tweak Effect", cap=cap))
 	
 	while True:
 		choice = input(f"\nChoose (1-6): ").strip()
 		if choice in ['1', '2', '3', '4', '5', '6']:
 			return int(choice)
-		print(tui.style("Invalid choice.", fg="error", cap=cap))
+		print(tui.status("error", "Invalid choice.", cap=cap))
 
 def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap):
 	base_name = os.path.basename(file_path)
@@ -336,8 +319,8 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 		if not target_dur or target_dur <= 0: return
 		speed_factor = target_dur / orig_duration
 		print()
-		print(tui.style("Interpolation Mode:", fg="header", bold=True, cap=cap)
-			  + " 1. Standard  2. Motion-Compensated")
+		print(tui.section("Interpolation Mode", cap=cap))
+		print(tui.menu(["Standard", "Motion-Compensated"], selected=None, cap=cap))
 		interp_choice = input("Choice [1]: ").strip()
 		if interp_choice == '2':
 			v_filter = f"setpts={speed_factor}*PTS,minterpolate=fps={orig_fps}:mi_mode=mci"
@@ -402,13 +385,13 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 
 	cmd.append(output_path)
 
-	print(tui.style(f"Tweaking: {base_name}...", fg="warn", cap=cap))
+	print(tui.header(f"Tweaking: {base_name}...", cap=cap))
 	result = subprocess.run(cmd, capture_output=True, text=True)
 	
 	if result.returncode == 0:
-		print(tui.style(f"[Success] Saved to {output_path}", fg="success", cap=cap))
+		print(tui.status("ok", f"Saved to {output_path}", cap=cap))
 	else:
-		print(tui.style("FFmpeg Error:", fg="error", cap=cap) + "\n" + result.stderr)
+		print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
 
 def main():
 	tui.init_ansi()
@@ -433,7 +416,7 @@ def main():
 	try:
 		from decord import VideoReader
 	except ImportError:
-		print(tui.style("Error: 'decord' library is not installed.", fg="error", cap=cap))
+		print(tui.status("error", "'decord' library is not installed.", cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install decord")
 		sys.exit(1)
 	
@@ -452,7 +435,7 @@ def main():
 				 if f.lower().endswith(filter_criteria) and os.path.isfile(os.path.join(search_dir, f))]
 	
 	if not files:
-		print(tui.style("No video files found matching criteria.", fg="error", cap=cap))
+		print(tui.status("error", "No video files found matching criteria.", cap=cap))
 		return
 
 	if args.codec:

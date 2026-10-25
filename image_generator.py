@@ -37,6 +37,10 @@ Image = None
 MAX_IMAGES = 100000
 
 def generate_colored_images(cap):
+	# The masthead is page chrome: the theme decides its colours.
+	print(tui.header("Image Generator", "Timestamped colour-coded test images",
+					 cap=cap))
+
 	# User Inputs; tui.prompts strips the text, applies the default and turns a
 	# closed stdin into the default instead of a traceback.
 	hex_input = tui.ask_text("Enter RGB hex color (e.g., 3498db): ").lstrip('#')
@@ -44,13 +48,14 @@ def generate_colored_images(cap):
 	try:
 		rgb = tuple(int(hex_input[i:i+2], 16) for i in (0, 2, 4))
 	except (ValueError, IndexError):
-		print(tui.style("Error: Invalid hex color format. Please use 6 characters (e.g., FF5733).",
-						fg="error", cap=cap))
+		print(tui.status("error",
+						 "Error: Invalid hex color format. Please use 6 characters (e.g., FF5733).",
+						 cap=cap))
 		return
 
 	count = tui.ask_int("Enter number of images", 1, MAX_IMAGES)
 	if count is None:
-		print(tui.style("Error: Amount must be an integer.", fg="error", cap=cap))
+		print(tui.status("error", "Error: Amount must be an integer.", cap=cap))
 		return
 
 	name_prefix = tui.ask_text("Enter image name prefix (e.g., texture): ",
@@ -70,14 +75,14 @@ def generate_colored_images(cap):
 		folder_name = f"{folder_date_part}{random_hour:02d}{random_minute:02d}"
 		
 	except ValueError:
-		print(tui.style("Error: Invalid date format. Use YYYY-MM-DD.",
-						fg="error", cap=cap))
+		print(tui.status("error", "Error: Invalid date format. Use YYYY-MM-DD.",
+						 cap=cap))
 		return
 
 	# Create the directory
 	if not os.path.exists(folder_name):
 		os.makedirs(folder_name)
-		print(tui.style(f"Created directory: {folder_name}", fg="success", cap=cap))
+		print(tui.status("ok", f"Created directory: {folder_name}", cap=cap))
 
 	# Image constants
 	res = 512
@@ -89,7 +94,7 @@ def generate_colored_images(cap):
 	total_seconds = (end_time - start_time).total_seconds()
 	interval = total_seconds / (count - 1) if count > 1 else 0
 
-	print(f"Generating {count} images in {folder_name}...")
+	print(tui.field("Generating", f"{count} images in {folder_name}", cap=cap))
 
 	for i in range(count):
 		file_name = f"{name_prefix}_{i+1:03d}.png"
@@ -131,8 +136,9 @@ def generate_colored_images(cap):
 		print(f"Created {file_path} | Timestamp: {target_dt.strftime('%H:%M:%S')}")
 
 	print()
-	print(tui.style(f"Process complete. Files are in: {os.path.abspath(folder_name)}",
-					fg="success", bold=True, cap=cap))
+	print(tui.status("ok",
+					 f"Process complete. Files are in: {os.path.abspath(folder_name)}",
+					 cap=cap))
 
 def main():
 	# parse_args() first so --help works without pillow or a terminal.
@@ -154,8 +160,8 @@ def main():
 	try:
 		from PIL import Image
 	except ImportError:
-		print(tui.style("Error: 'pillow' library is not installed.",
-						fg="error", cap=cap))
+		print(tui.status("error", "Error: 'pillow' library is not installed.",
+						 cap=cap))
 		print("Please install it using: pip install pillow")
 		sys.exit(1)
 

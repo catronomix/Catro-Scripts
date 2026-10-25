@@ -120,6 +120,26 @@ class AskIntTests(unittest.TestCase):
 		self.assertEqual(len(script.prompts), 3)
 
 
+class LabelTests(unittest.TestCase):
+	"""The prompt label is an accent pointer plus a `header`-on-`surface` band."""
+
+	def test_label_shape(self):
+		cap = prompts.caps.Capabilities(level="true", unicode=True, width=None,
+										isatty=True, plain=False, reason="test")
+		with mock.patch.object(prompts.caps, "detect", return_value=cap):
+			label = prompts._label("Name")
+		self.assertEqual(
+			label,
+			"\033[38;2;245;205;104m>\033[0m"
+			" \033[38;2;245;205;104m\033[48;2;41;34;56m\033[1mName\033[0m")
+
+	def test_label_at_level_none_is_plain(self):
+		cap = prompts.caps.Capabilities(level="none", unicode=True, width=None,
+										isatty=True, plain=False, reason="test")
+		with mock.patch.object(prompts.caps, "detect", return_value=cap):
+			self.assertEqual(prompts._label("Name"), "> Name")
+
+
 class AskChoiceTests(unittest.TestCase):
 	def ask(self, answers):
 		with mock.patch("builtins.input", Scripted(answers)), \
@@ -137,6 +157,18 @@ class AskChoiceTests(unittest.TestCase):
 
 	def test_empty_option_list_is_cancel(self):
 		self.assertIsNone(prompts.ask_choice("Pick", []))
+
+	def test_rows_come_from_page_menu(self):
+		cap = prompts.caps.Capabilities(level="none", unicode=False, width=None,
+										isatty=False, plain=True, reason="pipe")
+		printed = []
+		with mock.patch.object(prompts.caps, "detect", return_value=cap), \
+				mock.patch("builtins.input", Scripted(["1"])), \
+				mock.patch("builtins.print",
+						   lambda *args, **kwargs: printed.append(" ".join(
+							   str(arg) for arg in args))):
+			self.assertEqual(prompts.ask_choice("Pick", ["a", "b"]), 0)
+		self.assertEqual(printed, ["1. a\n2. b"])
 
 
 if __name__ == "__main__":
