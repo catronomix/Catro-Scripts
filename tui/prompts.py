@@ -16,19 +16,36 @@ def _label(text):
 	return palette.style(text, fg="header", bold=True, cap=cap)
 
 
-def ask_text(prompt, default=""):
-	"""Free text; empty input yields `default`, EOF yields `default`."""
+_EOF = object()  # sentinel: a caller wants EOF told apart from a blank answer
+
+
+def _read(prompt, default="", eof=None):
+	"""One stripped line; closed/aborted stdin yields `eof` or `default`."""
 	try:
 		value = input(_label(prompt)).strip()
 	except (EOFError, KeyboardInterrupt):
-		return default
+		return default if eof is None else eof
 	return value or default
 
 
+def ask_text(prompt, default="", eof=None):
+	"""Free text; empty input yields `default`, EOF yields `default` (or `eof`)."""
+	return _read(prompt, default, eof)
+
+
 def ask_int(prompt, minimum, maximum, default=None):
-	"""Integer within [minimum, maximum]; blank yields `default`."""
+	"""Integer within [minimum, maximum]; blank yields `default`, EOF cancels.
+
+	EOF has to cancel rather than re-prompt: `ask_text` cannot tell a closed
+	stdin from an empty line, so the blank branch below used to `continue`
+	straight into another `input()` that raised `EOFError` again - a prompt
+	loop that never ended (and swallowed Ctrl-C with it).
+	"""
 	while True:
-		raw = ask_text("{} [{}]: ".format(prompt, default if default is not None else "q to cancel"))
+		raw = ask_text("{} [{}]: ".format(prompt, default if default is not None else "q to cancel"),
+					   eof=_EOF)
+		if raw is _EOF:
+			return None
 		if raw.lower() in ("q", "quit", "exit"):
 			return None
 		if not str(raw).strip():
