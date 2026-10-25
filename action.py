@@ -21,6 +21,7 @@ Usage:
 """
 
 import os
+import re
 import sys
 import json
 import subprocess
@@ -84,6 +85,30 @@ def save_actions(actions):
         return False
 
 
+# cmd.exe syntax characters: an extra arg containing any of them must be
+# wrapped in double quotes or the shell would split / re-interpret it.
+# '%' is intentionally absent - cmd expands %VAR% even inside double quotes, so
+# quoting cannot fix it. That is the documented Windows limitation in README.md.
+_WINDOWS_SHELL_META = re.compile(r'[\s"&|<>^()!]')
+
+
+def quote_extra_arg(arg):
+    """Quotes one extra CLI arg so the platform shell passes it through verbatim.
+
+    The stored macro base string is never touched: it deliberately keeps its own
+    shell syntax. Only the args appended by the caller are quoted.
+    """
+    if os.name == "nt":
+        if not arg:
+            return '""'
+        if not _WINDOWS_SHELL_META.search(arg):
+            return arg
+        # cmd.exe has no escape for a quote inside a quoted string; doubling it
+        # is what child processes expect to receive as a single literal quote.
+        return '"' + arg.replace('"', '""') + '"'
+    return shlex.quote(arg)
+
+
 def run_action(action_name, extra_args):
     """Looks up and executes a macro command string with extra CLI args appended."""
     actions = load_actions()
@@ -99,11 +124,11 @@ def run_action(action_name, extra_args):
 
     base_command = actions[action_name]["command"].strip()
 
-    # Append extra CLI args passed during invocation
+    # Append extra CLI args passed during invocation. Every arg is quoted for
+    # the platform shell: shell metacharacters, spaces and globs inside an arg
+    # must reach the child as one literal argument, never as new syntax.
     if extra_args:
-        formatted_args = " ".join(
-            [shlex.quote(arg) if " " in arg else arg for arg in extra_args]
-        )
+        formatted_args = " ".join(quote_extra_arg(arg) for arg in extra_args)
         full_command = f"{base_command} {formatted_args}"
     else:
         full_command = base_command
