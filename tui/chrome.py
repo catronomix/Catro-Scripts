@@ -4,8 +4,9 @@
 			============
 String-returning building blocks for a page of terminal output: a masthead, a
 framed panel, a horizontal rule, a key/value field, a status line, a filled
-background line and a menu. Nothing here prints and nothing returns a trailing
-newline, so the caller decides how the lines land.
+background line, a menu, a button label and a scrollbar column. Nothing here
+prints and nothing returns a trailing newline, so the caller decides how the
+lines land.
 
 The module is `tui.chrome`, not `tui.page`, because `tui.page` is the pager
 helper (`pager.page`) and keeping that callable is part of the public surface.
@@ -55,12 +56,39 @@ STATUS_MARKERS = {
 }
 MENU_POINTER = ">"
 
+# button_decoration -> (prefix, suffix) wrapped around the label. `chevron`
+# uses the guillemets so it reads as a chevron without doubling `angles`.
+BUTTON_DECORATIONS = {
+	"none": ("", ""), "brackets": ("[ ", " ]"), "angles": ("< ", " >"),
+	"braces": ("{ ", " }"), "colons": (": ", " :"), "pipes": ("| ", " |"),
+	"chevron": ("\u00ab ", " \u00bb"), "ellipsis": ("\u2026 ", " \u2026"),
+}
+
+# The ASCII spelling of the two decorations a cp1252 console cannot take.
+ASCII_DECORATIONS = dict(BUTTON_DECORATIONS, chevron=("<< ", " >>"),
+						 ellipsis=("... ", " ..."))
+
+# button_style -> the palette roles and attributes the label is painted with.
+BUTTON_STYLES = {
+	"filled": {"fg": "bg", "bg": "accent"}, "outline": {"fg": "border"},
+	"plain": {"fg": "fg"}, "underline": {"fg": "fg", "underline": True},
+}
+
+# scrollbar_style -> (thumb, track, ascii thumb, ascii track).
+SCROLLBAR_GLYPHS = {
+	"block": ("\u2588", "\u2591", "#", "."),
+	"line": ("\u2503", "\u2502", "#", "."),
+	"ascii": ("#", "|", "#", "|"),
+}
+
 
 def header(title, subtitle=None, *, width=None, cap=None, theme=None):
 	"""Masthead: title, optional subtitle, then a border rule.
 
 	Title is `header` + bold on `surface`, subtitle `muted` on `surface`; both
-	are bands padded to the page width. Piped, it is just the lines.
+	are bands padded to the page width. The theme's `header_align` left/center/
+	right places the label inside the band; `left` is the shipped default and
+	keeps the leading-space shape byte for byte. Piped, it is just the lines.
 	"""
 	cap = cap or caps.detect()
 	title = _flat(title)
@@ -70,13 +98,16 @@ def header(title, subtitle=None, *, width=None, cap=None, theme=None):
 		if subtitle:
 			lines.append(subtitle)
 		return "\n".join(lines)
+	align = str(palette.properties().get("header_align", "left"))
 	inner = _span(width, cap)
 	if inner is None:
 		inner = max(display_width(title), display_width(subtitle or "")) + 2
 	inner = max(4, inner)
-	lines = [_band(title, inner, fg="header", bold=True, cap=cap, theme=theme)]
+	lines = [_band(title, inner, fg="header", bold=True, align=align,
+				   cap=cap, theme=theme)]
 	if subtitle:
-		lines.append(_band(subtitle, inner, fg="muted", cap=cap, theme=theme))
+		lines.append(_band(subtitle, inner, fg="muted", align=align,
+						   cap=cap, theme=theme))
 	lines.append(rule(inner, cap=cap, theme=theme))
 	return "\n".join(lines)
 
@@ -237,6 +268,70 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	return "\n".join(lines)
 
 
+def button(label, *, focused=False, disabled=False, cap=None, theme=None):
+	"""One button label, shaped by `button_style`/`button_decoration`.
+
+	The stage-3 widgets wrap this seam, they never re-implement it. The
+	decoration always wraps the label, so the whole button carries the style;
+	`focused` re-styles per `focus_style` and `disabled` forces `muted` (it
+	wins over both). Piped, the decorated label comes back with no escapes.
+	"""
+	cap = cap or caps.detect()
+	properties = palette.properties()
+	decorations = BUTTON_DECORATIONS if cap.unicode else ASCII_DECORATIONS
+	decoration = str(properties.get("button_decoration", "brackets"))
+	left, right = decorations.get(decoration, BUTTON_DECORATIONS["brackets"])
+	text = left + _flat(label) + right
+	if cap.plain:
+		return text
+	style = str(properties.get("button_style", "filled"))
+	attributes = dict(BUTTON_STYLES.get(style, BUTTON_STYLES["filled"]))
+	if focused:
+		focus = str(properties.get("focus_style", "reverse"))
+		if focus == "accent":
+			# Replacing the ground keeps the label legible on the accent.
+			attributes.pop("bg", None)
+			attributes["fg"] = "accent"
+		elif focus == "underline":
+			attributes["underline"] = True
+		else:
+			attributes["reverse"] = True
+	if disabled:
+		attributes = {"fg": "muted"}
+	return palette.style(text, cap=cap, theme=theme, **attributes)
+
+
+def scrollbar(height, *, offset=0, total=None, cap=None, theme=None):
+	"""One single-column cell per row: `accent` thumb over a `muted` track.
+
+	`scrollbar_style` picks the glyph pair (`block` blocks, `line` lines,
+	`ascii` `#`/`|`). `total` is the content height (`None` means everything
+	fits) and `offset` is clamped to the scrollable span; a zero `height` gives
+	an empty column and a zero `total` (or a sub-cell thumb) all track, never
+	an error. `cap.unicode` false and `cap.plain` use the ASCII pair.
+	"""
+	cap = cap or caps.detect()
+	height = max(0, int(height))
+	if height == 0:
+		return []
+	name = str(palette.properties().get("scrollbar_style", "block"))
+	thumb, track, ascii_thumb, ascii_track = SCROLLBAR_GLYPHS.get(
+		name, SCROLLBAR_GLYPHS["block"])
+	if not cap.unicode or cap.plain:
+		thumb, track = ascii_thumb, ascii_track
+	content = height if total is None else max(0, int(total))
+	length = start = 0
+	if content > 0:
+		length = min(height, max(1, int(round(height * height / content))))
+		span = max(0, content - height)
+		offset = min(max(0, int(offset)), span)
+		start = int(round(offset * (height - length) / span)) if span else 0
+	last = start + length
+	return [palette.style(thumb if start <= row < last else track,
+						  fg="accent" if start <= row < last else "muted",
+						  cap=cap, theme=theme) for row in range(height)]
+
+
 def _top_frame(glyphs, inner, title, cap, theme):
 	"""Top border with the title cut into it, or a plain rule when untitled."""
 	if not title:
@@ -257,10 +352,25 @@ def _top_frame(glyphs, inner, title, cap, theme):
 			+ glyphs["h"] * rest + glyphs["tr"] + _reset(cap))
 
 
-def _band(text, width, *, fg, bold=False, cap, theme):
-	"""One full-width `surface` band with a leading space and a padded label."""
-	body = " " + pad(_truncate(text, max(0, width - 2)), max(0, width - 2)) + " "
-	return palette.style(body, fg=fg, bg="surface", bold=bold, cap=cap, theme=theme)
+def _band(text, width, *, fg, bold=False, align="left", cap, theme):
+	"""One full-width `surface` band with the label placed by `align`.
+
+	`left` is the shipped shape: one space, the label, then the padding (and
+	one trailing space), so the default masthead bytes do not move. `center`
+	and `right` only move the padding inside the same two end spaces.
+	"""
+	inner = max(0, width - 2)
+	label = _truncate(text, inner)
+	slack = max(0, inner - display_width(label))
+	if align == "center":
+		left = slack // 2
+	elif align == "right":
+		left = slack
+	else:
+		left = 0
+	body = " " + " " * left + label + " " * (slack - left) + " "
+	return palette.style(body, fg=fg, bg="surface", bold=bold, cap=cap,
+						 theme=theme)
 
 
 def _body_lines(body):
