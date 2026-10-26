@@ -12,7 +12,7 @@ Layout:
 	text      display width, truncate, pad, wrap, strip ANSI
 	palette   soft and contrast palettes, style() and level downgrade
 	table     box/plain tables, banner, section, key-value blocks
-	chrome    masthead, panel, rule, field, status, fill, menu
+	chrome    masthead, panel, rule, field, status, fill, menu, button, scrollbar
 	prompts   ask_text, ask_int, ask_choice
 	screen    Screen, Canvas, TerminalRenderer
 	keys      raw mode, key decoding, background KeyReader
@@ -33,7 +33,7 @@ Usage:
 
 from . import caps, chrome, config, keys, loop, palette, pager, progress, prompts, screen, table, text
 from .caps import Capabilities, detect, init_ansi, require_tty
-from .chrome import field, fill, header, menu, panel, rule, status
+from .chrome import button, field, fill, header, menu, panel, rule, scrollbar, status
 from .loop import FrameLoop, ScreensaverHost
 from .palette import CONTRAST_DARK, CONTRAST_LIGHT, RESET, SOFT, THEMES, prefix, style, theme
 from .pager import page
@@ -51,7 +51,8 @@ __all__ = [
 	"style", "theme",
 	"display_width", "pad", "strip_ansi", "truncate", "wrap",
 	"banner", "key_values", "print_table", "render_table", "section",
-	"header", "panel", "rule", "field", "status", "fill", "menu",
+	"header", "panel", "rule", "field", "status", "fill", "menu", "button",
+	"scrollbar",
 	"Canvas", "Screen", "TerminalRenderer",
 	"ask_choice", "ask_int", "ask_text",
 	"LiveRegion", "ProgressBar", "Spinner",

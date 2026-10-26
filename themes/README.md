@@ -45,6 +45,23 @@ prints the active look and the paths it uses, and falls back to the built-in
   live in `tui/theme_schema.py` (`PROPERTY_VALUES`, re-exported by
   `tui/theme_engine.py`).
 
+| property | values | effect |
+|---|---|---|
+| `header_align` | `left` `center` `right` | label placement in the masthead band |
+| `border_style` | `rounded` `square` `heavy` `double` `ascii` `none` | table/chrome frame glyphs (`rounded` is the shipped set; `none` keeps the layout and drops the borders) |
+| `button_style` | `filled` `outline` `plain` `underline` | `chrome.button` ground and attributes |
+| `button_decoration` | `none` `brackets` `angles` `braces` `colons` `pipes` `chevron` `ellipsis` | wrapper drawn around a button label |
+| `table_style` | `box` `borderless` `compact` | table frame (an explicit `box=` argument still wins) |
+| `table_zebra` | `true` `false` | alternating row background (an explicit `zebra=` wins) |
+| `focus_style` | `reverse` `accent` `underline` | how a focused button is restyled |
+| `scrollbar_style` | `block` `line` `ascii` | `chrome.scrollbar` thumb/track glyphs |
+| `selection_style` | `accent` | reserved; single value in v1 |
+
+`table.style` in `config.ini` still overrides `border_style` for one run
+(`ascii` forces `+ - |`, `unicode` keeps the theme's glyphs), and a non-Unicode
+terminal degrades every family except `none` to ASCII. The shipped values
+reproduce the default look byte for byte.
+
 Validation is all-or-nothing: one missing key or unknown value rejects the file,
 so a typo cannot ship a half-theme. A missing or invalid file never breaks
 rendering - the scripts fall back to the built-in `cozypurple` default look.

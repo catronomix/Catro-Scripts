@@ -30,15 +30,61 @@ ASCII_GLYPHS = {
 	"bl": "+", "bm": "+", "br": "+", "h": "-", "v": "|",
 }
 
+# Heavy frame: the `heavy` border style.
+HEAVY_GLYPHS = {
+	"tl": "\u250f", "tm": "\u2533", "tr": "\u2513",
+	"ml": "\u2523", "mm": "\u254b", "mr": "\u252b",
+	"bl": "\u2517", "bm": "\u253b", "br": "\u251b",
+	"h": "\u2501", "v": "\u2503",
+}
+
+# Double frame: the `double` border style.
+DOUBLE_GLYPHS = {
+	"tl": "\u2554", "tm": "\u2566", "tr": "\u2557",
+	"ml": "\u2560", "mm": "\u256c", "mr": "\u2563",
+	"bl": "\u255a", "bm": "\u2569", "br": "\u255d",
+	"h": "\u2550", "v": "\u2551",
+}
+
+# `square`: Unicode has no second single-line square family (U+250C is the only
+# one, and `rounded` keeps it so the default bytes cannot drift), so the crisp
+# alternate is the mixed frame: light verticals with double horizontals.
+SQUARE_GLYPHS = {
+	"tl": "\u2552", "tm": "\u2564", "tr": "\u2555",
+	"ml": "\u255e", "mm": "\u256a", "mr": "\u2561",
+	"bl": "\u2558", "bm": "\u2567", "br": "\u255d",
+	"h": "\u2550", "v": "\u2502",
+}
+
+# `none`: every frame cell is a space, so the borders vanish while the padding,
+# the column widths and the row height stay exactly where they were.
+SPACE_GLYPHS = {key: " " for key in UNICODE_GLYPHS}
+
+# border_style -> glyph set. `rounded` is the shipped set (byte pin); `ascii`
+# is the same table the capability probe falls back to.
+BORDER_GLYPHS = {
+	"rounded": UNICODE_GLYPHS,
+	"square": SQUARE_GLYPHS,
+	"heavy": HEAVY_GLYPHS,
+	"double": DOUBLE_GLYPHS,
+	"ascii": ASCII_GLYPHS,
+	"none": SPACE_GLYPHS,
+}
+
 MIN_COLUMN = 4
 
 
 # A borderless/plain cell join and the pinned span shape live below; see the
 # contract for why the borders are prefixed inside the row instead of resetting.
 
-def render_table(headers, rows, *, box=True, zebra=True, truncate=True,
+def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 				 widths=None, cap=None, theme=None):
 	"""Render a table; returns text without a trailing newline.
+
+	`box`/`zebra` default to `None`, which means "ask the active theme": the
+	`table_style` property picks the frame (`box`, `borderless` or `compact`)
+	and `table_zebra` the row shading. An explicit caller argument always wins,
+	which is why the defaults are not `True` any more.
 
 	`widths` forces exact column widths and skips both auto-sizing and terminal
 	fitting, which is how `list` keeps its fixed 4/25/10/50 layout (and its exact
@@ -47,6 +93,13 @@ def render_table(headers, rows, *, box=True, zebra=True, truncate=True,
 	"""
 	cap = cap or caps.detect()
 	theme = palette.theme(theme)
+	props = palette.properties()
+	table_style = props.get("table_style", "box")
+	compact = box is None and table_style == "compact"
+	if box is None:
+		box = table_style != "borderless"
+	if zebra is None:
+		zebra = bool(props.get("table_zebra", True))
 	labels = [_flat(value) for value in headers]
 	data = [_normalise(row, len(labels)) for row in rows]
 	if not labels:
@@ -66,16 +119,21 @@ def render_table(headers, rows, *, box=True, zebra=True, truncate=True,
 	glyphs = glyphs_for(cap)
 	if not box:
 		return "\n".join(_bare_rows(labels, data, widths, cap, theme, zebra))
+	if compact:
+		lines = [_bare_line(labels, widths, cap, theme, fg="header", bold=True)]
+		lines.append(_span_rule(glyphs, widths, cap, theme))
+		for index, cells in enumerate(data):
+			lines.append(_bare_line(cells, widths, cap, theme,
+									bg=_zebra_bg(index, zebra)))
+		lines.append(_span_rule(glyphs, widths, cap, theme))
+		return "\n".join(lines)
 
 	lines = [_rule(glyphs, widths, "tl", "tm", "tr", cap, theme)]
 	lines.append(_header_row(glyphs, widths, labels, cap, theme))
 	lines.append(_rule(glyphs, widths, "ml", "mm", "mr", cap, theme))
 	for index, cells in enumerate(data):
-		background = None
-		if zebra:
-			background = "bg" if index % 2 == 0 else "surface"
 		lines.append(_row(glyphs, widths, cells, cap, theme,
-						  bg=background, truncate_cells=truncate))
+						  bg=_zebra_bg(index, zebra), truncate_cells=truncate))
 	lines.append(_rule(glyphs, widths, "bl", "bm", "br", cap, theme))
 	return "\n".join(lines)
 
@@ -135,14 +193,23 @@ def section(title, *, cap=None, theme=None):
 	return palette.style(label, fg="header", bold=True, cap=cap, theme=theme)
 
 
-def glyphs_for(cap):
-	"""Box glyphs honouring both the capability probe and `table.style`."""
+def glyphs_for(cap, theme=None):
+	"""Box glyphs honouring the theme's `border_style` and `table.style`.
+
+	Order: the `table.style` run override wins when it is explicitly set
+	(`ascii` forces `+ - |`; `unicode` keeps the theme's glyphs when the
+	capability probe allows Unicode), otherwise the theme's `border_style`
+	picks a family, with `cap.unicode` False degrading everything but `none`
+	to ASCII so a cp1252 console still renders a frame.
+	"""
 	style = str(config.get("table", "style", "auto")).strip().lower()
 	if style == "ascii":
 		return ASCII_GLYPHS
-	if style == "unicode":
-		return UNICODE_GLYPHS if cap.unicode else ASCII_GLYPHS
-	return UNICODE_GLYPHS if cap.unicode else ASCII_GLYPHS
+	border = str(palette.properties().get("border_style", "rounded"))
+	glyphs = BORDER_GLYPHS.get(border, UNICODE_GLYPHS)
+	if not cap.unicode and glyphs is not SPACE_GLYPHS:
+		return ASCII_GLYPHS
+	return glyphs
 
 
 def _flat(value):
@@ -230,11 +297,23 @@ def _bare_rows(labels, data, widths, cap, theme, zebra):
 	"""Borderless variant: padded columns separated by two spaces."""
 	lines = [_bare_line(labels, widths, cap, theme, fg="header", bold=True)]
 	for index, cells in enumerate(data):
-		background = None
-		if zebra:
-			background = "bg" if index % 2 == 0 else "surface"
-		lines.append(_bare_line(cells, widths, cap, theme, bg=background))
+		lines.append(_bare_line(cells, widths, cap, theme,
+								bg=_zebra_bg(index, zebra)))
 	return lines
+
+
+def _zebra_bg(index, zebra):
+	"""Palette key for row `index`, or None when zebra shading is off."""
+	if not zebra:
+		return None
+	return "bg" if index % 2 == 0 else "surface"
+
+
+def _span_rule(glyphs, widths, cap, theme):
+	"""One rule as wide as the borderless row (`compact`'s top/bottom edge)."""
+	span = sum(widths) + 2 * max(0, len(widths) - 1)
+	return palette.style(glyphs["h"] * max(1, span), fg="border", cap=cap,
+						 theme=theme)
 
 
 def _bare_line(cells, widths, cap, theme, fg="fg", bg=None, bold=False):

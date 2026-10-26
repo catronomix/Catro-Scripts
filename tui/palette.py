@@ -135,7 +135,7 @@ def palette(theme=None, cap=None):
 
 
 def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
-		  cap=None, theme=None):
+		  underline=False, cap=None, theme=None):
 	"""Wrap `text` in SGR codes for the active theme and capability level.
 
 	`fg`/`bg` accept a semantic key, "#rrggbb" or an (r, g, b) tuple; anything
@@ -144,19 +144,20 @@ def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
 	"""
 	plain = "" if text is None else str(text)
 	lead = prefix(fg=fg, bg=bg, bold=bold, dim=dim, reverse=reverse,
-				  cap=cap, theme=theme)
+				  underline=underline, cap=cap, theme=theme)
 	if not lead:
 		return plain
 	return lead + plain + RESET
 
 
 def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
-		   cap=None, theme=None):
+		   underline=False, cap=None, theme=None):
 	"""The SGR codes `style()` would emit, with no text and no reset code.
 
 	This is the seam for callers that compose a run of cells and must re-assert
 	the style after each border without a reset in between (the table rows, and
-	any full-screen caller driving a canvas).
+	any full-screen caller driving a canvas). `underline` is the additive
+	attribute the button/focus seams need, so no module hand-writes `\\033[4m`.
 	"""
 	cap = cap or caps.detect()
 	if cap.level == "none":
@@ -173,6 +174,8 @@ def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
 		parts.append("\033[2m")
 	if reverse:
 		parts.append("\033[7m")
+	if underline:
+		parts.append("\033[4m")
 	return "".join(parts)
 
 
