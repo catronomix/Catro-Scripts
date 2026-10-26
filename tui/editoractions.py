@@ -19,6 +19,62 @@ import copy
 from . import colorpicker, editorviews, theme_engine, widgets
 
 
+# -- property draft editing ---------------------------------------------------
+
+def begin_property_edit(editor):
+	"""Enter on Properties: keep the old value as the Esc cancel target."""
+	key = editorviews.PROPERTY_KEYS[editor.property_index]
+	before = editor.document["properties"][key]
+	field = editor._property_field(key)
+	editor.edit = {"key": key, "before": before, "field": field}
+	editor.message = ("info", "{} = {} - arrows change, Enter commits, "
+					  "Esc cancels".format(key, editor._field_value(field)))
+	return True
+
+
+def edit_key(editor, token):
+	"""Draft edit: arrows/space change it, Enter commits, Esc restores."""
+	if token == "esc":
+		key = editor.edit["key"]
+		before = editor.edit["before"]
+		editor.edit = None
+		editor.message = ("info", "{} = {} (unchanged)".format(key, before))
+		return True
+	if token == "enter":
+		return commit_property(editor)
+	field = editor.edit["field"]
+	select = hasattr(field, "selected")
+	if token in ("left", "up", "space"):
+		if select:
+			field.cycle(-1)
+		else:
+			field.toggle()
+	elif token in ("right", "down"):
+		if select:
+			field.cycle(1)
+		else:
+			field.toggle()
+	else:
+		return True
+	editor.message = ("warn", "{} -> {} (Enter commits, Esc cancels)".format(
+		editor.edit["key"], editor._field_value(field)))
+	return True
+
+
+def commit_property(editor):
+	"""Enter while editing: adopt the draft and mark the document dirty."""
+	edit, editor.edit = editor.edit, None
+	key = edit["key"]
+	value = editor._field_value(edit["field"])
+	if value != edit["before"]:
+		editor.document["properties"][key] = value
+		editor.dirty = True
+		editor.message = ("ok", "{} = {}".format(key, value))
+	else:
+		editor.message = ("info", "{} = {} (unchanged)".format(key, value))
+	return True
+
+
 # -- Save popup ---------------------------------------------------------------
 
 def save_prompt(editor):

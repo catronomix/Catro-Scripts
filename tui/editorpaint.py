@@ -74,7 +74,7 @@ def _draw_properties(editor, canvas, cap):
 		canvas.draw_text(x + 2, top, pad(key, editorviews.PROPERTY_WIDTH),
 						 widgets.focus_prefix(focused, cap)
 						 or palette.prefix(fg="fg", cap=cap))
-		field = editor._property_field(key)
+		field = editor._field_for(key)
 		field.x, field.y = x + 2 + editorviews.PROPERTY_WIDTH, top
 		field.width = max(4, width - editorviews.PROPERTY_WIDTH - 4)
 		field.draw(canvas, focused=focused)
@@ -108,7 +108,7 @@ def _draw_actions(editor, canvas, cap):
 	editorviews.frame(canvas, rect[0], rect[1], rect[2], rect[3],
 					  "Actions", cap)
 	for index, button in enumerate(editor.buttons):
-		button.x, button.y = rect[0] + 2, rect[1] + 2 + 2 * index
+		button.x, button.y = rect[0] + 2, rect[1] + 1 + 2 * index
 		button.cap = editor.cap
 		button.draw(canvas, focused=editor.focus == 2
 					and index == editor.button_index)

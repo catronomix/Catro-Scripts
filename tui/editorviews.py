@@ -184,7 +184,9 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 	zebra = "zebra_bg" if properties.get("table_zebra") else None
 	put(" alpha            yes", "fg", bg=zebra)
 	put(" beta             no", "fg")
-	if not compact:
+	# A 12-row preview (90x24) drops the closing rule, not the progress bar:
+	# the bar is the last row and must stay visible at the minimum size.
+	if not compact and height >= 13:
 		put(rule, "border")
 
 	# Buttons: normal, focused and disabled share one row.

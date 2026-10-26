@@ -12,10 +12,14 @@ Every test points the engine seams (`THEMES_DIR`, `THEME_FILE`) and
 a `theme.ini` and the developer's checkout never leaks into the assertions.
 """
 
+import contextlib
+import copy
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -104,6 +108,47 @@ class HeadlessOpenTests(EditorTestCase):
 		ed.handle("q")
 		self.assertTrue(ed.closed)
 
+	def test_small_terminal_ignores_editing_and_popups(self):
+		ed = self.make(width=60, height=16)
+		before = copy.deepcopy(ed.document)
+		ed.pump(["enter", "ctrl-s", "f1", "tab", "right", "space"])
+		self.assertEqual(ed.document, before)
+		self.assertIsNone(ed.prompt)
+		self.assertIsNone(ed.picker)
+		self.assertFalse(ed.help)
+		self.assertFalse(ed.dirty)
+		self.assertFalse(ed.closed)
+
+	def test_small_terminal_still_asks_before_discarding(self):
+		ed = self.make(width=60, height=16)
+		ed.dirty = True
+		ed.handle("q")
+		self.assertEqual(ed.prompt, "quit")
+		self.assertFalse(ed.closed)
+		ed.handle("y")
+		self.assertTrue(ed.closed)
+
+	def test_every_preview_shows_the_progress_bar_at_90x24(self):
+		ed = self.make()
+		rows = self.lines(ed)
+		for index in range(3):
+			x, y, width, height = ed.rects[index]
+			band = "\n".join(row[x:x + width]
+							 for row in rows[y:y + height])
+			self.assertIn("60%", band)
+			self.assertIn("\u2588", band)
+
+	def test_actions_buttons_stay_inside_the_frame_at_90x24(self):
+		ed = self.make()
+		rows = self.lines(ed)
+		x, y, width, height = ed.rects[5]
+		self.assertEqual(rows[y + height - 1][x], "\u2514")
+		self.assertEqual(rows[y + height - 1][x + width - 1], "\u2518")
+		for button in ed.buttons:
+			self.assertLess(button.y, y + height - 1)
+			self.assertGreater(button.y, y)
+		self.assertEqual(ed.buttons[-1].y, y + height - 2)
+
 	def test_f1_toggles_the_help_overlay(self):
 		ed = self.make()
 		ed.handle("f1")
@@ -155,25 +200,52 @@ class NavigationTests(EditorTestCase):
 
 
 class EditingTests(EditorTestCase):
-	def test_enter_cycles_a_select_property_and_marks_the_document_dirty(self):
+	def test_enter_drafts_a_property_and_a_second_enter_commits_it(self):
 		ed = self.make()
 		first = editorviews.PROPERTY_KEYS[0]
 		before = ed.document["properties"][first]
 		ed.handle("enter")
+		self.assertIsNotNone(ed.edit)
+		self.assertEqual(ed.document["properties"][first], before)
+		self.assertFalse(ed.dirty)
+		ed.handle("right")
+		self.assertEqual(ed.look_index, 0)  # the look must not switch
+		self.assertEqual(ed.document["properties"][first], before)
+		ed.handle("enter")
+		self.assertIsNone(ed.edit)
 		self.assertNotEqual(ed.document["properties"][first], before)
 		self.assertTrue(ed.dirty)
 		ed.draw()
 		self.assertIn("* unsaved", self.lines(ed)[0])
 
-	def test_enter_toggles_the_zebra_check_field(self):
+	def test_enter_drafts_the_zebra_check_field_until_committed(self):
 		ed = self.make()
 		index = editorviews.PROPERTY_KEYS.index("table_zebra")
 		for _ in range(index):
 			ed.handle("down")
 		before = ed.document["properties"]["table_zebra"]
 		ed.handle("enter")
+		self.assertIsNotNone(ed.edit)
+		ed.handle("right")
+		self.assertEqual(ed.document["properties"]["table_zebra"], before)
+		self.assertFalse(ed.dirty)
+		ed.handle("enter")
 		self.assertEqual(ed.document["properties"]["table_zebra"], not before)
 		self.assertTrue(ed.dirty)
+
+	def test_esc_restores_the_pre_edit_value(self):
+		ed = self.make()
+		first = editorviews.PROPERTY_KEYS[0]
+		before = ed.document["properties"][first]
+		ed.handle("enter")
+		ed.handle("right")
+		self.assertNotEqual(ed._field_value(ed.edit["field"]), before)
+		ed.handle("esc")
+		self.assertIsNone(ed.edit)
+		self.assertEqual(ed.document["properties"][first], before)
+		self.assertFalse(ed.dirty)
+		ed.handle("right")
+		self.assertEqual(ed.look_index, 1)  # editing is over, looks switch again
 
 	def test_picker_commit_writes_the_selected_look_only(self):
 		ed = self.make()
@@ -307,7 +379,7 @@ class QuitTests(EditorTestCase):
 
 	def test_dirty_quit_asks_and_no_keeps_the_session(self):
 		ed = self.make()
-		ed.handle("enter")
+		ed.pump(["enter", "right", "enter"])
 		self.assertTrue(ed.dirty)
 		ed.handle("q")
 		self.assertEqual(ed.prompt, "quit")
@@ -322,6 +394,96 @@ class QuitTests(EditorTestCase):
 		ed = self.make()
 		self.assertTrue(ed.quit())
 		self.assertTrue(ed.closed)
+
+
+class RunTests(EditorTestCase):
+	"""`run()` wiring, with the terminal classes faked and no real tty."""
+
+	def fake_terminal(self, tokens=(), error=None):
+		calls = []
+
+		@contextlib.contextmanager
+		def raw_mode():
+			calls.append("raw-enter")
+			try:
+				yield
+			finally:
+				calls.append("raw-exit")
+
+		class FakeScreen:
+			def __init__(self, stream):
+				self.stream = stream
+
+			def enter(self):
+				calls.append("screen-enter")
+
+			def exit(self):
+				calls.append("screen-exit")
+
+			def poll_resize(self):
+				return False
+
+		class FakeCanvas:
+			width, height = 90, 24
+
+			def __init__(self, stream=None):
+				pass
+
+			def render(self, full=False):
+				calls.append("render")
+
+		class FakeReader:
+			def __init__(self, *args, **kwargs):
+				self.tokens = list(tokens)
+
+			def start(self):
+				calls.append("reader-start")
+
+			def stop(self):
+				calls.append("reader-stop")
+
+			def wait(self, timeout=None):
+				if error is not None:
+					raise error
+				return self.tokens.pop(0) if self.tokens else "q"
+
+		return calls, raw_mode, FakeScreen, FakeCanvas, FakeReader
+
+	def run_faked(self, tokens=(), error=None):
+		calls, raw_mode, screen_cls, canvas_cls, reader_cls = \
+			self.fake_terminal(tokens, error)
+		ed = self.make()
+		with mock.patch.object(editor.keyio, "raw_mode", raw_mode), \
+				mock.patch.object(editor.mouse, "reporting",
+								  lambda stream: contextlib.nullcontext()), \
+				mock.patch.object(editor.screen, "Screen", screen_cls), \
+				mock.patch.object(editor.screen, "Canvas", canvas_cls), \
+				mock.patch.object(editor.keyio, "KeyReader", reader_cls):
+			result = ed.run(stream=io.StringIO())
+		return calls, result
+
+	def test_run_enters_and_leaves_raw_mode_on_a_clean_quit(self):
+		calls, result = self.run_faked(tokens=["q"])
+		self.assertEqual(result, 0)
+		self.assertIn("raw-enter", calls)
+		self.assertIn("raw-exit", calls)
+		self.assertLess(calls.index("raw-enter"), calls.index("screen-enter"))
+		self.assertLess(calls.index("screen-exit"), calls.index("raw-exit"))
+
+	def test_run_restores_raw_mode_and_the_screen_on_an_exception(self):
+		calls, raw_mode, screen_cls, canvas_cls, reader_cls = \
+			self.fake_terminal(error=RuntimeError("boom"))
+		ed = self.make()
+		with mock.patch.object(editor.keyio, "raw_mode", raw_mode), \
+				mock.patch.object(editor.mouse, "reporting",
+								  lambda stream: contextlib.nullcontext()), \
+				mock.patch.object(editor.screen, "Screen", screen_cls), \
+				mock.patch.object(editor.screen, "Canvas", canvas_cls), \
+				mock.patch.object(editor.keyio, "KeyReader", reader_cls):
+			with self.assertRaises(RuntimeError):
+				ed.run(stream=io.StringIO())
+		self.assertIn("raw-exit", calls)
+		self.assertIn("screen-exit", calls)
 
 
 if __name__ == "__main__":

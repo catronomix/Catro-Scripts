@@ -42,6 +42,7 @@ class ThemeEditor:
 		self.pending = None
 		self.dirty = False
 		self.picker = None
+		self.edit = None
 		self.save_field = None
 		self.load_box = None
 		self.entries = []
@@ -113,9 +114,11 @@ class ThemeEditor:
 		action_x = 3 + prop_w + colour_w
 		self.rects[5] = (action_x, panel_y, max(10, width - action_x - 1),
 						 panel_h)
+		# One blank row under the title, two between buttons: the top and bottom
+		# rules stay visible even in the smallest supported terminal (90x24).
 		for index, label in enumerate(BUTTONS):
 			self.buttons.append(widgets.Button(
-				action_x + 2, panel_y + 2 + 2 * index, label, cap=self.cap))
+				action_x + 2, panel_y + 1 + 2 * index, label, cap=self.cap))
 
 	def _visible(self, panel):
 		rect = self.rects.get(panel)
@@ -155,6 +158,10 @@ class ThemeEditor:
 			return editoractions.load_key(self, token)
 		if self.prompt in ("quit", "discard-load", "overwrite"):
 			return editoractions.confirm_key(self, token)
+		if self._small():
+			return self._small_key(token)
+		if self.edit is not None:
+			return editoractions.edit_key(self, token)
 		if self.help:
 			if token in ("f1", "esc", "enter", "q", "Q"):
 				self.help = False
@@ -232,10 +239,23 @@ class ThemeEditor:
 			self.colour_index, self.colour_offset = index, offset
 		return True
 
+	def _small(self):
+		"""True when the terminal is below the editor's minimum size."""
+		return (self.canvas is not None
+				and widgets.small_terminal(self.canvas.width, self.canvas.height))
+
+	def _small_key(self, token):
+		"""Below the minimum only the quit keys act; nothing opens or mutates."""
+		if token in ("q", "Q", "delete", "esc"):
+			self.quit()
+		return True
+
 	def _activate(self):
 		"""Enter: edit the focused row, open the picker, or press the button."""
 		if self.focus == 0:
-			return self._edit_property()
+			if self.edit is not None:
+				return editoractions.commit_property(self)
+			return editoractions.begin_property_edit(self)
 		if self.focus == 1:
 			return editoractions.open_picker(self) is not None
 		action = BUTTONS[self.button_index]
@@ -257,19 +277,18 @@ class ThemeEditor:
 			0, 0, options, index=options.index(value) if value in options
 			else 0, cap=self.cap)
 
-	def _edit_property(self):
-		key = PROPERTY_KEYS[self.property_index]
-		before = self.document["properties"][key]
-		field = self._property_field(key)
-		field.key("enter")
-		value = field.value if hasattr(field, "value") else field.selected()
-		if value != before:
-			self.document["properties"][key] = value
-			self.dirty = True
-			self.message = ("ok", "{} = {}".format(key, value))
-		else:
-			self.message = ("info", "{} = {}".format(key, before))
-		return True
+	def _field_for(self, key):
+		"""The draft field while that property is being edited, else a fresh one."""
+		if self.edit is not None and self.edit["key"] == key:
+			return self.edit["field"]
+		return self._property_field(key)
+
+	@staticmethod
+	def _field_value(field):
+		"""The value a SelectField/CheckField currently shows."""
+		if hasattr(field, "selected"):
+			return field.selected()
+		return field.value
 
 	# -- popups (implemented in `tui.editoractions`) ----------------------
 
@@ -308,25 +327,28 @@ class ThemeEditor:
 		self.canvas = screen.Canvas(stream=stream)
 		reader = keyio.KeyReader()
 		with mouse.reporting(stream):
-			self.screen.enter()
-			try:
-				self._layout()
-				paint = True
-				reader.start()
-				while not self.closed:
-					token = reader.wait(0.1)
-					if token is not None:
-						self.handle(token)
-						paint = True
-					if self.screen.poll_resize():
-						self.canvas = screen.Canvas(stream=stream)
-						self._layout()
-						paint = True
-					if paint and not self.closed:
-						self.draw()
-						self.canvas.render(full=True)
-						paint = False
-			finally:
-				reader.stop()
-				self.screen.exit()
+			# cbreak mode so Tab/Esc/arrows arrive one key at a time on POSIX;
+			# restored after the screen leaves even when the loop raises.
+			with keyio.raw_mode():
+				self.screen.enter()
+				try:
+					self._layout()
+					paint = True
+					reader.start()
+					while not self.closed:
+						token = reader.wait(0.1)
+						if token is not None:
+							self.handle(token)
+							paint = True
+						if self.screen.poll_resize():
+							self.canvas = screen.Canvas(stream=stream)
+							self._layout()
+							paint = True
+						if paint and not self.closed:
+							self.draw()
+							self.canvas.render(full=True)
+							paint = False
+				finally:
+					reader.stop()
+					self.screen.exit()
 		return 0
