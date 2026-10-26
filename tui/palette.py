@@ -2,16 +2,22 @@
 """
 			COLOR PALETTES AND STYLING
 			===========================
-Three hand-authored palettes with identical semantic keys, none derived from
+Three hand-authored looks with identical semantic keys, none derived from
 another (no inversion, no hue rotation). SOFT is the default: `mdreader` mode 0,
 "Cozy Purple", with `muted`/`border` nudged from #9381B0 to #A392C0 so every
 foreground clears the WCAG AA gate on both backgrounds. CONTRAST_LIGHT and
 CONTRAST_DARK are `mdreader` modes 1 and 2, so the reader and the scripts agree.
 
+The hexes themselves belong to `tui.theme_engine` (and `themes/cozypurple.json`);
+this module stays the public API and the only place that emits SGR codes. The
+active theme comes from `theme.ini` through the engine, with the legacy
+`config.ini [theme] mode` value migrated behind it. `SOFT`/`THEMES` keep their
+names and values, so no renderer changed and the golden fixture still pins
+`soft`'s own bytes.
+
 The default is deliberately not the old per-script `Colors` identity (#AA00FF
 on #000000): that palette is gone, and `dark` survives only as an alias input
-for configs written before the theme set changed. The checked-in golden fixture
-pins `soft`'s own bytes, not an equivalence claim against the old renderer.
+for configs written before the theme set changed.
 
 `style()` is the only place that emits SGR codes. Its emission order is pinned:
 foreground, background, attributes, text, reset. Every downgrade (256, 16, none)
@@ -25,54 +31,18 @@ of it so the two can never drift.
 
 import os
 
-from . import caps, config
+from . import caps, theme_engine
 
-# The default: mdreader mode 0, "Cozy Purple". `muted`/`border` sit at #A392C0
-# (not the reader's #9381B0) so both clear 4.5:1 on the zebra row.
-SOFT = {
-	"bg": "#1B1726",
-	"surface": "#292238",
-	"fg": "#D4C8EB",
-	"muted": "#A392C0",
-	"accent": "#F5CD68",
-	"success": "#7FD1A0",
-	"warn": "#E09F67",
-	"error": "#FF6B6B",
-	"border": "#A392C0",
-	"header": "#F5CD68",
-	"zebra_bg": "#352B49",
-}
+# The default look: mdreader mode 0, "Cozy Purple", mirrored from the engine's
+# built-in document (`themes/cozypurple.json` carries the same hexes).
+SOFT = dict(theme_engine.BUILTIN_LOOKS["default"])
 
 # mdreader mode 1, "High Contrast Light".
-CONTRAST_LIGHT = {
-	"bg": "#FFFFFF",
-	"surface": "#E8F4F8",
-	"fg": "#000000",
-	"muted": "#4A4A4A",
-	"accent": "#0000B3",
-	"success": "#0A7A2F",
-	"warn": "#8A5A00",
-	"error": "#B3261E",
-	"border": "#000000",
-	"header": "#A0007A",
-	"zebra_bg": "#E8F4F8",
-}
+CONTRAST_LIGHT = dict(theme_engine.BUILTIN_LOOKS["contrast-light"])
 
 # mdreader mode 2, "High Contrast Dark". Selectable like the others, never
 # chosen automatically.
-CONTRAST_DARK = {
-	"bg": "#000000",
-	"surface": "#0A0A0A",
-	"fg": "#FFFFFF",
-	"muted": "#D0D0D0",
-	"accent": "#00FFFF",
-	"success": "#00FF66",
-	"warn": "#FFFF00",
-	"error": "#FF4040",
-	"border": "#00FFFF",
-	"header": "#FFFF00",
-	"zebra_bg": "#1A1A1A",
-}
+CONTRAST_DARK = dict(theme_engine.BUILTIN_LOOKS["contrast-dark"])
 
 THEMES = {
 	"soft": SOFT,
@@ -129,13 +99,39 @@ def normalize(name):
 
 
 def theme(override=None):
-	"""Active theme id: override > CATRO_THEME > config.ini > "soft"."""
-	return _theme_name(override)
+	"""Active theme id: override > CATRO_THEME > theme.ini > "soft"."""
+	return _theme_id(_active(override)[1])
+
+
+def theme_name():
+	"""Slug of the active theme (`cozypurple` for the shipped default)."""
+	return theme_engine.selection()[0]
+
+
+def look():
+	"""Active look selector: `soft`, `light` or `dark`."""
+	return theme_engine.selection()[1]
+
+
+def document():
+	"""The active theme document; the built-in one when it cannot be read."""
+	return theme_engine.document()
+
+
+def properties():
+	"""Copy of the active theme's rendering properties."""
+	return theme_engine.properties()
 
 
 def palette(theme=None, cap=None):
-	"""Copy of the named palette (key -> "#rrggbb"). `cap` is accepted unused."""
-	return dict(THEMES[_theme_name(theme)])
+	"""Copy of the active look (key -> "#rrggbb"). `cap` is accepted unused.
+
+	`theme` keeps its old meaning: a look spelling (`soft`, `contrast-light`, ...)
+	selects that look of the active theme, so every existing caller and test
+	still names the palette it used to get.
+	"""
+	name, look_selector = _active(theme)
+	return dict(theme_engine.look_palette(name, look_selector))
 
 
 def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
@@ -197,10 +193,29 @@ def index(value, theme=None, level="256"):
 	return _nearest(rgb(value, theme), 0, stop=stop)
 
 
-def _theme_name(mode=None):
-	if mode is None or not str(mode).strip():
-		mode = os.environ.get("CATRO_THEME") or config.get("theme", "mode", "soft")
-	return normalize(mode)
+def _active(override=None):
+	"""(theme name, look) for one call: override > CATRO_THEME > theme.ini."""
+	name, selector = theme_engine.selection()
+	if override is not None and str(override).strip():
+		return name, normalize(override)
+	env = os.environ.get("CATRO_THEME", "")
+	if str(env).strip():
+		return name, normalize(env)
+	return name, selector
+
+
+# Look id -> the id `theme()` has always returned for it.
+_ID_OF_LOOK = {
+	"default": "soft",
+	"contrast-light": "contrast-light",
+	"contrast-dark": "contrast-dark",
+}
+
+
+def _theme_id(look_value):
+	"""The legacy theme id (`soft`/`contrast-light`/`contrast-dark`) for a look."""
+	look_id = theme_engine.SELECTORS.get(fold(look_value), "default")
+	return _ID_OF_LOOK[look_id]
 
 
 def _rgb(value, colours, default_key):

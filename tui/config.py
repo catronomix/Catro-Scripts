@@ -3,7 +3,9 @@
 			PROJECT CONFIGURATION
 			=====================
 Reads and (optionally) writes the checkout-local `config.ini` that holds the
-terminal preferences: theme mode, colour level and table style.
+terminal preferences: colour level and table style. Theme selection lives in
+`theme.ini` and belongs to `tui.theme_engine`; an old `[theme] mode` value is
+still readable here so the engine can migrate it.
 
 Resolution is fixed to the project folder - `Path(__file__).parents[1]` - so it
 is one file per checkout, never cwd, %APPDATA% or ~/.config.
@@ -24,7 +26,6 @@ import os
 from pathlib import Path
 
 DEFAULTS = {
-	"theme": {"mode": "soft"},
 	"color": {"level": "auto"},
 	"table": {"style": "auto"},
 }

@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, config, palette, table  # noqa: E402  (import after sys.path setup)
+from tui import caps, config, palette, table, theme_engine  # noqa: E402  (import after sys.path setup)
 
 # soft's truecolor codes, byte for byte: border #A392C0, fg #D4C8EB,
 # bg #1B1726, surface #292238.
@@ -126,14 +126,18 @@ class PrefixSeamTests(unittest.TestCase):
 class ThemeTests(unittest.TestCase):
 	def tearDown(self):
 		config.CONFIG_FILE = None
+		theme_engine.THEME_FILE = None
 
 	def test_default_is_soft(self):
 		with mock.patch.dict(os.environ, {}, clear=True):
 			self.assertEqual(palette.theme(), "soft")
+			self.assertEqual(palette.theme_name(), "cozypurple")
+			self.assertEqual(palette.look(), "soft")
 
 	def test_env_beats_config(self):
 		with tempfile.TemporaryDirectory() as td:
 			config.CONFIG_FILE = Path(td) / "config.ini"
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
 			config.set("theme", "mode", "contrast-dark")
 			with mock.patch.dict(os.environ, {"CATRO_THEME": "light"}, clear=True):
 				self.assertEqual(palette.theme(), "contrast-light")
@@ -142,12 +146,24 @@ class ThemeTests(unittest.TestCase):
 		with mock.patch.dict(os.environ, {"CATRO_THEME": "light"}, clear=True):
 			self.assertEqual(palette.theme("dark"), "soft")
 
-	def test_config_supplies_the_mode(self):
+	def test_theme_ini_supplies_the_look(self):
+		with tempfile.TemporaryDirectory() as td:
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
+			theme_engine.theme_file().write_text(
+				"[theme]\nname = cozypurple\nlook = light\n", encoding="utf-8")
+			with mock.patch.dict(os.environ, {}, clear=True):
+				self.assertEqual(palette.theme(), "contrast-light")
+				self.assertEqual(palette.look(), "light")
+
+	def test_config_supplies_the_legacy_mode(self):
 		with tempfile.TemporaryDirectory() as td:
 			config.CONFIG_FILE = Path(td) / "config.ini"
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
 			config.set("theme", "mode", "contrast-light")
 			with mock.patch.dict(os.environ, {}, clear=True):
 				self.assertEqual(palette.theme(), "contrast-light")
+				self.assertFalse(theme_engine.theme_file().exists(),
+								 "a read must not migrate on its own")
 
 	def test_unknown_theme_falls_back_to_soft(self):
 		with mock.patch.dict(os.environ, {"CATRO_THEME": "neon"}, clear=True):
@@ -211,6 +227,66 @@ class ThreeThemeTests(unittest.TestCase):
 					self.assertRegex(out, r"^\x1b\[(3[0-7]|9[0-7])mx\x1b\[0m$")
 
 
+class ThemeEngineAdapterTests(unittest.TestCase):
+	"""`palette` is an adapter: the engine's data drives the same public API."""
+
+	def tearDown(self):
+		theme_engine.THEME_FILE = None
+		theme_engine.THEMES_DIR = None
+
+	def test_shipped_document_matches_the_published_tables(self):
+		document = theme_engine.load_theme("cozypurple")
+		self.assertEqual(document["looks"]["default"], palette.SOFT)
+		self.assertEqual(document["looks"]["contrast-light"], palette.CONTRAST_LIGHT)
+		self.assertEqual(document["looks"]["contrast-dark"], palette.CONTRAST_DARK)
+		self.assertEqual(document["properties"],
+						 theme_engine.BUILTIN_PROPERTIES)
+
+	def test_document_and_properties_are_delegated(self):
+		self.assertEqual(palette.document()["name"], "cozypurple")
+		self.assertEqual(set(palette.properties()), set(theme_engine.PROPERTY_VALUES))
+		self.assertEqual(palette.properties()["border_style"], "rounded")
+
+	def test_properties_returns_a_copy(self):
+		palette.properties()["border_style"] = "ascii"
+		self.assertEqual(palette.properties()["border_style"], "rounded")
+
+	def test_theme_ini_look_drives_the_palette(self):
+		with tempfile.TemporaryDirectory() as td:
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
+			theme_engine.set_selection("cozypurple", "light")
+			self.assertEqual(palette.look(), "light")
+			self.assertEqual(palette.theme(), "contrast-light")
+			self.assertEqual(palette.palette(), palette.CONTRAST_LIGHT)
+
+	def test_broken_theme_file_falls_back_without_raising(self):
+		with tempfile.TemporaryDirectory() as td:
+			themes = Path(td) / "themes"
+			themes.mkdir()
+			(themes / "cozypurple.json").write_text("{not json", encoding="utf-8")
+			theme_engine.THEMES_DIR = themes
+			self.assertEqual(palette.palette()["bg"], palette.SOFT["bg"])
+			self.assertEqual(palette.document()["name"], "cozypurple")
+
+	def test_a_selected_theme_drives_palette_and_document_alike(self):
+		with tempfile.TemporaryDirectory() as td:
+			themes = Path(td) / "themes"
+			themes.mkdir()
+			document = theme_engine.load_theme("cozypurple")
+			document["name"] = "mint"
+			document["display"] = "Mint"
+			document["looks"]["contrast-dark"]["bg"] = "#0B1E14"
+			theme_engine.THEMES_DIR = themes
+			theme_engine.save_theme(document)
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
+			theme_engine.theme_file().write_text(
+				"[theme]\nname = mint\nlook = dark\n", encoding="utf-8")
+			self.assertEqual(palette.theme_name(), "mint")
+			self.assertEqual(palette.document()["name"], "mint")
+			self.assertEqual(palette.palette()["bg"], "#0b1e14")
+			self.assertEqual(palette.properties()["border_style"], "rounded")
+
+
 def _luminance(colour):
 	"""WCAG 2.x relative luminance for a #rrggbb colour."""
 	def channel(value):
@@ -244,6 +320,7 @@ class ContrastGateTests(unittest.TestCase):
 class ThemeAliasTests(unittest.TestCase):
 	def tearDown(self):
 		config.CONFIG_FILE = None
+		theme_engine.THEME_FILE = None
 
 	MATRIX = {
 		"soft": ("soft", "default", "cozy", " SOFT ", "Soft"),
@@ -272,6 +349,7 @@ class ThemeAliasTests(unittest.TestCase):
 			target = Path(td) / "config.ini"
 			target.write_text("[theme]\nmode = dark\n", encoding="utf-8")
 			config.CONFIG_FILE = target
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
 			with mock.patch.dict(os.environ, {}, clear=True):
 				self.assertEqual(palette.theme(), "soft")
 
@@ -286,6 +364,7 @@ class ThemeAliasTests(unittest.TestCase):
 			self.assertEqual(palette.theme(), "contrast-dark")
 		with tempfile.TemporaryDirectory() as td:
 			config.CONFIG_FILE = Path(td) / "config.ini"
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
 			config.set("theme", "mode", "Contrast_Light")
 			with mock.patch.dict(os.environ, {}, clear=True):
 				self.assertEqual(palette.theme(), "contrast-light")

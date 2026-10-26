@@ -23,7 +23,7 @@ naming the path and exits 1. Nothing here runs at import time.
 
 import sys
 
-from . import caps, chrome, config, palette
+from . import caps, chrome, config, palette, theme_engine
 
 USAGE = ("usage: theme [show|soft|contrast-light|contrast-dark|toggle|"
 		 "set <key> <value>|palette]")
@@ -149,17 +149,34 @@ def _page(title, subtitle, rows, cap, warn=False):
 
 
 def _write(key, value, cap):
+	"""Write one setting; exit code 0 on success, 1 when the file is unwritable."""
+	if key == "theme.mode":
+		return _write_look(value, cap)
+	# Any other write also performs the one-off legacy migration, so an old
+	# `config.ini [theme] mode` lands in theme.ini instead of being shadowed.
+	theme_engine.migrate()
 	section, name = key.split(".", 1)
-	# Any write canonicalises a legacy theme.mode (e.g. `dark` -> `soft`), so the
-	# migration completes on `theme set` too, not only on `toggle`.
-	current = config.get("theme", "mode", "soft")
-	canonical = palette.normalize(current)
-	if canonical != str(current).strip().lower():
-		config.set("theme", "mode", canonical)
 	if config.set(section, name, value):
 		return 0
 	sys.stdout.write(palette.style(
 		"config.ini is not writable here: {}".format(config.path()),
+		fg="error", cap=cap) + "\n")
+	return 1
+
+
+def _write_look(value, cap):
+	"""Select a look in theme.ini; one error line and exit 1 when unwritable."""
+	try:
+		written = theme_engine.set_selection(look=value)
+	except theme_engine.ThemeError as exc:
+		sys.stdout.write(palette.style(
+			"invalid theme.mode: {} ({})".format(value, exc),
+			fg="error", cap=cap) + "\n")
+		return 2
+	if written:
+		return 0
+	sys.stdout.write(palette.style(
+		"theme.ini is not writable here: {}".format(theme_engine.theme_file()),
 		fg="error", cap=cap) + "\n")
 	return 1
 
