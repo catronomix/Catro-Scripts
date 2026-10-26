@@ -265,6 +265,38 @@ class SelectionTests(SeamCase):
 		self.assertEqual(theme_engine.look_palette(),
 						 theme_engine.BUILTIN_LOOKS["contrast-dark"])
 
+	def test_the_selected_theme_drives_document_and_properties(self):
+		document = builtin()
+		document["name"] = "mint"
+		document["display"] = "Mint"
+		document["properties"]["border_style"] = "ascii"
+		document["looks"]["contrast-dark"]["accent"] = "#22CC88"
+		self.write_theme(document)
+		self.selection_file.write_text(
+			"[theme]\nname = mint\nlook = dark\n", encoding="utf-8")
+		self.assertEqual(theme_engine.resolve(), ("mint", "contrast-dark"))
+		self.assertEqual(theme_engine.document()["name"], "mint")
+		self.assertEqual(theme_engine.properties()["border_style"], "ascii")
+		self.assertEqual(theme_engine.look_palette()["accent"], "#22CC88")
+
+	def test_a_selected_theme_that_breaks_later_falls_back(self):
+		document = builtin()
+		document["name"] = "mint"
+		self.write_theme(document)
+		self.selection_file.write_text("[theme]\nname = mint\n", encoding="utf-8")
+		self.assertEqual(theme_engine.document()["name"], "mint")
+		(self.themes / "mint.json").write_text("{oops", encoding="utf-8")
+		self.assertEqual(theme_engine.resolve()[0], "cozypurple")
+		self.assertEqual(theme_engine.document()["name"], "cozypurple")
+		self.assertEqual(theme_engine.properties()["header_align"], "left")
+
+	def test_set_selection_rejects_a_corrupt_theme_file(self):
+		(self.themes / "broken.json").write_text("{oops", encoding="utf-8")
+		with self.assertRaises(theme_engine.ThemeError):
+			theme_engine.set_selection("broken")
+		self.assertFalse(self.selection_file.exists(),
+						 "a rejected selection must not be written")
+
 	def test_malformed_theme_ini_falls_back_to_the_default(self):
 		for text in ("nonsense\n[theme\nlook = dark\n",
 					 "[theme]\nlook = ultraviolet\n",

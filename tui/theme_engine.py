@@ -257,10 +257,18 @@ def _selector_for(look):
 
 
 def resolve(name=None, look=None):
-	"""(theme name, look id) for a call; never raises, falls back to built-in."""
+	"""(theme name, look id) for a call; never raises, falls back to built-in.
+
+	No `name` means the theme `theme.ini` selects, so `document()`,
+	`properties()` and `look_palette()` follow the selection instead of always
+	describing `cozypurple`. An unreadable selected theme still falls back to
+	the built-in pair.
+	"""
 	selected_name, selected_selector = selection()
-	candidate = DEFAULT_THEME if name is None or not str(name).strip() \
-		else str(name).strip().lower()
+	if name is None or not str(name).strip():
+		candidate = selected_name or DEFAULT_THEME
+	else:
+		candidate = str(name).strip().lower()
 	try:
 		load_theme(candidate)
 	except (ThemeError, OSError):
@@ -301,8 +309,9 @@ def set_selection(name=None, look=None):
 		candidate = str(name).strip().lower()
 		if not _SLUG.match(candidate):
 			raise ThemeError("invalid theme name: {!r}".format(name))
-		if not _path_for(candidate).is_file():
-			raise ThemeError("no theme file: {}".format(_path_for(candidate)))
+		# Selecting is a user request: an invalid or corrupt file must surface
+		# here (CLI exit 2) rather than be selected and silently ignored.
+		load_theme(candidate)
 	if look is not None and str(look).strip():
 		selector = _selector_for(look)
 		if selector is None:

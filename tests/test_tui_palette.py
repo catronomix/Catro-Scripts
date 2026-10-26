@@ -268,6 +268,24 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 			self.assertEqual(palette.palette()["bg"], palette.SOFT["bg"])
 			self.assertEqual(palette.document()["name"], "cozypurple")
 
+	def test_a_selected_theme_drives_palette_and_document_alike(self):
+		with tempfile.TemporaryDirectory() as td:
+			themes = Path(td) / "themes"
+			themes.mkdir()
+			document = theme_engine.load_theme("cozypurple")
+			document["name"] = "mint"
+			document["display"] = "Mint"
+			document["looks"]["contrast-dark"]["bg"] = "#0B1E14"
+			theme_engine.THEMES_DIR = themes
+			theme_engine.save_theme(document)
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
+			theme_engine.theme_file().write_text(
+				"[theme]\nname = mint\nlook = dark\n", encoding="utf-8")
+			self.assertEqual(palette.theme_name(), "mint")
+			self.assertEqual(palette.document()["name"], "mint")
+			self.assertEqual(palette.palette()["bg"], "#0b1e14")
+			self.assertEqual(palette.properties()["border_style"], "rounded")
+
 
 def _luminance(colour):
 	"""WCAG 2.x relative luminance for a #rrggbb colour."""
