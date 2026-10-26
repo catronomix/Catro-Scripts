@@ -6,78 +6,19 @@ Canvas-based widgets for the full-screen theme editor: each owns a rectangle on 
 `Canvas`, draws through `Canvas.draw_*`, styles with `palette.prefix()` and exposes
 `hit_test(x, y)`, so keys and mouse drive one model. `Button` renders through
 `chrome.button()`, `ScrollBar` reads `chrome.scrollbar()` back for its geometry,
-`Panel` clips its children, `resize_notice()` is the small-terminal fallback.
-No widget ever writes to a stream.
+`FocusRing` routes tab/shift-tab, key and mouse events.
+
+The mechanical half (`Widget`, `Panel`, `Clip`, `cells`, `focus_prefix`,
+`small_terminal`, `resize_notice`) lives in `tui.widgetkit` and is re-exported
+here, so `from tui.widgets import Panel, cells, ...` keeps working. No widget ever
+writes to a stream.
 """
 
-import re
-
 from . import caps, chrome, palette
-from .text import display_width, pad
-
-MIN_WIDTH, MIN_HEIGHT = 90, 24  # three live previews plus the panels beside them
-SMALL_TERMINAL = "too small"
-_LEAD = re.compile("^((?:\033\\[[0-9;]*m)+)")
-_SGR = re.compile("\033\\[[0-9;]*m")
-
-
-def cells(text):
-	"""(colour, visible text) split of one styled string, for a canvas cell."""
-	text, match = str(text), _LEAD.match(str(text))
-	lead = match.group(1) if match else ""
-	return (lead or None, _SGR.sub("", text[len(lead):]))
-
-
-def focus_prefix(focused, cap=None):
-	"""The focus-visible cell colour from the theme's `focus_style`, or None."""
-	if not focused:
-		return None
-	cap = cap or caps.detect()
-	if cap.level == "none":
-		return None
-	style = palette.properties().get("focus_style")
-	attrs = {"accent": {"fg": "accent"}, "underline": {"underline": True}}
-	return palette.prefix(**attrs.get(style, {"reverse": True}), cap=cap) or None
-
-
-def small_terminal(width, height):
-	"""True when the terminal is below the editor's comfortable minimum."""
-	try:
-		return int(width) < MIN_WIDTH or int(height) < MIN_HEIGHT
-	except (TypeError, ValueError):
-		return True
-
-
-def resize_notice(width, height, *, cap=None):
-	"""The `too small` fallback line for an undersized terminal, else None."""
-	if small_terminal(width, height):
-		return palette.style("{} - resize to at least {}x{}".format(
-			SMALL_TERMINAL, MIN_WIDTH, MIN_HEIGHT), fg="warn",
-			cap=cap or caps.detect())
-	return None
-
-class Widget:
-	"""Common rectangle, hit test, clipping painter and focus styling."""
-	def __init__(self, x, y, width, height=1, *, cap=None):
-		self.x, self.y, self.cap = int(x), int(y), cap
-		self.width, self.height = max(1, int(width)), max(1, int(height))
-	def hit_test(self, x, y):
-		"""A mouse point either belongs to this rectangle or it does not."""
-		return (self.x <= int(x) < self.x + self.width
-				and self.y <= int(y) < self.y + self.height)
-	def paint(self, canvas, x, y, text, colour=None):
-		canvas.draw_text(x, y, str(text)[:max(0, self.x + self.width - x)], colour)
-	def styled(self, focused, fg="fg"):
-		cap = self.cap or caps.detect()
-		return focus_prefix(focused, cap) or palette.prefix(fg=fg, cap=cap) or None
-	def draw(self, canvas, focused=False):
-		raise NotImplementedError
-	def key(self, token):
-		"""Handle one key token; True when the widget consumed it."""
-		return False
-	def click(self, x, y):
-		"""Mouse press at a point; True when it landed on the widget."""
-		return self.hit_test(x, y)
+from .text import display_width, pad, strip_ansi
+from .widgetkit import (Clip, MIN_HEIGHT, MIN_WIDTH, SMALL_TERMINAL, Panel,
+						Widget, cells, focus_prefix, resize_notice,
+						small_terminal)
 
 class Button(Widget):
 	"""A `chrome.button()` label: Enter/Space/click activates unless disabled."""
@@ -177,11 +118,13 @@ class TextField(Widget):
 		return True
 	def draw(self, canvas, focused=False):
 		cap = self.cap or caps.detect()
-		base = palette.prefix(fg="error" if self.error else "fg", cap=cap) or None
+		ink = "error" if self.error else "fg"
+		base = palette.prefix(fg=ink, cap=cap) or None
 		mark = min(self.cursor, self.width - 1) if self.editing else None
 		for offset, char in enumerate(pad(self.value, self.width)[:self.width]):
 			canvas.draw_char(self.x + offset, self.y, char,
-							 focus_prefix(focused and offset == mark, cap) or base)
+							 focus_prefix(focused and offset == mark, cap,
+										  fg=ink) or base)
 
 class SelectField(Widget):
 	"""`< option >` cycler: left/right/Enter move through the options."""
@@ -301,7 +244,7 @@ class ScrollBar(Widget):
 		return max(0, total - self.height)
 	def geometry(self):
 		"""(start, length) of the thumb, read from the rendered column."""
-		plain = [_SGR.sub("", cell) for cell in self.bar()]
+		plain = [strip_ansi(cell) for cell in self.bar()]
 		if len(set(plain)) < 2:
 			return (0, len(plain))
 		track = max(set(plain), key=plain.count)
@@ -375,26 +318,3 @@ class FocusRing:
 		"""Draw every widget, the focused one with its focus-visible style."""
 		for widget in self.widgets:
 			widget.draw(canvas, focused=widget is self.current())
-
-class Panel(Widget):
-	"""A clipping rectangle: a child can never draw outside the panel's rows."""
-	def __init__(self, x, y, width, height, *, cap=None):
-		Widget.__init__(self, x, y, width, height, cap=cap)
-		self.children = []
-	def draw(self, canvas, focused=False):
-		target = Clip(canvas, self.x, self.y, self.width, self.height)
-		for child in self.children:
-			child.draw(target, focused=focused and child is self.children[0])
-
-class Clip:
-	"""The `draw_char`/`draw_text` subset of `Canvas`, restricted to a rect."""
-	def __init__(self, canvas, x, y, width, height):
-		self.canvas, self.x, self.y = canvas, int(x), int(y)
-		self.width, self.height = int(width), int(height)
-	def draw_char(self, x, y, char, color=None):
-		if (self.x <= int(x) < self.x + self.width
-				and self.y <= int(y) < self.y + self.height):
-			self.canvas.draw_char(x, y, char, color)
-	def draw_text(self, x, y, text, color=None):
-		for offset, char in enumerate(str(text)):
-			self.draw_char(x + offset, y, char, color)

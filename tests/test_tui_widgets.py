@@ -8,6 +8,10 @@ clip proxy behind `Panel` and the small-terminal fallback. Drawing is checked
 against the same `chrome` seams the widgets wrap, so a restyle cannot silently
 change a hit box. Pinned capabilities keep the checkout's `config.ini` out of
 the assertions.
+
+The helpers (`Widget`, `Panel`, `Clip`, `cells`, `focus_prefix`, the
+small-terminal pair) moved to `tui/widgetkit.py`, so this module also pins the
+re-export and the self-contained focus ground.
 """
 
 import sys
@@ -73,6 +77,75 @@ class SeamTests(unittest.TestCase):
 		self.assertIsNone(widgets.focus_prefix(
 			True, caps.Capabilities(level="none", unicode=False, width=80,
 									isatty=True, plain=False, reason="test")))
+
+
+class ModuleSplitTests(unittest.TestCase):
+	"""`tui/widgetkit.py` owns the helpers; `tui/widgets.py` re-exports them."""
+
+	def test_helpers_are_the_widgetkit_objects(self):
+		from tui import widgetkit  # noqa: E402  (the split is the assertion)
+		for name in ("Widget", "Panel", "Clip", "cells", "focus_prefix",
+					 "small_terminal", "resize_notice", "MIN_WIDTH",
+					 "MIN_HEIGHT", "SMALL_TERMINAL"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(widgets, name), getattr(widgetkit, name))
+
+	def test_widgets_keep_the_public_import_surface(self):
+		from tui.widgets import (Clip, Panel, Widget, cells,  # noqa: F401
+								 focus_prefix, resize_notice, small_terminal)
+		self.assertTrue(callable(cells))
+		self.assertTrue(callable(focus_prefix))
+		self.assertTrue(issubclass(Panel, Widget))
+		self.assertIsNotNone(Clip)
+
+	def test_no_duplicated_ansi_table(self):
+		from tui import widgetkit
+		self.assertFalse(hasattr(widgetkit, "_SGR"))
+		self.assertFalse(hasattr(widgets, "_SGR"))
+		self.assertEqual(widgetkit.cells("\x1b[31mred\x1b[0m"), ("\x1b[31m", "red"))
+
+
+class FocusGroundTests(unittest.TestCase):
+	"""A focused cell must carry its own ground, never inherit one."""
+
+	class Recorder:
+		def __init__(self):
+			self.cells = {}
+
+		def draw_char(self, x, y, char, color=None):
+			self.cells[(int(x), int(y))] = (char, color)
+
+		def draw_text(self, x, y, text, color=None):
+			for offset, char in enumerate(str(text)):
+				self.draw_char(x + offset, y, char, color)
+
+	def true_cap(self):
+		return caps.Capabilities(level="true", unicode=True, width=120,
+								 isatty=True, plain=False, reason="test")
+
+	def test_two_focused_rows_cannot_bleed(self):
+		cap = self.true_cap()
+		recorder = self.Recorder()
+		widgets.CheckField(0, 0, "one", cap=cap).draw(recorder, focused=True)
+		widgets.CheckField(0, 1, "two", cap=cap).draw(recorder, focused=True)
+		grounds = []
+		for row in (0, 1):
+			colours = {colour for (x, y), (char, colour)
+					   in recorder.cells.items() if y == row}
+			self.assertEqual(len(colours), 1)
+			ground = colours.pop()
+			self.assertRegex(ground, "\x1b\\[38;2;")
+			self.assertRegex(ground, "\x1b\\[48;2;")
+			grounds.append(ground)
+		self.assertEqual(grounds[0], grounds[1])
+
+	def test_focus_prefix_is_self_contained(self):
+		cap = self.true_cap()
+		prefix = widgets.focus_prefix(True, cap)
+		self.assertIn("\x1b[38;2;", prefix)
+		self.assertIn("\x1b[48;2;", prefix)
+		self.assertEqual(widgets.focus_prefix(True, cap, fg="warn"),
+						 widgets.focus_prefix(True, cap, fg="warn"))
 
 
 class ButtonTests(unittest.TestCase):

@@ -3,14 +3,18 @@
 			MOUSE INPUT
 			============
 SGR mouse reporting (`\\x1b[?1006h`) plus its decoder. `enable()` writes the mode
-sequences only to an injected stream and only when that stream is a tty;
-`disable()` undoes them, is safe twice and never raises. Import is inert.
+sequences only to an injected stream and only when that stream is a tty; a write
+that fails returns False and leaves reporting disarmed, so `disable()` cannot
+claim to have restored a mode that never went on. `disable()` undoes them, is
+safe twice and never raises. Import is inert.
 
 `decode()` is pure and total: one SGR sequence in, one
 `(kind, x, y, modifiers)` out, or `None` for anything else. Kinds are `press`,
 `release`, `drag`, `move` and the four `wheel-*` names; `x`/`y` are 0-based
 cells and `modifiers` names the held `shift`/`alt`/`ctrl`. `token()` /
-`parse_token()` carry that event in the `mouse:...` form `tui.keys` emits.
+`parse_token()` carry that event in the `mouse:...` form `tui.keys` emits, and
+both are total: a malformed value yields the empty string / `None`, never an
+exception.
 
 Windows: `enable()` tries to turn on VT input through `ctypes` (imported inside
 the function, so no platform module at import time); a console that refuses it
@@ -47,7 +51,8 @@ def enable(stream=None, *, drag=True):
 	if _active is stream:
 		return True
 	codes = "\033[?1000h" + ("\033[?1002h" if drag else "") + "\033[?1006h"
-	_write(stream, codes)
+	if not _write(stream, codes):
+		return False
 	_active = stream
 	return True
 
@@ -94,12 +99,20 @@ def kind(code, final="M"):
 	return PRESS if final == "M" else RELEASE
 
 def token(event):
-	"""`mouse:<kind>:<x>:<y>[:<mod>,...]` for a decoded event, else `""`."""
+	"""`mouse:<kind>:<x>:<y>[:<mod>,...]` for a decoded event, else `""`.
+
+	Total by design: a malformed shape is not an error, it is just not a mouse
+	event, so the key stream can pass anything through without a traceback.
+	"""
 	if not event:
 		return ""
-	name, x, y, modifiers = event
-	suffix = ":" + ",".join(modifiers) if modifiers else ""
-	return "mouse:{}:{}:{}{}".format(name, x, y, suffix)
+	try:
+		name, x, y, modifiers = event
+		suffix = (":" + ",".join(str(mod) for mod in modifiers)
+				  if modifiers else "")
+		return "mouse:{}:{}:{}{}".format(name, int(x), int(y), suffix)
+	except (TypeError, ValueError):
+		return ""
 
 def parse_token(value):
 	"""The event `token()` produced, or `None` for any other key token."""
