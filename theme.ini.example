@@ -1,0 +1,14 @@
+# catro-scripts theme selection (project-local).
+#
+# Copy this file to theme.ini (same folder, next to the scripts) and uncomment
+# what you want. theme.ini is gitignored: it is one file per checkout, never
+# per user, and the `theme` command rewrites it.
+#
+# name  slug of a theme under themes/ (one `<name>.json` per theme)
+# look  soft | light | dark  (aliases: default, contrast-light, contrast-dark)
+#
+# An old config.ini `[theme] mode` value is migrated here by the first write.
+
+[theme]
+#name = cozypurple
+#look = soft

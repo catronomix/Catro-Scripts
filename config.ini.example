@@ -5,16 +5,12 @@
 # A missing, unreadable or malformed config.ini silently falls back to the
 # built-in defaults below.
 #
+# Theme selection lives in theme.ini (see theme.ini.example): one JSON theme per
+# file under themes/, chosen by name and look there.
+#
 # Environment variables win over this file:
 #   NO_COLOR, FORCE_COLOR, CATRO_COLOR, CATRO_THEME, CATRO_ASCII
 # Precedence: NO_COLOR > FORCE_COLOR > CATRO_* > config.ini > autodetect.
-
-[theme]
-# soft | contrast-light | contrast-dark
-# soft is the default (cozy purple); contrast-light and contrast-dark are the
-# high-contrast pair. Toggle with `theme toggle`; aliases such as cozy, clight
-# and hc also work.
-#mode = soft
 
 [color]
 # auto | none | 16 | 256 | true
