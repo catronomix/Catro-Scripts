@@ -120,11 +120,8 @@ if [ ! -f "$FULL_PATH" ]; then
 
     if [ "$HITS" -eq 1 ]; then
         # One case variant: run it, but say so on stderr so a script that
-        # breaks under Linux's case rules is easy to spot. Scripts are named
-        # without the .py suffix on the command line, so report the stem.
-        MATCHED_NAME="${MATCH##*/}"
-        MATCHED_NAME="${MATCHED_NAME%.py}"
-        echo "note: \"$SCRIPT_NAME\" matched \"$MATCHED_NAME\"" >&2
+        # breaks under Linux's case rules is easy to spot.
+        echo "note: \"$SCRIPT_NAME\" matched \"${MATCH##*/}\"" >&2
         FULL_PATH="$MATCH"
     elif [ "$HITS" -gt 1 ]; then
         echo -e "${C_RED}Error: \"$SCRIPT_NAME.py\" matches more than one script:$MATCHES${C_RESET}" >&2
@@ -133,7 +130,7 @@ if [ ! -f "$FULL_PATH" ]; then
         echo -e "${C_RED}Error: Script \"$SCRIPT_NAME.py\" not found in $SCRIPT_DIR${C_RESET}"
         exit 1
     fi
-    unset WANT HITS MATCH MATCHES CANDIDATE BASE MATCHED_NAME
+    unset WANT HITS MATCH MATCHES CANDIDATE BASE
 fi
 
 # Shift the arguments so we can pass the rest to python
