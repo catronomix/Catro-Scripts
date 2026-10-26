@@ -16,6 +16,8 @@ Layout:
 	prompts   ask_text, ask_int, ask_choice
 	screen    Screen, Canvas, TerminalRenderer
 	keys      raw mode, key decoding, background KeyReader
+	mouse     SGR mouse reporting, decoding and restore
+	widgets   focus ring, buttons, fields, list, scrollbar, clipping
 	progress  Spinner, ProgressBar, LiveRegion
 	pager     paged output
 	loop      FrameLoop, ScreensaverHost
@@ -31,10 +33,11 @@ Usage:
 	from tui import caps, palette, table
 """
 
-from . import caps, chrome, config, keys, loop, palette, pager, progress, prompts, screen, table, text
+from . import caps, chrome, config, keys, loop, mouse, palette, pager, progress, prompts, screen, table, text, widgets
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .chrome import button, field, fill, header, menu, panel, rule, scrollbar, status
 from .loop import FrameLoop, ScreensaverHost
+from .mouse import decode, disable, enable, parse_token, reporting, token
 from .palette import CONTRAST_DARK, CONTRAST_LIGHT, RESET, SOFT, THEMES, prefix, style, theme
 from .pager import page
 from .progress import LiveRegion, ProgressBar, Spinner
@@ -42,10 +45,13 @@ from .prompts import ask_choice, ask_int, ask_text
 from .screen import Canvas, Screen, TerminalRenderer
 from .table import banner, key_values, print_table, render_table, section
 from .text import display_width, pad, strip_ansi, truncate, wrap
+from .widgets import (Button, CheckField, Clip, FocusRing, ListBox, Panel,
+					  ScrollBar, SelectField, TextField, Widget, cells,
+					  focus_prefix, resize_notice, small_terminal)
 
 __all__ = [
-	"caps", "chrome", "config", "keys", "loop", "palette", "pager", "progress",
-	"prompts", "screen", "table", "text",
+	"caps", "chrome", "config", "keys", "loop", "mouse", "palette", "pager",
+	"progress", "prompts", "screen", "table", "text", "widgets",
 	"Capabilities", "detect", "init_ansi", "require_tty",
 	"CONTRAST_DARK", "CONTRAST_LIGHT", "RESET", "SOFT", "THEMES", "prefix",
 	"style", "theme",
@@ -54,6 +60,10 @@ __all__ = [
 	"header", "panel", "rule", "field", "status", "fill", "menu", "button",
 	"scrollbar",
 	"Canvas", "Screen", "TerminalRenderer",
+	"decode", "disable", "enable", "parse_token", "reporting", "token",
+	"Button", "CheckField", "Clip", "FocusRing", "ListBox", "Panel",
+	"ScrollBar", "SelectField", "TextField", "Widget", "cells", "focus_prefix",
+	"resize_notice", "small_terminal",
 	"ask_choice", "ask_int", "ask_text",
 	"LiveRegion", "ProgressBar", "Spinner",
 	"page", "FrameLoop", "ScreensaverHost",
