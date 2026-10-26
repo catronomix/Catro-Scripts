@@ -221,6 +221,43 @@ class PickerTests(unittest.TestCase):
 		popup.key("mouse:release:{}:{}".format(track.x, track.y))
 		self.assertEqual(track.value, expected)
 
+	def test_wheel_and_move_never_change_the_colour(self):
+		popup = picker()
+		track = popup.sliders[1]
+		before = (popup.value, popup.hex_field.value, popup.hsv_field.value, track.value)
+		for kind in ("mouse:wheel-down", "mouse:wheel-up", "mouse:move"):
+			popup.key("{}:{}:{}".format(kind, track.x + 2, track.y))
+		self.assertEqual((popup.value, popup.hex_field.value,
+						  popup.hsv_field.value, track.value), before)
+		self.assertEqual(track.value, 75)
+
+	def test_drag_moves_only_the_grabbed_slider(self):
+		popup = picker()
+		hue, saturation, brightness = popup.sliders
+		self.assertTrue(popup.key("mouse:press:{}:{}".format(
+			saturation.x + 5, saturation.y)))
+		low = saturation.value
+		# one row above the 1-cell track: only the grabbed slider follows x
+		self.assertTrue(popup.key("mouse:drag:{}:{}".format(
+			saturation.x + saturation.width - 1, saturation.y - 1)))
+		self.assertEqual(saturation.value, 100)
+		self.assertGreater(saturation.value, low)
+		self.assertEqual((hue.value, brightness.value), (220, 80))
+		self.assertEqual(popup.hex_field.value, "#0044cc")
+		self.assertEqual(popup.hsv_field.value, "220,100,80")
+
+	def test_drag_without_a_press_and_after_release_is_ignored(self):
+		popup = picker()
+		track = popup.sliders[2]
+		far = "{}:{}".format(track.x + track.width - 1, track.y)
+		self.assertFalse(popup.key("mouse:drag:" + far))
+		self.assertEqual(popup.value, "#3366cc")
+		popup.key("mouse:press:{}:{}".format(track.x, track.y))
+		held = track.value
+		popup.key("mouse:release:{}:{}".format(track.x, track.y))
+		self.assertFalse(popup.key("mouse:drag:" + far))
+		self.assertEqual(track.value, held)
+
 	def test_ok_click_and_enter_commit(self):
 		popup = picker()
 		self.assertTrue(popup.key("mouse:press:{}:{}".format(popup.ok.x, popup.ok.y)))
@@ -260,6 +297,60 @@ class PickerTests(unittest.TestCase):
 		self.assertFalse(popup.commit())
 		self.assertFalse(popup.closed)
 
+	def test_tab_away_commits_a_valid_draft(self):
+		popup = picker()
+		popup.key("enter")
+		popup.hex_field.value = "#ff0000"
+		self.assertTrue(popup.key("tab"))
+		self.assertFalse(popup.hex_field.editing)
+		self.assertEqual(popup.value, "#ff0000")
+		self.assertIs(popup.ring.current(), popup.sliders[0])
+		self.assertTrue(popup.commit())
+		self.assertEqual(popup.result, "#ff0000")
+
+	def test_tab_away_keeps_focus_when_the_draft_is_invalid(self):
+		popup = picker()
+		popup.key("enter")
+		popup.hex_field.value = "#12345"
+		self.assertTrue(popup.key("tab"))
+		self.assertIs(popup.ring.current(), popup.hex_field)
+		self.assertTrue(popup.hex_field.editing)
+		self.assertEqual(popup.hex_field.error, "need #rrggbb")
+		self.assertEqual(popup.value, "#3366cc")
+		self.assertFalse(popup.commit())
+		self.assertFalse(popup.closed)
+
+	def test_ok_click_commits_a_valid_draft_like_enter(self):
+		popup = picker()
+		popup.key("enter")
+		popup.hex_field.value = "#ff0000"
+		self.assertTrue(popup.key("mouse:press:{}:{}".format(
+			popup.ok.x, popup.ok.y)))
+		self.assertTrue(popup.closed)
+		self.assertEqual(popup.result, "#ff0000")
+
+	def test_cancel_click_restores_an_invalid_draft(self):
+		popup = picker()
+		popup.key("enter")
+		popup.hex_field.value = "#12345"
+		self.assertTrue(popup.key("mouse:press:{}:{}".format(
+			popup.cancel.x, popup.cancel.y)))
+		self.assertTrue(popup.closed)
+		self.assertIsNone(popup.result)
+		self.assertFalse(popup.hex_field.editing)
+		self.assertIsNone(popup.hex_field.error)
+		self.assertEqual(popup.hex_field.value, "#3366cc")
+
+	def test_esc_mid_edit_closes_with_clean_boxes(self):
+		popup = picker()
+		popup.key("enter")
+		popup.hex_field.value = "#12345"
+		self.assertTrue(popup.key("esc"))
+		self.assertTrue(popup.closed)
+		self.assertFalse(popup.hex_field.editing)
+		self.assertIsNone(popup.hex_field.error)
+		self.assertEqual(popup.hex_field.value, "#3366cc")
+
 
 class DrawTests(unittest.TestCase):
 	def test_full_draw_shows_title_hex_and_contrast(self):
@@ -291,3 +382,11 @@ class DrawTests(unittest.TestCase):
 		popup = ColorPicker(canvas, "#3366cc", cap=CAP, colours=COLOURS)
 		popup.draw()
 		self.assertIn("too small", "\n".join(canvas.region(0, 0, 60, 12)))
+
+	def test_draw_without_background_colours_skips_the_warning(self):
+		popup = ColorPicker(new_canvas(), "#3366cc", cap=CAP,
+							colours={"fg": "#000000"})
+		self.assertIs(popup.draw(), popup)
+		text = "\n".join(popup.canvas.region(0, 0, 90, 24))
+		self.assertNotIn("below AA", text)
+		self.assertNotIn("bg", text)
