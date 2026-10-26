@@ -6,8 +6,11 @@ Raw (cbreak) mode, key decoding and a background reader, generalised from
 `keygen.py` and the screensaver's listener.
 
 Tokens: up, down, left, right, home, end, pageup, pagedown, enter, esc,
-backspace, delete, tab, space, ctrl-a .. ctrl-z, or the character itself. A bare
-ESC is told apart from an escape sequence by a short read timeout.
+backspace, delete, tab, shift-tab, space, ctrl-a .. ctrl-z, or the character
+itself. A bare ESC is told apart from an escape sequence by a short read timeout.
+SGR mouse reports (`ESC [ < b ; x ; y M/m`) come back as `mouse:...` tokens from
+`tui.mouse.token()` instead of collapsing to `esc`; every other token is
+unchanged.
 
 No platform module is imported at import time, and `raw_mode()` leaves the
 terminal alone when stdin is not a tty. `decode_key()` is the pure token decoder
@@ -21,6 +24,8 @@ import threading
 import time
 from contextlib import contextmanager
 
+from . import mouse
+
 ESCAPE_TIMEOUT = 0.05
 
 _SEQUENCES = {
@@ -28,7 +33,7 @@ _SEQUENCES = {
 	"\x1bOA": "up", "\x1bOB": "down", "\x1bOC": "right", "\x1bOD": "left",
 	"\x1b[H": "home", "\x1b[F": "end", "\x1b[1~": "home", "\x1b[4~": "end",
 	"\x1b[5~": "pageup", "\x1b[6~": "pagedown", "\x1b[3~": "delete",
-	"\x1b[2~": "insert",
+	"\x1b[2~": "insert", "\x1b[Z": "shift-tab",
 }
 
 _SIMPLE = {
@@ -48,6 +53,8 @@ def decode_key(text):
 	"""Normalise one decoded key (or escape sequence) into a token."""
 	if not text:
 		return None
+	if text.startswith("\x1b[<"):
+		return _mouse_token(text)
 	if text in _SEQUENCES:
 		return _SEQUENCES[text]
 	if text in _SIMPLE:
@@ -180,12 +187,33 @@ def _decode_escape(stream):
 	if char is None:
 		return "esc"
 	sequence += char
+	if sequence == "\x1b[<":
+		return _read_mouse(stream)
 	while sequence[-1].isdigit() or sequence[-1] == ";":
 		char = _read_more(stream)
 		if char is None:
 			break
 		sequence += char
 	return _SEQUENCES.get(sequence, "esc")
+
+
+def _read_mouse(stream):
+	"""`ESC [ <` already consumed: read the SGR body up to its final M/m."""
+	sequence = "\x1b[<"
+	while len(sequence) < 32:
+		char = _read_more(stream)
+		if char is None:
+			return "esc"
+		sequence += char
+		if char in "Mm":
+			return _mouse_token(sequence)
+	return "esc"
+
+
+def _mouse_token(sequence):
+	"""`mouse:...` for one SGR sequence, or `esc` when it does not decode."""
+	event = mouse.decode(sequence)
+	return mouse.token(event) if event else "esc"
 
 
 def _read_more(stream):
