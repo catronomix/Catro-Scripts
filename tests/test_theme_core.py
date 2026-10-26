@@ -33,6 +33,7 @@ if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
 import tui  # noqa: E402  (import after sys.path setup)
+from support import isolate_checkout_config  # noqa: E402  (test helper, not production)
 
 # Scratch a developer's own environment out of the comparison.
 SCRUBBED = ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CATRO_COLOR",
@@ -54,10 +55,11 @@ ACTION_FIXTURE = {
 FIXTURE_ROOT = None
 COUNT_DIR = None
 ACTIONS_PATH = None
+_CONFIG_RESTORE = None
 
 
 def setUpModule():
-	global FIXTURE_ROOT, COUNT_DIR, ACTIONS_PATH
+	global FIXTURE_ROOT, COUNT_DIR, ACTIONS_PATH, _CONFIG_RESTORE
 	FIXTURE_ROOT = Path(tempfile.mkdtemp(prefix="theme-core-"))
 	COUNT_DIR = FIXTURE_ROOT / "count"
 	COUNT_DIR.mkdir()
@@ -65,9 +67,11 @@ def setUpModule():
 	(COUNT_DIR / "two.py").write_text("y" * 128, encoding="utf-8")
 	ACTIONS_PATH = FIXTURE_ROOT / "actions.json"
 	ACTIONS_PATH.write_text(json.dumps(ACTION_FIXTURE), encoding="utf-8")
+	_CONFIG_RESTORE = isolate_checkout_config()
 
 
 def tearDownModule():
+	_CONFIG_RESTORE()
 	shutil.rmtree(FIXTURE_ROOT, ignore_errors=True)
 
 

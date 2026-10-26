@@ -26,6 +26,9 @@ if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
 from tui import caps, config, palette, table, theme_engine  # noqa: E402  (import after sys.path setup)
+from support import isolate_checkout_config, module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
 
 # soft's truecolor codes, byte for byte: border #A392C0, fg #D4C8EB,
 # bg #1B1726, surface #292238.
@@ -124,9 +127,13 @@ class PrefixSeamTests(unittest.TestCase):
 
 
 class ThemeTests(unittest.TestCase):
+	def setUp(self):
+		self._config_file = config.CONFIG_FILE
+		self._theme_file = theme_engine.THEME_FILE
+
 	def tearDown(self):
-		config.CONFIG_FILE = None
-		theme_engine.THEME_FILE = None
+		config.CONFIG_FILE = self._config_file
+		theme_engine.THEME_FILE = self._theme_file
 
 	def test_default_is_soft(self):
 		with mock.patch.dict(os.environ, {}, clear=True):
@@ -174,6 +181,35 @@ class ThemeTests(unittest.TestCase):
 		first["bg"] = "#123456"
 		self.assertEqual(palette.palette("soft")["bg"], "#1B1726")
 		self.assertEqual(palette.palette("nope")["bg"], "#1B1726")
+
+
+class CheckoutConfigIsolationTests(unittest.TestCase):
+	"""`isolate_checkout_config()` hides a contrast-light checkout from tests."""
+
+	def test_isolation_neutralises_a_contrast_light_config(self):
+		with tempfile.TemporaryDirectory() as td:
+			target = Path(td) / "config.ini"
+			target.write_text("[theme]\nmode = contrast-light\n", encoding="utf-8")
+			previous = (config.CONFIG_FILE, theme_engine.THEME_FILE)
+			config.CONFIG_FILE = target
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
+			try:
+				with mock.patch.dict(os.environ, {}, clear=True):
+					self.assertEqual(palette.theme(), "contrast-light",
+									 "the temp config leaks without isolation")
+					restore = isolate_checkout_config()
+					try:
+						self.assertEqual(palette.theme(), "soft")
+						self.assertFalse(config.path().exists(),
+										 "isolated config must be an absent file")
+						self.assertFalse(theme_engine.theme_file().exists(),
+										 "isolated theme must be an absent file")
+					finally:
+						restore()
+					self.assertEqual(palette.theme(), "contrast-light",
+									 "restore must put the previous seams back")
+			finally:
+				config.CONFIG_FILE, theme_engine.THEME_FILE = previous
 
 
 class ThreeThemeTests(unittest.TestCase):
@@ -230,8 +266,11 @@ class ThreeThemeTests(unittest.TestCase):
 class ThemeEngineAdapterTests(unittest.TestCase):
 	"""`palette` is an adapter: the engine's data drives the same public API."""
 
+	def setUp(self):
+		self._theme_file = theme_engine.THEME_FILE
+
 	def tearDown(self):
-		theme_engine.THEME_FILE = None
+		theme_engine.THEME_FILE = self._theme_file
 		theme_engine.THEMES_DIR = None
 
 	def test_shipped_document_matches_the_published_tables(self):
@@ -318,9 +357,13 @@ class ContrastGateTests(unittest.TestCase):
 
 
 class ThemeAliasTests(unittest.TestCase):
+	def setUp(self):
+		self._config_file = config.CONFIG_FILE
+		self._theme_file = theme_engine.THEME_FILE
+
 	def tearDown(self):
-		config.CONFIG_FILE = None
-		theme_engine.THEME_FILE = None
+		config.CONFIG_FILE = self._config_file
+		theme_engine.THEME_FILE = self._theme_file
 
 	MATRIX = {
 		"soft": ("soft", "default", "cozy", " SOFT ", "Soft"),

@@ -35,7 +35,9 @@ import tui  # noqa: E402
 import jsonl_monitor  # noqa: E402
 import keygen  # noqa: E402
 import netconfig  # noqa: E402
-from support import clean_env  # noqa: E402  (test helper, not production)
+from support import clean_env, module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
 
 BOX_GLYPHS = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c"
 THEMES = ("soft", "contrast-light")

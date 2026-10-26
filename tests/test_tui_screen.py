@@ -17,6 +17,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
+
 from tui import screen  # noqa: E402  (import after sys.path setup)
 
 
