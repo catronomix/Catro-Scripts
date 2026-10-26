@@ -20,6 +20,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
+
 from tui import caps, palette, table  # noqa: E402  (import after sys.path setup)
 from tui.text import display_width  # noqa: E402
 
@@ -234,6 +238,7 @@ class LayoutTests(unittest.TestCase):
 
 	def test_style_config_can_force_ascii(self):
 		from tui import config
+		previous = config.CONFIG_FILE
 		with tempfile.TemporaryDirectory() as td:
 			config.CONFIG_FILE = Path(td) / "config.ini"
 			try:
@@ -241,7 +246,7 @@ class LayoutTests(unittest.TestCase):
 				out = table.render_table(["A"], [["b"]], cap=TRUE)
 				self.assertNotIn("\u2500", out)
 			finally:
-				config.CONFIG_FILE = None
+				config.CONFIG_FILE = previous
 
 
 class BlockTests(unittest.TestCase):

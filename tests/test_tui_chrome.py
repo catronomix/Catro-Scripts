@@ -29,6 +29,9 @@ if str(REPO) not in sys.path:
 
 from tui import caps, chrome, table  # noqa: E402  (import after sys.path setup)
 from tui.text import display_width, strip_ansi  # noqa: E402
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 

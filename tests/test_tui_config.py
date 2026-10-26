@@ -26,11 +26,26 @@ if str(REPO) not in sys.path:
 
 from tui import caps, config, palette, theme_engine  # noqa: E402  (import after sys.path setup)
 from tui.__main__ import main, summary  # noqa: E402
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
+
+
+def _checkout_state(path):
+	"""Fingerprint of a checkout file: (exists, bytes, mtime_ns)."""
+	try:
+		stat = path.stat()
+	except OSError:
+		return (False, None, None)
+	return (True, path.read_bytes(), stat.st_mtime_ns)
 
 
 class ResolutionTests(unittest.TestCase):
+	def setUp(self):
+		self._config_file = config.CONFIG_FILE
+
 	def tearDown(self):
-		config.CONFIG_FILE = None
+		config.CONFIG_FILE = self._config_file
 
 	def test_path_is_the_project_folder_not_the_cwd(self):
 		config.CONFIG_FILE = None
@@ -132,13 +147,15 @@ class ResolutionTests(unittest.TestCase):
 
 class ThemeCommandTests(unittest.TestCase):
 	def setUp(self):
+		self._config_file = config.CONFIG_FILE
+		self._theme_file = theme_engine.THEME_FILE
 		self._td = tempfile.TemporaryDirectory()
 		config.CONFIG_FILE = Path(self._td.name) / "config.ini"
 		theme_engine.THEME_FILE = Path(self._td.name) / "theme.ini"
 
 	def tearDown(self):
-		config.CONFIG_FILE = None
-		theme_engine.THEME_FILE = None
+		config.CONFIG_FILE = self._config_file
+		theme_engine.THEME_FILE = self._theme_file
 		self._td.cleanup()
 
 	def run_main(self, argv):
@@ -298,6 +315,10 @@ class ThemeScriptTests(unittest.TestCase):
 				completed.stdout.decode("utf-8").replace("\r\n", "\n"))
 
 	def test_script_shows_the_summary_without_writing_anything(self):
+		# The operator's checkout may already own a config.ini/theme.ini; what
+		# matters is that the run leaves them exactly as they were.
+		before = {name: _checkout_state(REPO / name)
+				  for name in ("config.ini", "theme.ini")}
 		code, out = self.run_python("theme.py")
 		self.assertEqual(code, 0)
 		# Piped rows are TAB-joined fields (the `field` plain contract).
@@ -305,7 +326,9 @@ class ThemeScriptTests(unittest.TestCase):
 		self.assertIn("config\t{}".format(self.root / "config.ini"), out)
 		self.assertFalse((self.root / "config.ini").exists())
 		self.assertFalse((self.root / "theme.ini").exists())
-		self.assertFalse((REPO / "config.ini").exists())
+		for name, state in before.items():
+			self.assertEqual(_checkout_state(REPO / name), state,
+							 "the script wrote to the checkout: " + name)
 
 	def test_script_help_lists_the_commands(self):
 		code, out = self.run_python("theme.py", "--help")

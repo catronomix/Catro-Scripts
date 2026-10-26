@@ -21,6 +21,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
+
 from tui import caps, config  # noqa: E402  (import after sys.path setup)
 
 
@@ -52,8 +56,11 @@ class FakeStream:
 
 
 class CapabilityTests(unittest.TestCase):
+	def setUp(self):
+		self._config_file = config.CONFIG_FILE
+
 	def tearDown(self):
-		config.CONFIG_FILE = None
+		config.CONFIG_FILE = self._config_file
 
 	def detect(self, environ=None, tty=True, encoding="utf-8", windows=False):
 		with mock.patch.object(caps, "_IS_WINDOWS", windows):
