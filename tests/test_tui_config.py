@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -149,13 +149,19 @@ class ThemeCommandTests(unittest.TestCase):
 	def setUp(self):
 		self._config_file = config.CONFIG_FILE
 		self._theme_file = theme_engine.THEME_FILE
+		self._themes_dir = theme_engine.THEMES_DIR
 		self._td = tempfile.TemporaryDirectory()
 		config.CONFIG_FILE = Path(self._td.name) / "config.ini"
 		theme_engine.THEME_FILE = Path(self._td.name) / "theme.ini"
+		theme_engine.THEMES_DIR = Path(self._td.name) / "themes"
+		theme_engine.THEMES_DIR.mkdir()
+		theme_engine._CACHE.clear()
 
 	def tearDown(self):
 		config.CONFIG_FILE = self._config_file
 		theme_engine.THEME_FILE = self._theme_file
+		theme_engine.THEMES_DIR = self._themes_dir
+		theme_engine._CACHE.clear()
 		self._td.cleanup()
 
 	def run_main(self, argv):
@@ -164,12 +170,59 @@ class ThemeCommandTests(unittest.TestCase):
 			code = main(argv)
 		return code, stream.getvalue()
 
+	def add_theme(self, slug, display=None):
+		"""Write `themes/<slug>.json`; returns its path."""
+		document = theme_engine.document()
+		document["name"] = slug
+		document["display"] = display or slug.title()
+		theme_engine.save_theme(document, overwrite=True)
+		return theme_engine.themes_dir() / "{}.json".format(slug)
+
 	def test_show_reports_mode_level_style_path_and_writability(self):
 		code, out = self.run_main([])
 		self.assertEqual(code, 0)
 		for marker in ("theme.mode", "color.level", "table.style", "config", "writable"):
 			self.assertIn(marker, out)
 		self.assertIn(str(config.path()), out)
+
+	def test_show_names_the_selected_theme_and_look(self):
+		# Piped rows are TAB records; `theme.mode` stays for back-compat.
+		code, out = self.run_main([])
+		self.assertEqual(code, 0)
+		self.assertIn("theme.name\tcozypurple", out)
+		self.assertIn("theme.look\tsoft", out)
+		self.assertIn("theme.mode\tsoft", out)
+
+	def test_dark_is_the_contrast_dark_look(self):
+		# The CLI spelling `dark` selects contrast-dark; only the legacy
+		# config.ini migration still reads it as the old default look.
+		for spelling, look, look_id in (("dark", "contrast-dark", "dark"),
+										("light", "contrast-light", "light")):
+			with self.subTest(spelling=spelling):
+				self.assertEqual(self.run_main([spelling])[0], 0)
+				self.assertEqual(palette.theme(), look)
+				self.assertEqual(theme_engine.selection()[1], look_id)
+
+	def test_a_theme_name_selects_its_file(self):
+		self.add_theme("plain", "Plain")
+		code, out = self.run_main(["plain"])
+		self.assertEqual((code, out), (0, ""))
+		self.assertEqual(theme_engine.selection()[0], "plain")
+
+	def test_an_unknown_theme_name_exits_two_and_names_the_expected_file(self):
+		code, out = self.run_main(["bogus"])
+		self.assertEqual(code, 2)
+		self.assertEqual(out.count("\n"), 1)
+		self.assertIn("bogus.json", out)
+		self.assertNotIn("usage:", out)
+
+	def test_list_names_the_available_themes(self):
+		self.add_theme("cozypurple", "Cozy Purple")
+		self.add_theme("plain", "Plain")
+		code, out = self.run_main(["list"])
+		self.assertEqual(code, 0)
+		self.assertIn("cozypurple\tCozy Purple (active)", out)
+		self.assertIn("plain\tPlain", out)
 
 	def test_every_theme_command_writes_its_look(self):
 		for mode, look in (("soft", "soft"), ("contrast-light", "light"),
@@ -182,8 +235,10 @@ class ThemeCommandTests(unittest.TestCase):
 							  theme_engine.theme_file().read_text(encoding="utf-8"))
 
 	def test_aliases_write_the_canonical_look(self):
+		# `dark` is deliberately absent: the CLI now reads it as the
+		# contrast-dark look, not as the legacy alias of `soft`.
 		cases = {
-			"cozy": "soft", "default": "soft", "dark": "soft",
+			"cozy": "soft", "default": "soft",
 			"contrastlight": "contrast-light", "contrast_light": "contrast-light",
 			"CLIGHT": "contrast-light",
 			"highcontrast": "contrast-dark", "contrast dark": "contrast-dark",
@@ -278,10 +333,28 @@ class ThemeCommandTests(unittest.TestCase):
 			self.assertIn(palette.prefix(fg=key, cap=cap) + "\u25a0", out)
 			self.assertIn(value, out)
 
-	def test_unknown_command_prints_usage(self):
-		code, out = self.run_main(["bogus"])
+	def test_set_theme_look_rejects_unknown_values(self):
+		code, out = self.run_main(["set", "theme.look", "neon"])
 		self.assertEqual(code, 2)
-		self.assertIn("usage: theme", out)
+		self.assertEqual(
+			out, "invalid theme.look: neon (valid: soft, contrast-light, "
+				 "contrast-dark)\n")
+
+	def test_set_theme_name_and_look(self):
+		self.add_theme("plain", "Plain")
+		self.assertEqual(self.run_main(["set", "theme.name", "plain"])[0], 0)
+		self.assertEqual(theme_engine.selection()[0], "plain")
+		self.assertEqual(self.run_main(["set", "theme.look", "light"])[0], 0)
+		self.assertEqual(theme_engine.selection()[1], "light")
+
+	def test_edit_off_a_tty_exits_two_before_loading_anything(self):
+		target = io.StringIO()
+		with redirect_stdout(target), redirect_stderr(io.StringIO()) as err:
+			with self.assertRaises(SystemExit) as caught:
+				main(["edit", "bogus"])
+		self.assertEqual(caught.exception.code, 2)
+		self.assertIn("needs an interactive terminal", err.getvalue())
+		self.assertEqual(target.getvalue(), "")
 
 	def test_summary_is_plain_text(self):
 		lines = summary(io.StringIO())

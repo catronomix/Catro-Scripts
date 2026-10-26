@@ -34,6 +34,13 @@ _SEQUENCES = {
 	"\x1b[H": "home", "\x1b[F": "end", "\x1b[1~": "home", "\x1b[4~": "end",
 	"\x1b[5~": "pageup", "\x1b[6~": "pagedown", "\x1b[3~": "delete",
 	"\x1b[2~": "insert", "\x1b[Z": "shift-tab",
+	# F1-F4 have their own short forms; F5-F12 (and the `[11~` family) cover
+	# the terminals that use the numbered form for every function key.
+	"\x1bOP": "f1", "\x1bOQ": "f2", "\x1bOR": "f3", "\x1bOS": "f4",
+	"\x1b[11~": "f1", "\x1b[12~": "f2", "\x1b[13~": "f3", "\x1b[14~": "f4",
+	"\x1b[15~": "f5", "\x1b[17~": "f6", "\x1b[18~": "f7",
+	"\x1b[19~": "f8", "\x1b[20~": "f9", "\x1b[21~": "f10",
+	"\x1b[23~": "f11", "\x1b[24~": "f12",
 }
 
 _SIMPLE = {
@@ -46,6 +53,8 @@ _WINDOWS_SPECIAL = {
 	"H": "up", "P": "down", "M": "right", "K": "left",
 	"G": "home", "O": "end", "I": "pageup", "Q": "pagedown",
 	"S": "delete", "R": "insert",
+	";": "f1", "<": "f2", "=": "f3", ">": "f4", "?": "f5",
+	"@": "f6", "A": "f7", "B": "f8", "C": "f9", "D": "f10",
 }
 
 
