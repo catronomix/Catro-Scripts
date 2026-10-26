@@ -168,6 +168,22 @@ class PickerTests(unittest.TestCase):
 		self.assertEqual(popup.value, "#00ff00")
 		self.assertEqual(popup.hex_field.value, "#00ff00")
 
+	def test_spaced_hsv_draft_parses_like_the_validator(self):
+		popup = picker()
+		popup.ring.focus(4)
+		popup.key("enter")
+		popup.hsv_field.value = "2 20,75,80"
+		self.assertTrue(popup.key("enter"))
+		self.assertEqual(popup.value, "#3366cc")
+		self.assertEqual(popup.hsv_field.value, "220,75,80")
+		other = picker()
+		other.ring.focus(4)
+		other.key("enter")
+		other.hsv_field.value = "220,75"
+		self.assertFalse(other.key("enter"))
+		self.assertEqual(other.hsv_field.error, "need h,s,v")
+		self.assertFalse(other.commit())
+
 	def test_invalid_hex_shows_error_and_blocks_commit(self):
 		popup = picker()
 		popup.ring.focus(0)

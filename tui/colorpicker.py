@@ -98,29 +98,30 @@ class ColorPicker:
 		self.ring = widgets.FocusRing([self.hex_field, *self.sliders, self.hsv_field, *buttons])
 		self._set(rgb_to_hsv(hex_to_rgb(self.original)), self.original)
 
+	def _hsv_parts(self, text):
+		parts = str(text).replace(" ", "").split(",")
+		if len(parts) == 3 and all(p.isdigit() and int(p) <= h for p, h in zip(parts, LIMITS)):
+			return tuple(int(part) for part in parts)
+
 	def _valid_hex(self, text):
 		try: return bool(hex_to_rgb(text))
 		except ValueError: return "need #rrggbb"
 
 	def _valid_hsv(self, text):
-		parts = str(text).replace(" ", "").split(",")
-		return ((len(parts) == 3 and all(p.isdigit() and int(p) <= h
-										 for p, h in zip(parts, LIMITS))) or "need h,s,v")
+		return True if self._hsv_parts(text) else "need h,s,v"
 
 	def _set(self, hsv, value=None):
-		hue, saturation, brightness = hsv[0] % 360, *(
-			min(1.0, max(0.0, float(part))) for part in hsv[1:])
-		self.value = value or rgb_to_hex(hsv_to_rgb((hue, saturation, brightness)))
-		scaled = (hue, saturation * 100, brightness * 100)
+		hue, sat, val = hsv[0] % 360, *map(lambda p: min(1.0, max(0.0, float(p))), hsv[1:])
+		self.value = value or rgb_to_hex(hsv_to_rgb((hue, sat, val)))
+		scaled = (hue, sat * 100, val * 100)
 		for slider, number in zip(self.sliders, scaled): slider.keep(number)
 		for box, text in zip(self._boxes, (self.value, "{},{},{}".format(*map(round, scaled)))):
 			box.value = text if not box.editing else box.value
 
 	def _adopt(self, field):
 		if field is self.hex_field:
-			return self._set(rgb_to_hsv(rgb := hex_to_rgb(field.value)), rgb_to_hex(rgb))
-		hue, saturation, value = (int(part) for part in field.value.split(","))
-		return self._set((hue, saturation / 100, value / 100))
+			return self._set(rgb_to_hsv(c := hex_to_rgb(field.value)), rgb_to_hex(c))
+		return self._set(tuple(p / s for p, s in zip(self._hsv_parts(field.value), (1, 100, 100))))
 
 	def key(self, token):
 		"""Route one key token or `mouse:` event; True when consumed."""
@@ -130,14 +131,13 @@ class ColorPicker:
 		if token == "esc": return self.close()
 		focused = self.ring.current()
 		typing = bool(getattr(focused, "editing", False))
-		if typing and token in ("tab", "shift-tab", "backtab") and not self._finish(focused):
-			return True
+		if typing and token in ("tab", "shift-tab", "backtab"):
+			return True if not self._finish(focused) else self.ring.key(token)
 		handled = self.ring.key(token)
 		if typing and not focused.editing and not focused.error: self._adopt(focused)
 		elif handled and focused in self.sliders:
 			self._set((self.sliders[0].value, *[s.value / 100 for s in self.sliders[1:]]))
-		if token == "enter" and not handled and not any(f.error for f in self._boxes):
-			return self.commit()
+		if token == "enter" and not (handled or any(f.error for f in self._boxes)): return self.commit()
 		return handled
 
 	def _finish(self, field):
@@ -170,7 +170,7 @@ class ColorPicker:
 		result = result if isinstance(result, str) else None
 		for field in self._boxes: field.editing, field.error = False, None
 		if result is None: self._set(rgb_to_hsv(hex_to_rgb(self.original)), self.original)
-		self.result, self.closed = result, True; return True
+		self.result, self.closed, self._grab = result, True, None; return True
 
 	def run(self, keys=None):
 		"""Feed the injected queue until the popup closes; the result."""
