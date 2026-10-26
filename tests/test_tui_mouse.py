@@ -49,6 +49,22 @@ def sgr(code, x=1, y=1, final="M"):
 	return "\x1b[<{};{};{}{}".format(code, x, y, final)
 
 
+class BrokenStream:
+	"""A tty whose writes fail, for the failed-enable path."""
+
+	def __init__(self):
+		self.written = io.StringIO()
+
+	def isatty(self):
+		return True
+
+	def write(self, text):
+		raise OSError("no tty after all")
+
+	def flush(self):
+		return None
+
+
 class DecodeTests(unittest.TestCase):
 	def test_press_and_release(self):
 		self.assertEqual(mouse.decode(sgr(0, 3, 7)), ("press", 2, 6, ()))
@@ -80,6 +96,13 @@ class DecodeTests(unittest.TestCase):
 		self.assertEqual(mouse.parse_token(mouse.token(event)), event)
 		self.assertEqual(mouse.token(("wheel-up", 0, 0, ())), "mouse:wheel-up:0:0")
 		self.assertEqual(mouse.token(None), "")
+
+	def test_token_never_raises_on_a_malformed_event(self):
+		for event in ((), ("press",), ("press", 1), ("press", 1, 2),
+					  ("press", "x", 2, ()), ("press", 1, 2, 5),
+					  (1, 2, 3, 4), "press:1:2", 7):
+			with self.subTest(event=event):
+				self.assertEqual(mouse.token(event), "")
 
 	def test_parse_token_ignores_key_tokens(self):
 		for token in ("enter", "mouse:", "mouse:press:x:1", "mouse:press:1:2:3"):
@@ -135,6 +158,25 @@ class ReportingTests(unittest.TestCase):
 			self.assertIs(active, stream)
 			self.assertFalse(mouse.enable(FakeStream(tty=False)))
 		self.assertIn("?1006l", stream.written.getvalue())
+		self.assertFalse(mouse.disable(stream))
+
+	def test_enable_reports_a_failed_write_and_stays_disarmed(self):
+		stream = BrokenStream()
+		self.assertFalse(mouse.enable(stream))
+		self.assertFalse(mouse.disable(stream))
+		self.assertEqual(stream.written.getvalue(), "")
+		good = FakeStream()
+		self.assertTrue(mouse.enable(good))
+		self.assertTrue(mouse.disable(good))
+
+	def test_reporting_restores_the_terminal_when_the_body_raises(self):
+		stream = FakeStream()
+		with self.assertRaises(RuntimeError):
+			with mouse.reporting(stream):
+				raise RuntimeError("boom")
+		restore = stream.written.getvalue()
+		for code in ("?1000l", "?1002l", "?1006l"):
+			self.assertIn(code, restore)
 		self.assertFalse(mouse.disable(stream))
 
 

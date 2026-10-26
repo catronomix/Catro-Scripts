@@ -18,7 +18,8 @@ Layout:
 	screen    Screen, Canvas, TerminalRenderer
 	keys      raw mode, key decoding, background KeyReader
 	mouse     SGR mouse reporting, decoding and restore
-	widgets   focus ring, buttons, fields, list, scrollbar, clipping
+	widgetkit widget base, clipping panel, focus styling, small-terminal fallback
+	widgets   focus ring, buttons, fields, list, scrollbar (re-exports widgetkit)
 	progress  Spinner, ProgressBar, LiveRegion
 	pager     paged output
 	loop      FrameLoop, ScreensaverHost
@@ -34,7 +35,7 @@ Usage:
 	from tui import caps, palette, table
 """
 
-from . import caps, chrome, colorpicker, config, keys, loop, mouse, palette, pager, progress, prompts, screen, table, text, widgets
+from . import caps, chrome, colorpicker, config, keys, loop, mouse, palette, pager, progress, prompts, screen, table, text, widgetkit, widgets
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .chrome import button, field, fill, header, menu, panel, rule, scrollbar, status
 from .colorpicker import (WCAG_AA, ColorPicker, contrast_ratio, hex_to_rgb, hsv_to_rgb,
@@ -54,7 +55,8 @@ from .widgets import (Button, CheckField, Clip, FocusRing, ListBox, Panel,
 
 __all__ = [
 	"caps", "chrome", "colorpicker", "config", "keys", "loop", "mouse", "palette",
-	"pager", "progress", "prompts", "screen", "table", "text", "widgets",
+	"pager", "progress", "prompts", "screen", "table", "text", "widgetkit",
+	"widgets",
 	"Capabilities", "detect", "init_ansi", "require_tty",
 	"WCAG_AA", "ColorPicker", "contrast_ratio", "hex_to_rgb", "hsv_to_rgb",
 	"luminance", "rgb_to_hex", "rgb_to_hsv",
