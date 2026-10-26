@@ -13,10 +13,16 @@ the whole toolset between the three shipped palettes: soft (the default, cozy
 purple), contrast-light and contrast-dark.
 
 Features:
-	- Shows theme mode, colour level, table style, config path and writability.
-	- `theme soft|contrast-light|contrast-dark|toggle` switches the palette.
-	- `theme set <key> <value>` changes one setting; keys are theme.mode,
-	  color.level and table.style.
+	- Shows the theme name, look, colour level, table style, config path and
+	  writability.
+	- `theme <name>` selects `themes/<name>.json`; a missing or invalid file
+	  prints one line and exits 2.
+	- `theme soft|contrast-light|contrast-dark|toggle` switches the look
+	  (`dark`/`light` are accepted spellings of the contrast looks).
+	- `theme list` lists the available themes, `theme palette` the active look.
+	- `theme set <key> <value>` changes one setting; keys are theme.name,
+	  theme.look, theme.mode (legacy), color.level and table.style.
+	- `theme edit [name]` opens the full-screen editor (needs a terminal).
 	- Environment overrides still win per run: NO_COLOR, FORCE_COLOR,
 	  CATRO_COLOR, CATRO_THEME, CATRO_ASCII.
 
@@ -24,8 +30,10 @@ Usage:
 	catro-scripts theme
 	catro-scripts theme contrast-light
 	catro-scripts theme soft
-	catro-scripts theme toggle
+	catro-scripts theme list
+	catro-scripts theme cozypurple
 	catro-scripts theme set color.level 256
+	catro-scripts theme edit
 """
 
 import sys

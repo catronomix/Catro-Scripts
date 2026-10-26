@@ -60,6 +60,19 @@ class Spinner:
 		return self
 
 
+def bar(value, total, width, *, cap=None):
+	"""One bar's glyphs: `value/total` filled cells, then the empty track.
+
+	The seam the editor's preview uses, so the progress look has exactly one
+	implementation; `ProgressBar._bar` delegates here.
+	"""
+	cap = cap or caps.detect()
+	total, width = max(1, int(total)), max(0, int(width))
+	filled = int(round(width * max(0, min(int(value), total)) / total))
+	return ("\u2588" if cap.unicode else "#") * filled \
+		+ ("\u2591" if cap.unicode else "-") * (width - filled)
+
+
 class ProgressBar:
 	"""`label 42% (21/50)` style progress, animated only on a tty."""
 
@@ -101,10 +114,7 @@ class ProgressBar:
 		return " ".join(parts)
 
 	def _bar(self):
-		filled = int(round(self.width * self.value / self.total))
-		if self.cap.unicode:
-			return "\u2588" * filled + "\u2591" * (self.width - filled)
-		return "#" * filled + "-" * (self.width - filled)
+		return bar(self.value, self.total, self.width, cap=self.cap)
 
 
 class LiveRegion:
