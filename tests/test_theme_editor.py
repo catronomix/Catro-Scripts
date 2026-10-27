@@ -151,6 +151,15 @@ class HeadlessOpenTests(EditorTestCase):
 			self.assertIn("60%", band)
 			self.assertIn("\u2588", band)
 
+	def test_a_one_cell_gutter_separates_the_three_previews(self):
+		ed = self.make()
+		for index in range(2):
+			x, y, width, height = ed.rects[index]
+			self.assertEqual(ed.rects[index + 1][0], x + width + 1)
+		self.assertGreaterEqual(ed.rects[0][0], 1)
+		x, y, width, height = ed.rects[2]
+		self.assertLessEqual(x + width, ed.canvas.width - 1)
+
 	def test_actions_buttons_stay_inside_the_frame_at_90x24(self):
 		ed = self.make()
 		rows = self.lines(ed)

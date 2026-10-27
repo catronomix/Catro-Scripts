@@ -107,9 +107,10 @@ class ThemeEditor(EditorKeys):
 		if widgets.small_terminal(width, height):
 			return
 		preview_h = max(6, min(12, height - 12))
-		column = max(8, (width - 2) // 3)
+		# One blank column between (and around) the three live previews.
+		column = max(8, (width - 4) // 3)
 		for index in range(3):
-			self.rects[index] = (1 + index * column, 2, column, preview_h)
+			self.rects[index] = (1 + index * (column + 1), 2, column, preview_h)
 		panel_y = 3 + preview_h
 		panel_h = max(3, height - panel_y - 2)
 		prop_w = min(40, max(30, width // 2 - 6))
