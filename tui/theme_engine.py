@@ -9,7 +9,9 @@ data; `tui.palette` stays the public styling API and delegates here.
 A document is `{schema, name, display, properties, looks}`: exactly the three
 looks `default`, `contrast-dark`, `contrast-light` with the eleven palette keys
 as `#rrggbb` strings, plus the nine rendering properties. Validation is
-all-or-nothing, so a typo can never ship a half-theme.
+all-or-nothing, so a typo can never ship a half-theme. The tables and their
+checker live in `tui.theme_schema` and are re-exported here, so this module
+stays the public surface while `theme_schema` owns what "valid" means.
 
 Reads never raise: a missing, unreadable or invalid theme file, and a malformed
 `theme.ini`, fall back to the built-in `cozypurple` default look. Only the paths
@@ -21,6 +23,13 @@ Precedence is override, then `CATRO_THEME` (both in `tui.palette`), then
 built-in default. The legacy value is migrated in memory on read and persisted
 by the first write, so a plain render never creates files.
 
+Reads are memoized: the document cache is keyed by the theme file's path, mtime
+and size, and the selection memo by the same triple for `theme.ini` (plus
+`config.ini`, which only matters while a legacy value is being migrated). One
+directory save, one `theme.ini` write and one `config.ini` edit therefore
+invalidate exactly what changed, while a hot renderer can resolve a look palette
+hundreds of times per frame without touching the disk.
+
 Test seams: assign `THEME_FILE` / `THEMES_DIR` to redirect reads and writes (tests
 never touch the repository); `None` restores the project folder. Import is inert:
 no printing, no write, no terminal mode change, no third-party or platform import.
@@ -30,25 +39,27 @@ import configparser
 import copy
 import json
 import os
-import re
 from pathlib import Path
 
 from . import config
 
-# The schema tables live in their own module; re-exported here so callers
-# and tests keep using the engine namespace.
+# The schema tables and validation live in their own module; re-exported here so
+# callers and tests keep using the engine namespace.
 from .theme_schema import (BUILTIN_DOCUMENT, BUILTIN_LOOKS,  # noqa: F401
 						   BUILTIN_PROPERTIES, DEFAULT_LOOK, DEFAULT_THEME,
 						   LEGACY_LOOKS, LOOKS, PALETTE_KEYS, PROPERTY_VALUES,
-						   SELECTOR_OF, SELECTORS)
+						   SELECTOR_OF, SELECTORS, SLUG,
+						   canonical_hex, validate)
 
 
 # Overrides for tests; see the module docstring.
 THEME_FILE = None
 THEMES_DIR = None
 
-_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-_HEX = re.compile(r"^#?([0-9a-fA-F]{6})$")
+# The project folder, resolved once: `themes_dir()`/`theme_file()` are on the
+# per-frame path, and `Path.resolve()` is a syscall per call.
+_PROJECT = Path(__file__).resolve().parents[1]
+
 _CACHE = {}
 
 
@@ -65,14 +76,14 @@ def theme_file():
 	"""Absolute path of the selection file this checkout uses."""
 	if THEME_FILE is not None:
 		return Path(THEME_FILE)
-	return Path(__file__).resolve().parents[1] / "theme.ini"
+	return _PROJECT / "theme.ini"
 
 
 def themes_dir():
 	"""Absolute path of the directory that holds the theme documents."""
 	if THEMES_DIR is not None:
 		return Path(THEMES_DIR)
-	return Path(__file__).resolve().parents[1] / "themes"
+	return _PROJECT / "themes"
 
 
 def list_themes():
@@ -82,78 +93,6 @@ def list_themes():
 					  if entry.is_file())
 	except OSError:
 		return []
-
-
-def canonical_hex(value, lower=True):
-	"""`#rrggbb` for a hex string, or None when invalid.
-
-	`lower=False` keeps the file's own spelling, which is what a load hands out so
-	the shipped uppercase document renders exactly the bytes it always has.
-	"""
-	if not isinstance(value, str):
-		return None
-	match = _HEX.match(value.strip())
-	if match is None:
-		return None
-	return "#" + (match.group(1).lower() if lower else match.group(1))
-
-
-def validate(document):
-	"""Every reason `document` is not a valid theme; [] when it is valid."""
-	if not isinstance(document, dict):
-		return ["theme document must be a JSON object"]
-	errors = []
-	schema = document.get("schema")
-	if isinstance(schema, bool) or schema != 1:
-		errors.append("schema must be 1")
-	name = document.get("name")
-	if not isinstance(name, str) or not _SLUG.match(name):
-		errors.append("name must be a slug matching [a-z0-9][a-z0-9-]*")
-	display = document.get("display")
-	if not isinstance(display, str) or not display.strip():
-		errors.append("display must be non-empty text")
-	errors.extend(_property_errors(document.get("properties")))
-	errors.extend(_look_errors(document.get("looks")))
-	return errors
-
-
-def _property_errors(properties):
-	if not isinstance(properties, dict):
-		return ["properties must be an object"]
-	errors = []
-	for key, allowed in PROPERTY_VALUES.items():
-		if key not in properties:
-			errors.append("properties is missing {}".format(key))
-		elif not any(properties[key] == value and
-					 type(properties[key]) is type(value) for value in allowed):
-			errors.append("invalid property {}: {!r}".format(
-				key, properties[key]))
-	unknown = sorted(set(properties) - set(PROPERTY_VALUES))
-	if unknown:
-		errors.append("unknown properties: {}".format(", ".join(unknown)))
-	return errors
-
-
-def _look_errors(looks):
-	if not isinstance(looks, dict):
-		return ["looks must be an object"]
-	errors = []
-	for look in LOOKS:
-		entry = looks.get(look)
-		if not isinstance(entry, dict):
-			errors.append("looks is missing {}".format(look))
-			continue
-		errors.extend("looks.{} has no valid {} colour".format(look, key)
-					  for key in PALETTE_KEYS
-					  if canonical_hex(entry.get(key)) is None)
-		unknown = sorted(set(entry) - set(PALETTE_KEYS))
-		if unknown:
-			errors.append("looks.{} has unknown keys: {}".format(
-				look, ", ".join(unknown)))
-	unknown = sorted(set(looks) - set(LOOKS))
-	if unknown:
-		errors.append("unknown looks: {}".format(", ".join(unknown)))
-	return errors
 
 
 def _ordered(document, lower=True):
@@ -180,23 +119,47 @@ def _path_for(name):
 
 
 def _cache_key(target):
+	# `os.stat` on the str form, not `Path.stat()`: this runs once per colour
+	# resolution on the editor's hot path.
 	try:
-		stat = target.stat()
+		info = os.stat(str(target))
 	except OSError:
 		return None
-	return (str(target), stat.st_mtime_ns, stat.st_size)
+	return (str(target), info.st_mtime_ns, info.st_size)
 
 
 def load_theme(name=None):
-	"""The validated document for `name`; raises `ThemeError`."""
+	"""The validated document for `name`; raises `ThemeError`.
+
+	Returns a fresh copy: the cached document is shared, so a caller that edits
+	an editor draft can never change what the next read hands out.
+	"""
 	name = str(name if name is not None else DEFAULT_THEME).strip().lower()
-	if not _SLUG.match(name):
+	if not SLUG.match(name):
 		raise ThemeError("invalid theme name: {!r}".format(name))
-	target = _path_for(name)
-	key = _cache_key(target)
+	return _copy(_document_for(name))
+
+
+def _cached_document(name):
+	"""The cached document for `name`; internal callers only, never mutate it.
+
+	Everything below (`resolve`, `look_palette`, `properties`) reads through
+	this, so a hot renderer costs one stat and no copy per colour.
+	"""
+	name = str(name).strip().lower()
+	if not SLUG.match(name):
+		raise ThemeError("invalid theme name: {!r}".format(name))
+	key = _cache_key(_path_for(name))
 	cached = _CACHE.get(key)
 	if cached is not None:
-		return _copy(cached)
+		return cached
+	return _document_for(name)
+
+
+def _document_for(name):
+	"""Read, validate and cache `themes/<name>.json`; raises `ThemeError`."""
+	target = _path_for(name)
+	key = _cache_key(target)
 	try:
 		with open(target, "r", encoding="utf-8") as handle:
 			document = json.load(handle)
@@ -213,16 +176,26 @@ def load_theme(name=None):
 	_CACHE.clear()
 	if key is not None:
 		_CACHE[key] = normalized
-	return _copy(normalized)
+	return normalized
 
 
 def selection():
-	"""(theme name, look selector) this checkout selects, legacy value migrated."""
+	"""(theme name, look selector) this checkout selects, legacy value migrated.
+
+	Memoized by the mtime/size of `theme.ini` and `config.ini`, so a frame that
+	resolves hundreds of colours reads the selection files once.
+	"""
+	key = ("selection", _cache_key(theme_file()), _cache_key(config.path()))
+	cached = _CACHE.get(key)
+	if cached is not None:
+		return cached
 	name, selector = _read_selection_file()
 	if selector is None:
 		legacy = _legacy_selection()
 		selector = legacy[1] if legacy is not None else DEFAULT_LOOK
-	return (name or DEFAULT_THEME), selector
+	value = (name or DEFAULT_THEME), selector
+	_CACHE[key] = value
+	return value
 
 
 def _read_selection_file():
@@ -236,7 +209,7 @@ def _read_selection_file():
 	selector = fold(parser.get("theme", "look", fallback=""))
 	if selector not in SELECTORS:
 		selector = None
-	return (name if _SLUG.match(name) else None), selector
+	return (name if SLUG.match(name) else None), selector
 
 
 def _legacy_selection():
@@ -270,7 +243,7 @@ def resolve(name=None, look=None):
 	else:
 		candidate = str(name).strip().lower()
 	try:
-		load_theme(candidate)
+		_cached_document(candidate)
 	except (ThemeError, OSError):
 		return DEFAULT_THEME, "default"
 	if look is not None and str(look).strip():
@@ -284,7 +257,7 @@ def look_palette(name=None, look=None):
 	"""Copy of one look's eleven hexes; never raises."""
 	theme_name, look_id = resolve(name, look)
 	try:
-		return dict(load_theme(theme_name)["looks"][look_id])
+		return dict(_cached_document(theme_name)["looks"][look_id])
 	except (ThemeError, KeyError, OSError):
 		return dict(BUILTIN_LOOKS[look_id])
 
@@ -292,14 +265,17 @@ def look_palette(name=None, look=None):
 def document(name=None):
 	"""The active (or named) validated document, or the built-in equivalent."""
 	try:
-		return load_theme(resolve(name)[0])
+		return _copy(_cached_document(resolve(name)[0]))
 	except (ThemeError, OSError):
 		return _copy(BUILTIN_DOCUMENT)
 
 
 def properties(name=None):
 	"""Copy of the document's rendering properties; never raises."""
-	return dict(document(name)["properties"])
+	try:
+		return dict(_cached_document(resolve(name)[0])["properties"])
+	except (ThemeError, KeyError, OSError):
+		return dict(BUILTIN_PROPERTIES)
 
 
 def set_selection(name=None, look=None):
@@ -307,7 +283,7 @@ def set_selection(name=None, look=None):
 	candidate, selector = selection()
 	if name is not None and str(name).strip():
 		candidate = str(name).strip().lower()
-		if not _SLUG.match(candidate):
+		if not SLUG.match(candidate):
 			raise ThemeError("invalid theme name: {!r}".format(name))
 		# Selecting is a user request: an invalid or corrupt file must surface
 		# here (CLI exit 2) rather than be selected and silently ignored.
@@ -335,6 +311,11 @@ def _write_selection(name, selector):
 			"[theme]\nname = {}\nlook = {}\n".format(name, selector)))
 	except OSError:
 		return False
+	# The file mtime is the cache key, but a same-tick rewrite could keep it, so
+	# the write itself drops every selection memo it just invalidated.
+	for key in [key for key in _CACHE if isinstance(key, tuple)
+				and key and key[0] == "selection"]:
+		_CACHE.pop(key, None)
 	return True
 
 

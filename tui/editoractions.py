@@ -228,8 +228,9 @@ def open_picker(editor):
 	colours = editor._look_colours()
 	x = y = 1
 	if editor.canvas is not None:
-		x = max(1, (editor.canvas.width - 44) // 2)
-		y = max(1, (editor.canvas.height - 11) // 2)
+		width, height = colorpicker.WIDTH, colorpicker.HEIGHT
+		x = max(1, (editor.canvas.width - width) // 2)
+		y = max(1, (editor.canvas.height - height) // 2)
 	editor.picker = colorpicker.ColorPicker(
 		editor.canvas, colours[key], x=x, y=y, cap=editor.cap, colours=colours)
 	editor.message = ("info", "{} - Enter commits, Esc cancels".format(key))

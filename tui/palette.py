@@ -27,11 +27,42 @@ is deterministic: the same hex always resolves to the same code.
 for callers that must re-assert a style between cells without paying a reset -
 the table renderer's rows are such a caller - and `style()` is defined in terms
 of it so the two can never drift.
+
+A full-screen painter resolves the same look hundreds of times per frame, and
+each resolution costs a stat plus a copy. `begin_frame()`/`end_frame()` open a
+one-frame memo for the look palette, the selection and the theme properties;
+`tui.editorpaint` brackets every paint with them. Outside a frame nothing is
+memoized, so a caller that never opens one always reads through the engine and
+keeps the mtime-keyed freshness of `tui.theme_engine`.
 """
 
 import os
 
 from . import caps, theme_engine
+
+# The active frame memo (None outside a frame); see the module docstring.
+_FRAME = None
+
+
+def begin_frame():
+	"""Start one paint: colour/property resolution is memoized until `end_frame`."""
+	global _FRAME
+	_FRAME = {}
+
+
+def end_frame():
+	"""Drop the frame memo; idempotent and safe outside a frame."""
+	global _FRAME
+	_FRAME = None
+
+
+def _memo(key, build):
+	"""`build()` once per frame for `key`; always `build()` outside a frame."""
+	if _FRAME is None:
+		return build()
+	if key not in _FRAME:
+		_FRAME[key] = build()
+	return _FRAME[key]
 
 # The default look: mdreader mode 0, "Cozy Purple", mirrored from the engine's
 # built-in document (`themes/cozypurple.json` carries the same hexes).
@@ -120,7 +151,7 @@ def document():
 
 def properties():
 	"""Copy of the active theme's rendering properties."""
-	return theme_engine.properties()
+	return dict(_memo("properties", theme_engine.properties))
 
 
 def palette(theme=None, cap=None):
@@ -131,7 +162,8 @@ def palette(theme=None, cap=None):
 	still names the palette it used to get.
 	"""
 	name, look_selector = _active(theme)
-	return dict(theme_engine.look_palette(name, look_selector))
+	key = ("palette", name, look_selector)
+	return dict(_memo(key, lambda: theme_engine.look_palette(name, look_selector)))
 
 
 def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
@@ -198,7 +230,7 @@ def index(value, theme=None, level="256"):
 
 def _active(override=None):
 	"""(theme name, look) for one call: override > CATRO_THEME > theme.ini."""
-	name, selector = theme_engine.selection()
+	name, selector = _memo("selection", theme_engine.selection)
 	if override is not None and str(override).strip():
 		return name, normalize(override)
 	env = os.environ.get("CATRO_THEME", "")

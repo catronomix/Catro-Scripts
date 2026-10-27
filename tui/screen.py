@@ -27,6 +27,10 @@ CURSOR_SHOW = "\033[?25h"
 SGR_RESET = "\033[0m"
 CLEAR_HOME = "\033[2J\033[H"
 
+# Diff sentinel: a canvas cell colour never equals it, so the first changed
+# cell of a frame always emits its own SGR instead of inheriting terminal state.
+_SGR_UNKNOWN = object()
+
 
 def terminal_size(stream=None):
 	"""(columns, lines) for `stream`, falling back to the process terminal."""
@@ -254,17 +258,38 @@ class Canvas:
 		return "".join(out)
 
 	def _diff_frame(self):
+		"""Changed-cell diff: one CUP per contiguous run, SGR only on a change.
+
+		Batching is what keeps a keystroke cheap on the wire: a focused panel
+		row is one run, not ninety single-cell cursor moves. `current` tracks
+		the colour last emitted, so a run whose cells share a colour pays for
+		one SGR; `_SGR_UNKNOWN` forces the first changed cell to emit one (a
+		terminal's state is not ours to assume).
+		"""
 		previous_colors = self._previous_colors or self._previous
 		out = []
+		current = _SGR_UNKNOWN
 		for y in range(self.height):
-			for x in range(self.width):
-				color = self._colors[y][x]
-				if (self._buffer[y][x] == self._previous[y][x]
-						and color == previous_colors[y][x]):
+			row = self._buffer[y]
+			was = self._previous[y]
+			colors = self._colors[y]
+			old = previous_colors[y]
+			x = 0
+			while x < self.width:
+				if row[x] == was[x] and colors[x] == old[x]:
+					x += 1
 					continue
-				out.append("\033[{};{}H".format(y + 1, x + 1))
-				out.append(color if color else SGR_RESET)
-				out.append(self._buffer[y][x])
+				start = x
+				while x < self.width and not (row[x] == was[x]
+											  and colors[x] == old[x]):
+					x += 1
+				out.append("\033[{};{}H".format(y + 1, start + 1))
+				for cell in range(start, x):
+					color = colors[cell]
+					if color != current:
+						out.append(color if color else SGR_RESET)
+						current = color
+					out.append(row[cell])
 		if out:
 			out.append(SGR_RESET)
 		return "".join(out)

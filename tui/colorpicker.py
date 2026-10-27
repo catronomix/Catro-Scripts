@@ -1,17 +1,27 @@
-# Colour picker: hex <-> RGB/HSV conversion and a Canvas popup
+# Colour picker: hex <-> RGB/HSV conversion and the 16x3 swatch popup
 """
 			COLOUR PICKER
 			==============
-Pure conversions plus the modal popup: one HSV triple is the model and the
-boxes plus sliders are its views, so edits stay in sync and invalid text
-never commits; `run()` returns `#rrggbb` (None on cancel); sub-AA warns.
+Pure conversions plus the modal popup: one HSV triple is the model and a
+16x3 grid of two-cell swatches is its view. Row 1 walks the hue at full
+saturation and value (a vivid ramp whatever the current colour), row 2 the
+saturation at the current hue and full value, row 3 the value at the current
+hue and saturation, so the same grid reaches every component without text
+fields and no ramp collapses to black on a dark colour. `run()` returns
+`#rrggbb` (None on cancel) and a colour under WCAG AA against the look's
+background still warns.
 """
 
 import colorsys
 
-from . import caps, mouse, palette, widgets
+from . import caps, editorviews, mouse, palette, widgets
+from .text import truncate
 
 WCAG_AA, LIMITS = 4.5, (360, 100, 100)
+STEPS, CELL = 16, 2  # 16 swatches of two cells each: a 32-cell grid
+WIDTH, HEIGHT = 36, 8  # bordered popup: poles, 3 grid rows, 3 info rows
+SWATCH = "\u2588"  # full block; ASCII falls back to `#`
+ROWS = ("hue", "saturation", "value")
 
 
 def hex_to_rgb(value):
@@ -54,147 +64,206 @@ def contrast_ratio(first, second):
 	return (high + 0.05) / (low + 0.05)
 
 
-class _Slider(widgets.Widget):
-	"""One HSV track: click maps a column to a value, keys step it."""
-	def __init__(self, x, y, width, maximum, *, cap=None):
-		widgets.Widget.__init__(self, x, y, width, 1, cap=cap); self.maximum, self.value = int(maximum), 0
-
-	def keep(self, value):
-		self.value = max(0, min(self.maximum, int(round(float(value))))); return self.value
-
-	def key(self, token):
-		steps = {"left": -1, "down": -1, "right": 1, "up": 1, "home": -self.maximum,
-				 "end": self.maximum, "pagedown": -10, "pageup": 10}
-		if token not in steps: return False
-		self.keep(self.value + steps[token])
-		return True
-
-	def draw(self, canvas, focused=False):
-		cap = self.cap or caps.detect()
-		mark = min(self.width - 1, round(self.value * (self.width - 1) / self.maximum))
-		thumb, track = ("\u2588", "\u2500") if cap.unicode else ("#", "-")
-		canvas.draw_text(self.x, self.y, track * self.width, palette.prefix(fg="muted", cap=cap))
-		canvas.draw_char(self.x + mark, self.y, thumb, self.styled(focused, "accent"))
+def cell_index(fraction):
+	"""Grid column for a 0-1 component; 0.5 reads as the midpoint, column 8."""
+	return max(0, min(STEPS - 1, int(round(float(fraction) * (STEPS - 1)))))
 
 
 class ColorPicker:
-	"""A modal colour picker over an injected `Canvas`; `run()` returns the hex."""
-	def __init__(self, canvas, value="#ffffff", *, keys=(), x=1, y=1, width=44,
-				 cap=None, colours=None):
+	"""A modal 16x3 HSV grid over an injected `Canvas`; `run()` returns the hex."""
+	def __init__(self, canvas, value="#ffffff", *, keys=(), x=1, y=1,
+				 width=WIDTH, cap=None, colours=None):
 		self.canvas, self.cap, self.x, self.y = canvas, cap, int(x), int(y)
-		self.width, self.colours = max(24, int(width)), dict(colours or palette.palette())
+		self.width = max(CELL * STEPS + 2, int(width))
+		self.height = HEIGHT
+		self.colours = dict(colours or palette.palette())
 		self.original = self.value = rgb_to_hex(hex_to_rgb(value))
+		self.hue, self.saturation, self.brightness = rgb_to_hsv(
+			hex_to_rgb(self.original))
+		self.row, self.col = 0, cell_index(self.hue / 360)
+		self._original_cell = (self.row, self.col)
 		self.result, self.closed, self._queue, self._grab = None, False, list(keys), None
-		self.hex_field, self.hsv_field = self._boxes = [
-			widgets.TextField(self.x + 5, self.y + row, text, width=12,
-							  validator=check, cap=cap)
-			for check, row, text in ((self._valid_hex, 1, self.original),
-									 (self._valid_hsv, 6, ""))]
-		self.sliders = [_Slider(self.x + 3, self.y + 3 + row, self.width - 4, high,
-								cap=cap) for row, high in enumerate(LIMITS)]
-		self.ok, self.cancel = buttons = [widgets.Button(
-			self.x + offset, self.y + 9, label, cap=cap, on_activate=hook)
-			for offset, label, hook in ((3, "OK", self.commit), (10, "Cancel", self.close))]
-		self.ring = widgets.FocusRing([self.hex_field, *self.sliders, self.hsv_field, *buttons])
-		self._set(rgb_to_hsv(hex_to_rgb(self.original)), self.original)
+		# Centre the 32-cell grid inside the frame; one spare cell each side.
+		self.grid_x = self.x + max(0, (self.width - CELL * STEPS) // 2)
+		self.grid_y = self.y + 1
 
-	def _hsv_parts(self, text):
-		parts = str(text).replace(" ", "").split(",")
-		if len(parts) == 3 and all(p.isdigit() and int(p) <= h for p, h in zip(parts, LIMITS)):
-			return tuple(int(part) for part in parts)
+	# -- model -----------------------------------------------------------
 
-	def _valid_hex(self, text):
-		try: return bool(hex_to_rgb(text))
-		except ValueError: return "need #rrggbb"
+	def value_at(self, row, col):
+		"""The `#rrggbb` swatch at one grid cell.
 
-	def _valid_hsv(self, text):
-		return True if self._hsv_parts(text) else "need h,s,v"
+		Only row 3 (value) is tinted with the complete current colour. Rows 1
+		and 2 are *pickers*, not previews: hue runs at full saturation/value and
+		saturation runs at the current hue but full value, so a dark current
+		colour cannot collapse either ramp into a near-black strip.
+		"""
+		fraction = max(0, min(STEPS - 1, int(col))) / (STEPS - 1)
+		if row == 0:
+			hsv = (fraction * 360, 1.0, 1.0)
+		elif row == 1:
+			hsv = (self.hue, fraction, 1.0)
+		else:
+			hsv = (self.hue, self.saturation, fraction)
+		return rgb_to_hex(hsv_to_rgb(hsv))
 
-	def _set(self, hsv, value=None):
-		hue, sat, val = hsv[0] % 360, *map(lambda p: min(1.0, max(0.0, float(p))), hsv[1:])
-		self.value = value or rgb_to_hex(hsv_to_rgb((hue, sat, val)))
-		scaled = (hue, sat * 100, val * 100)
-		for slider, number in zip(self.sliders, scaled): slider.keep(number)
-		for box, text in zip(self._boxes, (self.value, "{},{},{}".format(*map(round, scaled)))):
-			box.value = text if not box.editing else box.value
+	def _refresh(self):
+		"""Re-derive the hex from the HSV model."""
+		self.value = rgb_to_hex(hsv_to_rgb(
+			(self.hue, self.saturation, self.brightness)))
 
-	def _adopt(self, field):
-		if field is self.hex_field:
-			return self._set(rgb_to_hsv(c := hex_to_rgb(field.value)), rgb_to_hex(c))
-		return self._set(tuple(p / s for p, s in zip(self._hsv_parts(field.value), (1, 100, 100))))
+	def _snap(self):
+		"""Put the marker on the current component's own cell."""
+		component = (self.hue / 360, self.saturation, self.brightness)[self.row]
+		self.col = cell_index(component)
+
+	def select(self, row, col):
+		"""Move the marker to a cell and apply that cell's component."""
+		self.row = max(0, min(2, int(row)))
+		self.col = max(0, min(STEPS - 1, int(col)))
+		fraction = self.col / (STEPS - 1)
+		if self.row == 0:
+			self.hue = fraction * 360
+		elif self.row == 1:
+			self.saturation = fraction
+		else:
+			self.brightness = fraction
+		self._refresh()
+		return self.value
+
+	# -- input -----------------------------------------------------------
 
 	def key(self, token):
 		"""Route one key token or `mouse:` event; True when consumed."""
 		event = mouse.parse_token(token)
-		if event is not None: return self._mouse(*event)
-		if self.closed: return False
-		if token == "esc": return self.close()
-		focused = self.ring.current()
-		typing = bool(getattr(focused, "editing", False))
-		if typing and token in ("tab", "shift-tab", "backtab"):
-			return True if not self._finish(focused) else self.ring.key(token)
-		handled = self.ring.key(token)
-		if typing and not focused.editing and not focused.error: self._adopt(focused)
-		elif handled and focused in self.sliders:
-			self._set((self.sliders[0].value, *[s.value / 100 for s in self.sliders[1:]]))
-		if token == "enter" and not (handled or any(f.error for f in self._boxes)): return self.commit()
-		return handled
+		if event is not None:
+			return self._mouse(*event)
+		if self.closed:
+			return False
+		if token == "esc":
+			return self.close()
+		if token in ("enter", "space"):
+			return self.commit()
+		if token in ("left", "right"):
+			step = 1 if token == "right" else -1
+			self.select(self.row, (self.col + step) % STEPS)
+			return True
+		if token in ("up", "down", "tab", "backtab", "shift-tab"):
+			step = 1 if token in ("down", "tab") else -1
+			self.row = (self.row + step) % len(ROWS)
+			self._snap()
+			return True
+		if token in ("home", "end"):
+			self.select(self.row, 0 if token == "home" else STEPS - 1)
+			return True
+		return False
 
-	def _finish(self, field):
-		if field.commit(): self._adopt(field)
-		return not field.editing
-
-	def _track(self, track, x):
-		track.keep((int(x) - track.x) * track.maximum / max(1, track.width - 1))
-		return self._set((self.sliders[0].value, *[s.value / 100 for s in self.sliders[1:]])) or True
+	def cell_at(self, x, y):
+		"""(row, col) under a point, or None when it is not on the grid."""
+		if not (self.grid_y <= int(y) < self.grid_y + len(ROWS)):
+			return None
+		offset = int(x) - self.grid_x
+		if not (0 <= offset < CELL * STEPS):
+			return None
+		return (int(y) - self.grid_y, offset // CELL)
 
 	def _mouse(self, kind, x, y, modifiers=()):
 		if kind == "press":
-			focused = self.ring.current()
-			if (getattr(focused, "editing", False) and not focused.hit_test(x, y)
-					and not self.cancel.hit_test(x, y) and not self._finish(focused)): return True
-			self._grab = next((s for s in self.sliders if s.hit_test(x, y)), None)
-			if self._grab is None: return self.ring.click(x, y)
-			self.ring.focus(self.ring.widgets.index(self._grab)); return self._track(self._grab, x)
+			cell = self.cell_at(x, y)
+			if cell is None:
+				return False
+			self._grab = cell
+			self.select(*cell)
+			return True
 		if kind == "drag" and self._grab is not None:
-			return self._track(self._grab, x)
-		if kind == "release": self._grab = None
+			if self.grid_y <= int(y) < self.grid_y + len(ROWS):
+				cell = self.cell_at(x, y)
+				if cell is not None:
+					self._grab = cell
+					self.select(*cell)
+					return True
+			# Dragging past the edge clamps to the grabbed row's last cell.
+			offset = min(CELL * STEPS - 1, max(0, int(x) - self.grid_x))
+			self._grab = (self.row, offset // CELL)
+			self.select(self.row, offset // CELL)
+			return True
+		if kind == "release":
+			self._grab = None
+			return True
 		return False
 
+	# -- result ----------------------------------------------------------
+
 	def commit(self, *_):
-		"""OK/Enter: keep the draft unless a box is mid-edit or invalid."""
-		return not any(f.error or f.editing for f in self._boxes) and self.close(self.value)
+		"""Enter/space: keep the current grid colour."""
+		return self.close(self.value)
 
 	def close(self, result=None):
 		"""Close the popup; `None` restores the colour it opened with."""
 		result = result if isinstance(result, str) else None
-		for field in self._boxes: field.editing, field.error = False, None
-		if result is None: self._set(rgb_to_hsv(hex_to_rgb(self.original)), self.original)
-		self.result, self.closed, self._grab = result, True, None; return True
+		if result is None:
+			self.value = self.original
+			self.hue, self.saturation, self.brightness = rgb_to_hsv(
+				hex_to_rgb(self.original))
+			self.row, self.col = self._original_cell
+		self.result, self.closed, self._grab = result, True, None
+		return True
 
 	def run(self, keys=None):
 		"""Feed the injected queue until the popup closes; the result."""
 		for token in (self._queue if keys is None else keys):
-			if self.closed: break
+			if self.closed:
+				break
 			self.key(token)
 		return self.result
 
+	def rect(self):
+		"""The popup's (x, y, width, height) on the canvas."""
+		return self.x, self.y, self.width, self.height
+
+	# -- drawing ---------------------------------------------------------
+
 	def draw(self):
-		"""Paint the popup through `palette.prefix()`; returns `self`."""
+		"""Paint the bordered grid through `palette.prefix()`; returns `self`."""
 		canvas, cap = self.canvas, self.cap or caps.detect()
 		notice = widgets.resize_notice(canvas.width, canvas.height, cap=cap)
 		if notice is not None:
-			canvas.draw_text(self.x, self.y, *reversed(widgets.cells(notice))); return self
-		ratios = {r: contrast_ratio(self.value, self.colours[r])
-				  for r in ("bg", "zebra_bg") if r in self.colours}
+			canvas.draw_text(self.x, self.y, *reversed(widgets.cells(notice)))
+			return self
+		editorviews.fill_rect(canvas, self.x, self.y, self.width, self.height,
+							  cap=cap)
+		editorviews.frame(canvas, self.x, self.y, self.width, self.height,
+						  "Colour picker", cap)
+		glyph = SWATCH if cap.unicode else "#"
+		for row in range(len(ROWS)):
+			for col in range(STEPS):
+				selected = (row, col) == (self.row, self.col)
+				if cap.unicode:
+					text = glyph * CELL
+					colour = palette.prefix(fg=self.value_at(row, col),
+											reverse=selected, cap=cap)
+				else:
+					text = "><" if selected else glyph * CELL
+					colour = palette.prefix(fg=self.value_at(row, col),
+											bold=selected, cap=cap)
+				canvas.draw_text(self.grid_x + col * CELL,
+								 self.grid_y + row, text, colour)
+		inner = max(1, self.width - 2)
+		ratios = {name: contrast_ratio(self.value, self.colours[name])
+				  for name in ("bg", "zebra_bg") if name in self.colours}
 		low = bool(ratios) and min(ratios.values()) < WCAG_AA
-		facts = "  ".join("{} {:.1f}:1".format(*pair) for pair in ratios.items())
-		error = next((field.error for field in self._boxes if field.error), "")
-		rows = (("Colour picker", "header"), ("hex", "muted"), (error, "error"),
-				("h", "muted"), ("s", "muted"), ("v", "muted"), ("h,s,v", "muted"),
-				(facts, "warn" if low else "fg"), ("below AA 4.5:1" if low else "", "warn"))
-		for row, (text, role) in enumerate(rows):
-			if text: canvas.draw_text(self.x + 1, self.y + row, text,
-									  palette.prefix(fg=role, bg="surface", cap=cap))
-		self.ring.draw(canvas)
+		if low:
+			facts = "{}  below AA 4.5:1".format(self.value)
+		else:
+			facts = "  ".join("{} {:.1f}:1".format(*pair)
+							  for pair in ratios.items())
+			facts = self.value + ("  " + facts if facts else "")
+		rows = ((facts, "warn" if low else "fg"),
+				("h {:3.0f}  s {:3.0f}%  v {:3.0f}%".format(
+					self.hue, self.saturation * 100, self.brightness * 100),
+				 "muted"),
+				("arrows  Enter apply  Esc cancel", "muted"))
+		for offset, (text, role) in enumerate(rows):
+			canvas.draw_text(self.x + 2, self.grid_y + len(ROWS) + offset,
+							 truncate(text, max(1, inner - 2)),
+							 palette.prefix(fg=role, bg="surface", cap=cap))
 		return self

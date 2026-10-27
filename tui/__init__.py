@@ -19,7 +19,7 @@ Layout:
 	keys      raw mode, key decoding, background KeyReader
 	mouse     SGR mouse reporting, decoding and restore
 	widgetkit widget base, clipping panel, focus styling, small-terminal fallback
-	widgets   focus ring, buttons, fields, list, scrollbar (re-exports widgetkit)
+	widgets   buttons, fields, list, scrollbar (re-exports widgetkit)
 	progress  Spinner, ProgressBar, LiveRegion
 	pager     paged output
 	loop      FrameLoop, ScreensaverHost
@@ -49,7 +49,7 @@ from .prompts import ask_choice, ask_int, ask_text
 from .screen import Canvas, Screen, TerminalRenderer
 from .table import banner, key_values, print_table, render_table, section
 from .text import display_width, pad, strip_ansi, truncate, wrap
-from .widgets import (Button, CheckField, Clip, FocusRing, ListBox, Panel,
+from .widgets import (Button, CheckField, Clip, ListBox, Panel,
 					  ScrollBar, SelectField, TextField, Widget, cells,
 					  focus_prefix, resize_notice, small_terminal)
 
@@ -68,7 +68,7 @@ __all__ = [
 	"scrollbar",
 	"Canvas", "Screen", "TerminalRenderer",
 	"decode", "disable", "enable", "parse_token", "reporting", "token",
-	"Button", "CheckField", "Clip", "FocusRing", "ListBox", "Panel",
+	"Button", "CheckField", "Clip", "ListBox", "Panel",
 	"ScrollBar", "SelectField", "TextField", "Widget", "cells", "focus_prefix",
 	"resize_notice", "small_terminal",
 	"ask_choice", "ask_int", "ask_text",
