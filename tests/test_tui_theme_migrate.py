@@ -136,6 +136,32 @@ class MigrationMapTests(unittest.TestCase):
 		self.assertIsNone(migrated["looks"]["default"]["fg-accent"])
 		self.assertTrue(theme_engine.validate(migrated))
 
+	def test_a_v1_look_with_an_extra_key_is_rejected_not_dropped(self):
+		document = v1_document()
+		document["looks"]["default"]["fg-mutd"] = "#112233"
+		migrated = theme_migrate.migrate_doc(document)["looks"]["default"]
+		self.assertEqual(migrated["fg-mutd"], "#112233")
+		errors = theme_engine.validate_any(document)
+		self.assertTrue(any("unknown keys" in error and "fg-mutd" in error
+							for error in errors), errors)
+
+	def test_a_v1_look_with_a_v2_spelling_is_rejected(self):
+		for keep_v1 in (False, True):
+			document = v1_document()
+			if not keep_v1:  # a half-migrated look: only the new name
+				del document["looks"]["default"]["muted"]
+			document["looks"]["default"]["fg-muted"] = "#112233"
+			with self.subTest(both_spellings=keep_v1):
+				errors = theme_engine.validate_any(document)
+				self.assertTrue(any("fg-muted" in error for error in errors),
+								errors)
+
+	def test_a_valid_v1_document_still_migrates_cleanly(self):
+		self.assertEqual(theme_engine.validate_any(v1_document()), [])
+		self.assertEqual(
+			theme_engine.validate(
+				theme_migrate.migrate_doc(v1_document())), [])
+
 
 class EngineMigrationTests(Seam):
 	def test_a_v1_file_loads_as_v2_and_is_never_rewritten(self):
@@ -186,6 +212,16 @@ class EngineMigrationTests(Seam):
 		self.assertEqual(written["schema"], 2)
 		self.assertEqual(written["looks"], theme_migrate.migrate_doc(
 			v1_document())["looks"])
+
+	def test_a_valid_v1_document_saves_byte_stably(self):
+		document = v1_document()
+		document["name"] = "v1round"
+		self.assertEqual(theme_engine.validate_any(document), [])
+		path = theme_engine.save_theme(document)
+		first = Path(path).read_bytes()
+		theme_engine.save_theme(theme_engine.load_theme("v1round"),
+								overwrite=True)
+		self.assertEqual(Path(path).read_bytes(), first)
 
 	def test_an_unknown_schema_is_still_refused(self):
 		for schema in (0, 3, "2", True):

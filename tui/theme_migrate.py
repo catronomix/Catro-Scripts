@@ -6,8 +6,9 @@ One in-memory step between a schema-1 document on disk and the schema-2
 document the engine hands out. `migrate_doc()` renames the nine palette slots,
 derives the five new ones from a slot that already carries the byte a shipped
 theme needs, drops the retired `selection_style` property and adds
-`corner-char: none`; hex case is copied, never rewritten, so a migrated look
-renders exactly the bytes the file spelled.
+`corner-char: none`; hex case is copied, never rewritten. A look key the v1
+schema never had rides along (a v2 spelling is blanked), so `validate_any()`
+refuses a half-migrated file instead of a save dropping the bytes.
 
 The map lives here (not in `tui.theme_engine`, which is at its budget) and is
 the only reader of a v1 spelling: `tui.palette` publishes schema-2 roles only,
@@ -55,8 +56,7 @@ def migrate_doc(document):
 	migrated = dict(document)
 	migrated["schema"] = SCHEMA_CURRENT
 	migrated["properties"] = _properties(document.get("properties"))
-	migrated["looks"] = {look: _look(entry)
-						 for look, entry in (looks or {}).items()}
+	migrated["looks"] = {look: _look(entry) for look, entry in (looks or {}).items()}
 	return migrated
 
 
@@ -71,9 +71,10 @@ def _properties(properties):
 
 def _look(entry):
 	"""One v1 look as a v2 look: derive, rename, then emit in canonical order."""
-	colours = {key: entry.get(key) for key in V1_PALETTE_KEYS}
-	for key, source in DERIVED.items():
-		colours[key] = entry.get(source)
-	for old, new in V1_TO_V2.items():
-		colours[new] = colours.pop(old, None)
-	return {key: colours.get(key) for key in PALETTE_KEYS}
+	extra = {key: None if key in PALETTE_KEYS else value
+			 for key, value in entry.items() if key not in V1_PALETTE_KEYS}
+	colours = {V1_TO_V2.get(key, key): entry.get(key) for key in V1_PALETTE_KEYS}
+	colours.update({key: entry.get(source) for key, source in DERIVED.items()})
+	result = {key: colours.get(key) for key in PALETTE_KEYS}
+	result.update(extra)
+	return result
