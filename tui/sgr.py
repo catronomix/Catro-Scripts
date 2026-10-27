@@ -10,8 +10,8 @@ parameter in a chunk (a `Canvas` cell colour may be any raw ANSI string, so
 a reset only when the run would otherwise inherit a sticky attribute
 (reverse/bold/dim/bg) or a colour slot it does not set - never before every run,
 so pure-fg runs stay byte-identical. An escape this parser cannot read leaves the
-state unknown: the run is emitted as-is behind a reset, so a frame never raises
-and never suppresses a colour.
+state unknown: the run is emitted as-is (no leading reset) and the next run is
+forced to emit, so a frame never raises and never suppresses a colour.
 
 No `tui` imports: this is a leaf. `tui.canvas` re-exports everything here, so
 `canvas._sgr_state`, `canvas._emit_sgr` and `canvas.SGR_RESET` keep resolving.

@@ -19,6 +19,7 @@ Layout:
 	chrome_panels  the framed panel and the masthead/panel band painters
 	color_math  hex/RGB/HSV conversions, WCAG helpers, grid cell scale
 	colorpicker  hex/RGB/HSV conversions (re-exported) and the colour picker popup
+	colorpicker_panel  the picker's solid preview block beside the grid
 	prompts   ask_text, ask_int, ask_choice
 	screen    Screen lifecycle; Canvas and TerminalRenderer (re-exported)
 	canvas    the double-buffered cell grid and the frame emitter
@@ -42,7 +43,7 @@ Usage:
 	from tui import caps, palette, table
 """
 
-from . import canvas, caps, chrome, chrome_controls, chrome_panels, color_levels, color_math, colorpicker, config, keys, loop, mouse, palette, pager, progress, prompts, screen, sgr, table, table_glyphs, text, widgetkit, widgets
+from . import canvas, caps, chrome, chrome_controls, chrome_panels, color_levels, color_math, colorpicker, colorpicker_panel, config, keys, loop, mouse, palette, pager, progress, prompts, screen, sgr, table, table_glyphs, text, widgetkit, widgets
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .chrome import button, field, fill, header, menu, panel, rule, scrollbar, status
 from .color_math import (WCAG_AA, contrast_ratio, hex_to_rgb, hsv_to_rgb,
