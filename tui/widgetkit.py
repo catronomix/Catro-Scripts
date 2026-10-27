@@ -46,7 +46,7 @@ def focus_prefix(focused, cap=None, *, fg="fg", bg="bg"):
 		return None
 	style = palette.properties().get("focus_style")
 	if style == "accent":
-		return palette.prefix(fg="accent", bg=bg, cap=cap) or None
+		return palette.prefix(fg="fg-accent", bg=bg, cap=cap) or None
 	if style == "underline":
 		return palette.prefix(fg=fg, bg=bg, underline=True, cap=cap) or None
 	return palette.prefix(fg=fg, bg=bg, reverse=True, cap=cap) or None
@@ -64,7 +64,7 @@ def resize_notice(width, height, *, cap=None):
 	"""The `too small` fallback line for an undersized terminal, else None."""
 	if small_terminal(width, height):
 		return palette.style("{} - resize to at least {}x{}".format(
-			SMALL_TERMINAL, MIN_WIDTH, MIN_HEIGHT), fg="warn",
+			SMALL_TERMINAL, MIN_WIDTH, MIN_HEIGHT), fg="fg-warn",
 			cap=cap or caps.detect())
 	return None
 

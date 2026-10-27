@@ -117,7 +117,7 @@ class TextField(Widget):
 		return True
 	def draw(self, canvas, focused=False):
 		cap = self.cap or caps.detect()
-		ink = "error" if self.error else "fg"
+		ink = "fg-error" if self.error else "fg"
 		base = palette.prefix(fg=ink, cap=cap) or None
 		mark = min(self.cursor, self.width - 1) if self.editing else None
 		for offset, char in enumerate(pad(self.value, self.width)[:self.width]):
