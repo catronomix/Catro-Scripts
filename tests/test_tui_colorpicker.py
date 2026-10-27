@@ -14,6 +14,7 @@ Canvases write to a fake stream, so no test needs a terminal or the checkout's
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -413,6 +414,28 @@ class DrawTests(unittest.TestCase):
 		popup = ColorPicker(canvas, "#3366cc", cap=CAP, colours=COLOURS)
 		popup.draw()
 		self.assertIn("too small", "\n".join(canvas.region(0, 0, 60, 12)))
+
+
+class FocusedFrameTests(unittest.TestCase):
+	"""The popup is the focused frame: it paints the active band roles."""
+
+	def test_the_picker_frame_uses_the_active_band_tokens(self):
+		look = {"bg": "#000001", "bg-inside": "#000002",
+				"bg-inside-active": "#0000aa", "bg-stripe": "#0000bb",
+				"fg": "#000003", "fg-muted": "#000004", "fg-accent": "#000005",
+				"fg-success": "#000006", "fg-warn": "#000007",
+				"fg-error": "#000008", "border-bg": "#0000cc",
+				"border-fg": "#000009", "border-bg-active": "#0000dd",
+				"border-fg-active": "#00000a", "header-fg": "#00000b",
+				"header-bg": "#0000ee"}
+		true = caps.Capabilities(level="true", unicode=True, width=120,
+								 isatty=True, plain=False, reason="test")
+		canvas = new_canvas()
+		with mock.patch.object(palette, "palette", return_value=dict(look)):
+			ColorPicker(canvas, "#3366cc", cap=true, colours=COLOURS).draw()
+		styles = "".join(c for row in canvas._colors for c in row if c)
+		self.assertIn("38;2;0;0;10", styles)
+		self.assertIn("48;2;0;0;221", styles)
 
 
 class StaleMarkerTests(unittest.TestCase):

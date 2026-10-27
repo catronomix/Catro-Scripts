@@ -97,7 +97,8 @@ def _draw_title(editor, canvas, cap):
 
 def _draw_properties(editor, canvas, cap):
 	x, y, width, height = editor.rects[3]
-	editorviews.frame(canvas, x, y, width, height, "Properties", cap)
+	editorviews.frame(canvas, x, y, width, height, "Properties", cap,
+					  active=editor.focus == 0)
 	keys = editorviews.PROPERTY_KEYS
 	visible = editor._visible(3)
 	editor.property_offset = editor._window(
@@ -120,7 +121,8 @@ def _draw_colours(editor, canvas, cap):
 	x, y, width, height = editor.rects[4]
 	title = "Colours - {}".format(
 		editorviews.look_label(editor._current_look()))
-	editorviews.frame(canvas, x, y, width, height, title, cap)
+	editorviews.frame(canvas, x, y, width, height, title, cap,
+					  active=editor.focus == 1)
 	colours = editor._look_colours()
 	keys = theme_engine.PALETTE_KEYS
 	visible = editor._visible(4)
@@ -142,7 +144,7 @@ def _draw_colours(editor, canvas, cap):
 def _draw_actions(editor, canvas, cap):
 	rect = editor.rects[5]
 	editorviews.frame(canvas, rect[0], rect[1], rect[2], rect[3],
-					  "Actions", cap)
+					  "Actions", cap, active=editor.focus == 2)
 	for index, button in enumerate(editor.buttons):
 		button.x, button.y = rect[0] + 2, rect[1] + 1 + 2 * index
 		button.cap = editor.cap

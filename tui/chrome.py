@@ -36,7 +36,8 @@ from . import caps, palette, table
 from .chrome_controls import (ASCII_DECORATIONS, BUTTON_DECORATIONS,  # noqa: F401
 							  BUTTON_STYLES, SCROLLBAR_GLYPHS, button,
 							  scrollbar)
-from .chrome_panels import (_band, _flat, _span, panel)  # noqa: F401
+from .chrome_panels import (_band, _flat, _span, frame_roles,  # noqa: F401
+							panel)
 from .text import display_width, pad, truncate as _truncate
 
 # A standalone rule with no width anywhere has to pick something; this is the
@@ -158,8 +159,9 @@ def fill(text, width=None, *, bg="bg", fg="fg", cap=None, theme=None):
 def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	"""Numbered rows, one per item, with a selected-row bar.
 
-	The selected row is `fg-accent` on `bg-inside` behind a `>` pointer, the
-	others `fg`. `selected=None` means "nothing selected yet" (`ask_choice`).
+	The selected row is `fg-accent` on `bg-inside-active` behind a `>` pointer,
+	the others `fg`. `selected=None` means "nothing selected yet"
+	(`ask_choice`).
 	Rows number from 1 so a prompt can ask for the number it prints; a caller
 	`width` pins the bar, otherwise it spans the widest row.
 	"""
@@ -189,8 +191,8 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 		label = _truncate(label, cell) if display_width(label) > cell else label
 		if index == selected:
 			lines.append(palette.style(MENU_POINTER + " " + pad(label, cell),
-									   fg="fg-accent", bg="bg-inside", bold=True,
-									   cap=cap, theme=theme))
+									   fg="fg-accent", bg="bg-inside-active",
+									   bold=True, cap=cap, theme=theme))
 		else:
 			lines.append(palette.style("  " + pad(label, cell), fg="fg",
 									   cap=cap, theme=theme))

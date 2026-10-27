@@ -171,7 +171,7 @@ class ColorPicker:
 			canvas.draw_text(self.x, self.y, *reversed(widgets.cells(notice)))
 			return self
 		editor_overlays.surface(canvas, cap, self.x, self.y, self.width,
-								self.height, "Colour picker")
+								self.height, "Colour picker", active=True)
 		glyph = SWATCH if cap.unicode else "#"
 		for row in range(len(ROWS)):
 			for col in range(STEPS):

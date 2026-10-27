@@ -37,12 +37,19 @@ def _body_lines(body):
 	if isinstance(body, str):
 		return body.splitlines() or [""]
 	return [_flat(line) for line in body] or [""]
-def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
+def frame_roles(active=False):
+	"""The (fg, bg) palette roles of a frame band, focused or not."""
+	if active:
+		return "border-fg-active", "border-bg-active"
+	return "border-fg", "border-bg"
+def panel(title, body, *, width=None, padding=1, cap=None, theme=None,
+		  active=False):
 	"""Framed box with `bg-inside` interior and the title in the top rule.
 
 	`body` is a string (one line per `\\n`) or an iterable of lines; lines are
 	truncated to the interior, never wrapped, never raise. `padding` is the
 	spaces between frame and text on each side; a caller `width` wins.
+	`active` paints the frame with the focused band roles.
 	"""
 	cap = cap or caps.detect()
 	padding = max(0, int(padding))
@@ -62,9 +69,10 @@ def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
 	if inner is None:
 		inner = needed
 	inner = max(4, inner)
-	lines = [_top_frame(glyphs, inner, title, cap, theme)]
+	lines = [_top_frame(glyphs, inner, title, cap, theme, active)]
 	cell = max(0, inner - 2 - 2 * padding)
-	edge = palette.prefix(fg="border-fg", cap=cap, theme=theme)
+	edge_fg, edge_bg = frame_roles(active)
+	edge = palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
 	inside = palette.prefix(fg="fg", bg="bg-inside", cap=cap, theme=theme)
 	reset = _reset(cap)
 	for line in body_lines:
@@ -72,25 +80,30 @@ def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
 		lines.append(edge + glyphs["v"] + inside + gutter + pad(text, cell)
 					 + gutter + edge + glyphs["v"] + reset)
 	lines.append(palette.style(glyphs["bl"] + glyphs["h"] * (inner - 2)
-							   + glyphs["br"], fg="border-fg", cap=cap, theme=theme))
+							   + glyphs["br"], fg=edge_fg, bg=edge_bg,
+							   cap=cap, theme=theme))
 	return "\n".join(lines)
-def _top_frame(glyphs, inner, title, cap, theme):
+def _top_frame(glyphs, inner, title, cap, theme, active=False):
 	"""Top border with the title cut into it, or a plain rule when untitled."""
+	edge_fg, edge_bg = frame_roles(active)
 	if not title:
 		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
-							 + glyphs["tr"], fg="border-fg", cap=cap, theme=theme)
+							 + glyphs["tr"], fg=edge_fg, bg=edge_bg,
+							 cap=cap, theme=theme)
 	label = title
 	if display_width(label) > inner - 6:
 		label = _truncate(label, max(0, inner - 6))
 	if not label:
 		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
-							 + glyphs["tr"], fg="border-fg", cap=cap, theme=theme)
+							 + glyphs["tr"], fg=edge_fg, bg=edge_bg,
+							 cap=cap, theme=theme)
 	rest = max(0, inner - 5 - display_width(label))
-	return (palette.prefix(fg="border-fg", cap=cap, theme=theme) + glyphs["tl"]
-			+ glyphs["h"]
-			+ palette.prefix(fg="header-fg", bold=True, cap=cap, theme=theme)
+	return (palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
+			+ glyphs["tl"] + glyphs["h"]
+			+ palette.prefix(fg="header-fg", bg=edge_bg, bold=True,
+							 cap=cap, theme=theme)
 			+ " " + label + " "
-			+ palette.prefix(fg="border-fg", cap=cap, theme=theme)
+			+ palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
 			+ glyphs["h"] * rest + glyphs["tr"] + _reset(cap))
 def _band(text, width, *, fg, bold=False, align="left", cap, theme):
 	"""One full-width `header-bg` band with the label placed by `align`.

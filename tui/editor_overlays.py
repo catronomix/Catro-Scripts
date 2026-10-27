@@ -22,15 +22,16 @@ from . import editorviews, palette
 from .text import truncate
 
 
-def surface(canvas, cap, x, y, width, height, title=None):
+def surface(canvas, cap, x, y, width, height, title=None, *, active=False):
 	"""A popup surface at an explicit origin; returns (x, y, width, height).
 
 	The shared seam for a bordered block that owns its rectangle: the fill
 	first (so the box hides what is behind it), then the frame. `_overlay()`
-	centres one; the colour picker places its own.
+	centres one; the colour picker places its own and asks for the focused
+	band roles.
 	"""
 	editorviews.fill_rect(canvas, x, y, width, height, cap=cap)
-	editorviews.frame(canvas, x, y, width, height, title, cap)
+	editorviews.frame(canvas, x, y, width, height, title, cap, active=active)
 	return x, y, width, height
 
 

@@ -20,7 +20,7 @@ and both are re-exported here, so `editorviews.LOOK_ORDER`/`PANELS`/
 
 import re
 
-from . import palette, table, theme_engine, widgets
+from . import chrome_panels, palette, table, theme_engine, widgets
 from .editor_nav import (BUTTONS, HELP_LINE, HELP_LINES, LOOK_LABELS,  # noqa: F401
 						 LOOK_ORDER, PANELS, look_label, preview_title,
 						 preview_titles)
@@ -75,10 +75,14 @@ def notice(canvas, cap=None):
 	return visible
 
 
-def frame(canvas, x, y, width, height, title=None, cap=None):
-	"""A box frame with an optional title cut into the top rule."""
+def frame(canvas, x, y, width, height, title=None, cap=None, active=False):
+	"""A box frame with an optional title cut into the top rule.
+
+	`active` paints the focused band roles (`chrome_panels.frame_roles`).
+	"""
 	glyphs = table.glyphs_for(cap)
-	edge = palette.prefix(fg="border-fg", cap=cap)
+	edge_fg, edge_bg = chrome_panels.frame_roles(active)
+	edge = palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap)
 	label = " {} ".format(title) if title else ""
 	top = glyphs["tl"] + glyphs["h"] * max(0, width - 2) + glyphs["tr"]
 	if label and len(label) <= width - 2:

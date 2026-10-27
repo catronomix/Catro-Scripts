@@ -22,13 +22,14 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
 from tui import (caps, chrome, chrome_controls, chrome_panels,  # noqa: E402
-				 table)  # (import after sys.path setup)
+				 palette, table)  # (import after sys.path setup)
 from tui.text import display_width, strip_ansi  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
@@ -42,6 +43,8 @@ HEADER = "\033[38;2;245;205;104m"
 FG = "\033[38;2;212;200;235m"
 BG = "\033[48;2;27;23;38m"
 SURFACE = "\033[48;2;41;34;56m"
+# bg-inside-active derives from zebra_bg in the shipped look.
+SURFACE_ACTIVE = "\033[48;2;53;43;73m"
 SUCCESS = "\033[38;2;127;209;160m"
 WARN = "\033[38;2;224;159;103m"
 ERROR = "\033[38;2;255;107;107m"
@@ -49,6 +52,22 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 CJK = "\u65e5\u672c"
+
+# A schema-2 look whose every token is a unique, recognisable hex, so a test can
+# prove which token reached the rendered bytes.
+V2_LOOK = {
+	"bg": "#000001", "bg-inside": "#000002", "bg-inside-active": "#0000aa",
+	"bg-stripe": "#0000bb", "fg": "#000003", "fg-muted": "#000004",
+	"fg-accent": "#000005", "fg-success": "#000006", "fg-warn": "#000007",
+	"fg-error": "#000008", "border-bg": "#0000cc", "border-fg": "#000009",
+	"border-bg-active": "#0000dd", "border-fg-active": "#00000a",
+	"header-fg": "#00000b", "header-bg": "#0000ee",
+}
+BG_ACTIVE = "\033[48;2;0;0;170m"
+BORDER_BG = "\033[48;2;0;0;204m"
+BORDER_FG_ACTIVE = "\033[38;2;0;0;10m"
+BORDER_BG_ACTIVE = "\033[48;2;0;0;221m"
+HEADER_BG = "\033[48;2;0;0;238m"
 
 
 def capabilities(level="true", unicode=True, plain=False, isatty=True, width=None):
@@ -132,12 +151,12 @@ class PanelTests(unittest.TestCase):
 		lines = chrome.panel("Info", ["first", "second"], width=20, cap=TRUE,
 						   theme="soft").split("\n")
 		self.assertEqual(len(lines), 4)
-		self.assertTrue(lines[0].startswith(BORDER + "\u250c\u2500"))
-		self.assertIn(HEADER + BOLD + " Info ", lines[0])
+		self.assertTrue(lines[0].startswith(BORDER + SURFACE + "\u250c\u2500"))
+		self.assertIn(HEADER + SURFACE + BOLD + " Info ", lines[0])
 		self.assertTrue(lines[0].endswith("\u2510" + RESET))
 		self.assertIn(SURFACE, lines[1])
 		self.assertIn(" first", strip_ansi(lines[1]))
-		self.assertTrue(lines[-1].startswith(BORDER + "\u2514"))
+		self.assertTrue(lines[-1].startswith(BORDER + SURFACE + "\u2514"))
 		for line in lines:
 			self.assertEqual(display_width(line), 20, repr(strip_ansi(line)))
 
@@ -282,7 +301,7 @@ class MenuTests(unittest.TestCase):
 						  theme="soft").split("\n")
 		self.assertEqual(lines[0], FG + "  1. one    " + RESET)
 		self.assertEqual(lines[1],
-						 HEADER + SURFACE + BOLD + "> 2. two    " + RESET)
+						 HEADER + SURFACE_ACTIVE + BOLD + "> 2. two    " + RESET)
 		for line in lines:
 			self.assertEqual(display_width(line), 12)
 
@@ -363,6 +382,42 @@ class PanelSplitShimTests(unittest.TestCase):
 		for line in imports:
 			self.assertNotIn(" chrome", line)
 			self.assertNotIn("chrome_controls", line)
+
+
+class NewTokenTests(unittest.TestCase):
+	"""The schema-2 tokens with no v1 ancestor must reach the rendered bytes."""
+
+	def render(self, call):
+		with mock.patch.object(palette, "palette", return_value=dict(V2_LOOK)):
+			return call()
+
+	def test_the_selection_fill_uses_bg_inside_active(self):
+		out = self.render(lambda: chrome.menu(["one", "two"], selected=1,
+											  width=12, cap=TRUE))
+		self.assertIn(BG_ACTIVE, out)
+
+	def test_a_plain_frame_band_uses_border_bg(self):
+		out = self.render(lambda: chrome.panel("Info", ["body"], width=16,
+											   cap=TRUE))
+		self.assertIn(BORDER_BG, out)
+
+	def test_a_focused_frame_uses_the_active_band_roles(self):
+		out = self.render(lambda: chrome.panel("Info", ["body"], width=16,
+											   cap=TRUE, active=True))
+		self.assertIn(BORDER_FG_ACTIVE, out)
+		self.assertIn(BORDER_BG_ACTIVE, out)
+		self.assertNotIn(BORDER_BG, out)
+
+	def test_the_header_band_uses_header_bg(self):
+		out = self.render(lambda: chrome.header("T", width=10, cap=TRUE))
+		self.assertIn(HEADER_BG, out)
+
+	def test_frame_roles_are_the_one_seam(self):
+		self.assertEqual(chrome_panels.frame_roles(),
+						 ("border-fg", "border-bg"))
+		self.assertEqual(chrome_panels.frame_roles(True),
+						 ("border-fg-active", "border-bg-active"))
+		self.assertIs(chrome.frame_roles, chrome_panels.frame_roles)
 
 
 if __name__ == "__main__":
