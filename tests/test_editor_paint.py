@@ -10,20 +10,6 @@ Every test points the engine seams and `config.CONFIG_FILE` at a temp
 folder, so the checkout never leaks into the assertions.
 """
 
-# Full-screen theme editor tests
-"""
-		THEME EDITOR (HEADLESS)
-		=======================
-The editor's headless seam: construct against a `Canvas` and an injected token
-sequence, so open/preview-titles/navigation/Save/Load/quit all run without a
-tty. The real `Screen`/`KeyReader`/mouse wiring is `run()`'s business and is not
-exercised here.
-
-Every test points the engine seams (`THEMES_DIR`, `THEME_FILE`) and
-`config.CONFIG_FILE` at a temp folder, so the repository never gains a theme or
-a `theme.ini` and the developer's checkout never leaks into the assertions.
-"""
-
 import contextlib
 import copy
 import io

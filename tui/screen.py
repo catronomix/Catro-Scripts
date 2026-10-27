@@ -12,14 +12,15 @@ screensaver plugins.
 `Screen` is inert off a tty: `enter()` writes nothing, and every write goes to
 the injected `stream` so behaviour is testable with fake streams.
 
-Test seam: `terminal_size` is defined in `tui.canvas` and re-exported here. A
-canvas resolves the size through `tui.canvas.terminal_size`, the host through
-this module's name, so patch whichever consumer the test drives.
+Test seam: `terminal_size` is defined in `tui.canvas`. The canvas resolves the
+size through it and the host calls the same function through the module, so
+patching `tui.canvas.terminal_size` covers both. This module still re-exports
+the name for older importers.
 """
 
 import sys
 
-from . import caps, palette
+from . import canvas, caps, palette
 from .canvas import Canvas, SGR_RESET, TerminalRenderer, terminal_size  # noqa: F401
 
 ALT_SCREEN_ON = "\033[?1049h"
@@ -42,7 +43,7 @@ class Screen:
 	def __init__(self, stream=None):
 		self.stream = sys.stdout if stream is None else stream
 		self.entered = False
-		self._size = terminal_size(self.stream)
+		self._size = canvas.terminal_size(self.stream)
 
 	def __enter__(self):
 		self.enter()
@@ -59,7 +60,7 @@ class Screen:
 		self.stream.write(ALT_SCREEN_ON + CURSOR_HIDE + CLEAR_HOME)
 		self.stream.flush()
 		self.entered = True
-		self._size = terminal_size(self.stream)
+		self._size = canvas.terminal_size(self.stream)
 		return self
 
 	def exit(self):
@@ -121,12 +122,12 @@ class Screen:
 
 	def size(self):
 		"""Current (columns, lines), refreshed from the stream."""
-		self._size = terminal_size(self.stream)
+		self._size = canvas.terminal_size(self.stream)
 		return self._size
 
 	def poll_resize(self):
 		"""True when the terminal size changed since the last call."""
-		width, height = terminal_size(self.stream)
+		width, height = canvas.terminal_size(self.stream)
 		if (width, height) == self._size:
 			return False
 		self._size = (width, height)

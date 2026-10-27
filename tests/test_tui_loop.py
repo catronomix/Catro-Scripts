@@ -140,15 +140,11 @@ class ScreensaverHostTests(unittest.TestCase):
 		self.plugin.write_text(PLUGIN_SOURCE, encoding="utf-8")
 		self.env = mock.patch.dict(os.environ, {"CATRO_FAKE_LOG": str(self.log)})
 		self.env.start()
-		self.size = mock.patch.object(screen_module, "terminal_size",
+		self.size = mock.patch.object(canvas_module, "terminal_size",
 									  lambda stream=None: (8, 3))
 		self.size.start()
-		self.canvas_size = mock.patch.object(canvas_module, "terminal_size",
-											 lambda stream=None: (8, 3))
-		self.canvas_size.start()
 
 	def tearDown(self):
-		self.canvas_size.stop()
 		self.size.stop()
 		self.env.stop()
 		self._td.cleanup()

@@ -88,11 +88,11 @@ class ScreenTests(unittest.TestCase):
 
 	def test_poll_resize_reports_a_change_once(self):
 		stream = FakeStream(True)
-		with mock.patch.object(screen, "terminal_size", lambda stream=None: (80, 24)):
+		with mock.patch.object(canvas_module, "terminal_size", lambda stream=None: (80, 24)):
 			lifecycle = screen.Screen(stream)
 			self.assertEqual(lifecycle.size(), (80, 24))
 			self.assertFalse(lifecycle.poll_resize())
-		with mock.patch.object(screen, "terminal_size", lambda stream=None: (100, 30)):
+		with mock.patch.object(canvas_module, "terminal_size", lambda stream=None: (100, 30)):
 			self.assertTrue(lifecycle.poll_resize())
 			self.assertFalse(lifecycle.poll_resize())
 
@@ -205,7 +205,7 @@ class FillTests(unittest.TestCase):
 		cap = screen.caps.Capabilities(level=level, unicode=True, width=None,
 									   isatty=tty, plain=False, reason="test")
 		with mock.patch.object(screen.caps, "detect", return_value=cap), \
-				mock.patch.object(screen, "terminal_size", lambda stream=None: size):
+				mock.patch.object(canvas_module, "terminal_size", lambda stream=None: size):
 			lifecycle = screen.Screen(stream)
 			result = lifecycle.fill(role)
 		self.assertIs(result, lifecycle)
