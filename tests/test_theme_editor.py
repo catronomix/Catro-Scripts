@@ -17,6 +17,7 @@ import copy
 import io
 import json
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -35,6 +36,8 @@ from tui import (caps, config, editor, editorviews, keys, palette, screen,
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
+
+SHIPPED = REPO / "themes" / "cozypurple.json"
 
 
 def make_cap(unicode=True, level="true"):
@@ -55,6 +58,9 @@ class EditorTestCase(unittest.TestCase):
 		theme_engine.THEME_FILE = root / "theme.ini"
 		theme_engine.THEMES_DIR = root / "themes"
 		theme_engine.THEMES_DIR.mkdir()
+		# The shipped document is the built-in fallback, so a temp checkout
+		# needs its own copy of it (issue #33).
+		shutil.copyfile(SHIPPED, theme_engine.THEMES_DIR / "cozypurple.json")
 		theme_engine._CACHE.clear()
 		document = theme_engine.document()
 		document["name"] = "cozypurple"

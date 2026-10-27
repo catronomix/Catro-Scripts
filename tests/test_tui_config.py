@@ -30,6 +30,8 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 
 setUpModule, tearDownModule = module_isolation()
 
+SHIPPED = REPO / "themes" / "cozypurple.json"
+
 
 def _checkout_state(path):
 	"""Fingerprint of a checkout file: (exists, bytes, mtime_ns)."""
@@ -155,6 +157,9 @@ class ThemeCommandTests(unittest.TestCase):
 		theme_engine.THEME_FILE = Path(self._td.name) / "theme.ini"
 		theme_engine.THEMES_DIR = Path(self._td.name) / "themes"
 		theme_engine.THEMES_DIR.mkdir()
+		# The built-in fallback is the shipped document (issue #33); a temp
+		# checkout needs its own copy of it.
+		shutil.copyfile(SHIPPED, theme_engine.THEMES_DIR / "cozypurple.json")
 		theme_engine._CACHE.clear()
 
 	def tearDown(self):
@@ -225,6 +230,9 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertIn("plain\tPlain", out)
 
 	def test_list_handles_an_empty_and_an_invalid_themes_directory(self):
+		for entry in theme_engine.themes_dir().glob("*.json"):
+			entry.unlink()
+		theme_engine._CACHE.clear()
 		code, out = self.run_main(["list"])
 		self.assertEqual(code, 0)
 		self.assertNotIn(".json", out)
@@ -417,6 +425,9 @@ class ThemeScriptTests(unittest.TestCase):
 		self.root = Path(self._td.name)
 		shutil.copytree(REPO / "tui", self.root / "tui",
 						ignore=shutil.ignore_patterns("__pycache__"))
+		# A real checkout carries the shipped document next to `tui/`; the
+		# built-in fallback reads it (issue #33).
+		shutil.copytree(REPO / "themes", self.root / "themes")
 		shutil.copy2(REPO / "theme.py", self.root / "theme.py")
 		self.env = dict(os.environ)
 		for name in ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CATRO_COLOR",

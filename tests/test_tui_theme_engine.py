@@ -13,7 +13,7 @@ look-selector resolution and its fallback to the built-in default, and the
 `THEMES_DIR` at a temporary directory, so the repository never gains either.
 """
 
-import copy
+import importlib
 import json
 import os
 import shutil
@@ -33,8 +33,8 @@ SHIPPED = REPO / "themes" / "cozypurple.json"
 
 
 def builtin():
-	"""A fresh copy of the built-in document, safe to mutate in a test."""
-	return copy.deepcopy(theme_engine.BUILTIN_DOCUMENT)
+	"""A fresh copy of the shipped default document, safe to mutate in a test."""
+	return theme_engine.builtin_document()
 
 
 class SeamCase(unittest.TestCase):
@@ -81,8 +81,16 @@ class ShippedDocumentTests(SeamCase):
 	def test_load_preserves_the_file_spelling(self):
 		theme_engine.THEMES_DIR = REPO / "themes"
 		document = theme_engine.load_theme("cozypurple")
-		self.assertEqual(document["looks"]["default"]["bg"], "#1B1726")
-		self.assertEqual(document["looks"]["contrast-dark"]["accent"], "#00FFFF")
+		shipped = json.loads(SHIPPED.read_text(encoding="utf-8"))
+		# The load hands out the file's own spelling, not a canonicalised copy.
+		self.assertEqual(document["looks"]["default"]["bg"],
+						 shipped["looks"]["default"]["bg"])
+		self.assertEqual(document["looks"]["contrast-dark"]["accent"],
+						 shipped["looks"]["contrast-dark"]["accent"])
+		# ... and the shipped file really is mixed-case, so the two pins above
+		# cannot pass on an accidentally lowercased file.
+		self.assertRegex(SHIPPED.read_text(encoding="utf-8"),
+						 r'"#[0-9A-F]*[A-F][0-9A-F]*"')
 
 	def test_document_carries_the_pinned_key_order(self):
 		theme_engine.THEMES_DIR = REPO / "themes"
@@ -186,11 +194,11 @@ class LoadTests(SeamCase):
 			with self.assertRaises(theme_engine.ThemeError):
 				theme_engine.load_theme(name)
 
-	def test_render_paths_never_raise(self):
-		theme_engine.THEMES_DIR = self.root / "missing"
+	def test_render_paths_never_raise_for_a_bad_theme_name(self):
+		# `ghost` has no file; the shipped copy in this temp dir is the fallback.
 		self.assertEqual(theme_engine.resolve("ghost")[0], "cozypurple")
 		self.assertEqual(theme_engine.look_palette("ghost"),
-						 theme_engine.BUILTIN_LOOKS["default"])
+						 theme_engine.builtin_looks()["default"])
 		self.assertEqual(theme_engine.document("ghost")["name"], "cozypurple")
 		self.assertEqual(set(theme_engine.properties("ghost")),
 						 set(theme_engine.PROPERTY_VALUES))
@@ -201,12 +209,12 @@ class CacheTests(SeamCase):
 
 	def test_a_warm_cache_resolves_without_re_reading_or_re_validating(self):
 		self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
-						 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+						 theme_engine.builtin_looks()["default"]["bg"])
 		with mock.patch.object(theme_engine, "_document_for",
 							   side_effect=AssertionError("re-read")):
 			for _ in range(50):
 				self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
-								 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+								 theme_engine.builtin_looks()["default"]["bg"])
 				theme_engine.properties("cozypurple")
 				theme_engine.document("cozypurple")
 
@@ -219,7 +227,7 @@ class CacheTests(SeamCase):
 	def test_a_save_invalidates_the_document_memo(self):
 		document = theme_engine.load_theme("cozypurple")
 		self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
-						 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+						 theme_engine.builtin_looks()["default"]["bg"])
 		document["looks"]["default"]["bg"] = "#010203"
 		theme_engine.save_theme(document, overwrite=True)
 		self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
@@ -234,7 +242,7 @@ class CacheTests(SeamCase):
 
 	def test_redirecting_the_theme_dir_is_a_different_cache_key(self):
 		self.assertEqual(theme_engine.look_palette()["bg"],
-						 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+						 theme_engine.builtin_looks()["default"]["bg"])
 		other = self.root / "other"
 		other.mkdir()
 		document = builtin()
@@ -247,7 +255,7 @@ class CacheTests(SeamCase):
 
 
 class SaveTests(SeamCase):
-	def test_save_normalises_and_round_trips(self):
+	def test_save_keeps_the_callers_spelling_and_round_trips(self):
 		document = builtin()
 		document["name"] = "mymint"
 		document["display"] = "My Mint"
@@ -259,10 +267,39 @@ class SaveTests(SeamCase):
 						 ["cozypurple.json", "mymint.json"],
 						 "no temp file may be left behind")
 		text = Path(path).read_text(encoding="utf-8")
-		self.assertIn('"#1b1726"', text)
+		self.assertIn('"#1b1726"', text, "the spelling the caller gave is kept")
 		loaded = theme_engine.load_theme("mymint")
 		self.assertEqual(theme_engine.validate(loaded), [])
 		self.assertEqual(loaded["looks"]["default"]["bg"], "#1b1726")
+
+	def test_editing_one_look_changes_only_that_look(self):
+		target = self.themes / "cozypurple.json"
+		before = target.read_text(encoding="utf-8").splitlines()
+		document = theme_engine.load_theme("cozypurple")
+		old = document["looks"]["contrast-light"]["accent"]
+		document["looks"]["contrast-light"]["accent"] = "#123456"
+		theme_engine.save_theme(document, overwrite=True)
+		after = target.read_text(encoding="utf-8").splitlines()
+		self.assertEqual(len(after), len(before))
+		changed = [(a, b) for a, b in zip(before, after) if a != b]
+		self.assertEqual(changed, [('      "accent": "{}",'.format(old),
+									'      "accent": "#123456",')])
+
+	def test_an_unedited_load_and_save_matches_the_shipped_file(self):
+		path = theme_engine.save_theme(
+			theme_engine.load_theme("cozypurple"), overwrite=True)
+		written = Path(path).read_bytes()
+		shipped = SHIPPED.read_bytes()
+		# The writer always emits LF; a checkout may hand us CRLF (autocrlf).
+		# Compare the index bytes, so only content is pinned here.
+		self.assertEqual(written.replace(b"\r\n", b"\n"),
+						 shipped.replace(b"\r\n", b"\n"),
+						 "an unedited save must not rewrite the shipped file")
+		text = written.decode("utf-8")
+		self.assertEqual(list(json.loads(text)), ["schema", "name", "display",
+												 "properties", "looks"])
+		self.assertTrue(text.endswith("}\n"), "one trailing LF, no blank line")
+		self.assertNotIn("\r", text)
 
 	def test_saving_a_loaded_document_is_byte_stable(self):
 		document = builtin()
@@ -289,11 +326,77 @@ class SaveTests(SeamCase):
 		self.assertEqual([entry.name for entry in self.themes.iterdir()],
 						 ["cozypurple.json"])
 
+	def test_an_unknown_top_level_key_is_rejected_not_dropped(self):
+		document = builtin()
+		document["extra"] = {"bg": "#010203"}
+		self.assertTrue(any("unknown top-level" in error
+							for error in theme_engine.validate(document)))
+		with self.assertRaises(theme_engine.ThemeError):
+			theme_engine.save_theme(document)
+		# Nothing was written, so the key could not be silently dropped.
+		self.assertEqual([entry.name for entry in self.themes.iterdir()],
+						 ["cozypurple.json"])
+
 	def test_save_finds_the_new_document_immediately(self):
 		document = builtin()
 		document["name"] = "fresh"
 		theme_engine.save_theme(document)
 		self.assertEqual(theme_engine.load_theme("fresh")["name"], "fresh")
+
+
+class BuiltinSourceTests(SeamCase):
+	"""The shipped file is the one source of truth for the built-in fallback."""
+
+	def test_the_builtin_document_is_the_shipped_file(self):
+		shipped = json.loads(SHIPPED.read_text(encoding="utf-8"))
+		self.assertEqual(theme_engine.builtin_document(), shipped)
+		self.assertEqual(theme_engine.builtin_looks(), shipped["looks"])
+		self.assertEqual(theme_engine.builtin_properties(),
+						 shipped["properties"])
+
+	def test_the_builtin_tracks_the_file_in_a_redirected_theme_dir(self):
+		# A deliberate palette change is a one-file commit: no literal to edit.
+		document = builtin()
+		document["looks"]["default"]["accent"] = "#112233"
+		document["properties"]["border_style"] = "ascii"
+		(self.themes / "cozypurple.json").write_text(
+			json.dumps(document, indent=2) + "\n", encoding="utf-8")
+		theme_engine._CACHE.clear()
+		self.assertEqual(theme_engine.builtin_looks()["default"]["accent"],
+						 "#112233")
+		self.assertEqual(theme_engine.builtin_properties()["border_style"],
+						 "ascii")
+		self.assertEqual(theme_engine.look_palette("ghost")["accent"],
+						 "#112233")
+		self.assertEqual(theme_engine.properties("ghost")["border_style"],
+						 "ascii")
+
+	def test_a_missing_shipped_file_raises_at_the_point_of_use(self):
+		theme_engine.THEMES_DIR = self.root / "gone"
+		theme_engine._CACHE.clear()
+		# Nothing embedded can mask a broken install ...
+		for call in (lambda: theme_engine.builtin_document(),
+					 lambda: theme_engine.builtin_looks(),
+					 lambda: theme_engine.look_palette("ghost"),
+					 lambda: theme_engine.document("ghost"),
+					 lambda: theme_engine.properties("ghost")):
+			with self.assertRaises(theme_engine.ThemeError) as caught:
+				call()
+			self.assertIn("shipped default theme", str(caught.exception))
+		# ... and reads for a valid name still fail loudly, not silently.
+		with self.assertRaises(theme_engine.ThemeError):
+			theme_engine.look_palette("cozypurple")
+
+	def test_importing_palette_does_not_read_the_theme_file(self):
+		from tui import palette
+		self.assertNotIn("SOFT", vars(palette),
+						 "the published tables must stay lazy")
+		with mock.patch.object(theme_engine, "_document_for",
+							   side_effect=AssertionError("import-time read")):
+			importlib.reload(palette)
+		self.assertEqual(palette.SOFT, theme_engine.builtin_looks()["default"])
+		self.assertEqual(set(palette.THEMES),
+						 {"soft", "contrast-light", "contrast-dark"})
 
 
 class SelectionTests(SeamCase):
@@ -313,7 +416,7 @@ class SelectionTests(SeamCase):
 		self.assertEqual(theme_engine.selection(), ("cozypurple", "dark"))
 		self.assertEqual(theme_engine.resolve()[1], "contrast-dark")
 		self.assertEqual(theme_engine.look_palette(),
-						 theme_engine.BUILTIN_LOOKS["contrast-dark"])
+						 theme_engine.builtin_looks()["contrast-dark"])
 
 	def test_the_selected_theme_drives_document_and_properties(self):
 		document = builtin()
@@ -418,7 +521,7 @@ class SelectionTests(SeamCase):
 		self.assertEqual(theme_engine.selection()[0], "ghost")
 		self.assertEqual(theme_engine.resolve()[0], "cozypurple")
 		self.assertEqual(theme_engine.look_palette(),
-						 theme_engine.BUILTIN_LOOKS["default"])
+						 theme_engine.builtin_looks()["default"])
 
 
 class PropertiesTests(SeamCase):

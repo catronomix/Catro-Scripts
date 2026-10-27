@@ -169,9 +169,11 @@ properties, Colours opens a hex/HSV colour picker per palette key, and the
 picker warns below WCAG AA (4.5:1 against `bg`/`zebra_bg`) but never blocks.
 `Ctrl-S` saves atomically to `themes/<name>.json` (the filename is preseeded,
 `.json` is implied, and an existing different file asks before it is
-overwritten); Load lists every theme, marks the active one `*` and keeps an
-invalid file as an `!` row. To share a theme, copy its JSON into `themes/`,
-keeping `name` equal to the filename.
+overwritten). A save only rewrites the lines you changed: the document's hex
+spelling is kept, so re-saving an untouched theme leaves the file byte-identical.
+Load lists every theme, marks the active one `*` and keeps an invalid file as an
+`!` row. To share a theme, copy its JSON into `themes/`, keeping `name` equal to
+the filename.
 
 `CATRO_ASCII=1` forces ASCII box fallbacks, and
 `CATRO_THEME=soft|contrast-light|contrast-dark` overrides the file for one run.
