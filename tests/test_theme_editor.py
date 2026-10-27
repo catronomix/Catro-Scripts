@@ -31,8 +31,9 @@ if str(REPO) not in sys.path:
 
 from types import SimpleNamespace
 
-from tui import (caps, config, editor, editor_nav, editor_preview, editorviews,
-				 keys, palette, screen, table, theme_engine)  # noqa: E402
+from tui import (caps, config, editor, editor_nav, editor_preview, editoractions,
+				 editor_store, editorviews, keys, palette, screen, table,
+				 theme_engine)  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -828,6 +829,43 @@ class PreviewSplitShimTests(unittest.TestCase):
 			self.assertNotIn("editorpaint", line)
 			self.assertNotIn("editoractions", line)
 			self.assertNotIn("editorimport", line)
+
+
+class StoreSplitShimTests(unittest.TestCase):
+	"""The Save/Load half moved to `tui.editor_store`; old paths must resolve."""
+
+	MOVED = ("save_prompt", "save_key", "commit_save", "load_popup",
+			 "load_key", "open_document", "confirm_key")
+
+	def test_the_moved_names_still_resolve_through_editoractions(self):
+		for name in self.MOVED:
+			with self.subTest(name=name):
+				self.assertIs(getattr(editoractions, name),
+							  getattr(editor_store, name))
+
+	def test_the_pane_half_stayed_in_editoractions(self):
+		for name in ("begin_property_edit", "edit_key", "commit_property",
+					 "open_picker", "picker_key", "mouse", "scroll", "_hit"):
+			with self.subTest(name=name):
+				self.assertTrue(hasattr(editoractions, name))
+				self.assertFalse(hasattr(editor_store, name))
+
+	def test_editor_store_does_not_import_editoractions_or_its_importers(self):
+		source = (REPO / "tui" / "editor_store.py").read_text(encoding="utf-8")
+		imports = [line for line in source.splitlines()
+				   if line.startswith("from .") or line.startswith("import ")]
+		self.assertTrue(imports)
+		for line in imports:
+			for blocked in ("editoractions", "editorimport", "editorpaint",
+							"editor_store"):
+				self.assertNotIn(blocked, line)
+
+	def test_editor_store_does_not_import_the_editor_itself(self):
+		source = (REPO / "tui" / "editor_store.py").read_text(encoding="utf-8")
+		imports = [line.strip() for line in source.splitlines()
+				   if line.startswith("from .") or line.startswith("import ")]
+		self.assertNotIn("from . import editor", imports)
+		self.assertNotIn("from .editor import", " ".join(imports))
 
 
 if __name__ == "__main__":
