@@ -18,7 +18,8 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from support import module_isolation, repaint_errors  # noqa: E402  (test helper)
+from support import (cell_style, module_isolation,  # noqa: E402  (test helper)
+					 repaint_errors)
 
 setUpModule, tearDownModule = module_isolation()
 
@@ -335,6 +336,39 @@ class RepaintStyleTests(unittest.TestCase):
 		self.assertEqual(frame.count(self.FG), 1)
 		self.assertNotIn(screen.SGR_RESET + self.FG, frame)
 		self.assertEqual(repaint_errors(canvas, frame), [])
+
+	def test_compound_codes_set_every_parameter_not_just_the_first(self):
+		# A raw-ANSI cell colour such as "\033[1;31m" is bold red, not bold: the
+		# parser used to read only the first parameter, so both cells below
+		# collapsed to the same state and the second run was never emitted.
+		for first, second in (("\033[1;31m", "\033[1;32m"),
+							  ("\033[7;33m", "\033[7;34m")):
+			with self.subTest(first=first, second=second):
+				self.assertNotEqual(cell_style(first), cell_style(second))
+				canvas = self.canvas()
+				# Adjacent runs on one row: with only the first parameter read,
+				# the second state equalled the first and was never emitted.
+				canvas.draw_text(0, 0, "one", first)
+				canvas.draw_text(3, 0, "two", second)
+				canvas.render()
+				frame = canvas.stream.getvalue()
+				self.assertEqual(repaint_errors(canvas, frame), [])
+
+	def test_an_unreadable_escape_renders_unchanged_and_never_raises(self):
+		# A screensaver frame must never raise out of render(): both a colon
+		# form (not valid SGR) and a non-SGR escape (`ESC[K`) pass through, and
+		# the run after them is emitted rather than suppressed.
+		canvas = self.canvas()
+		colour, erase = "\033[38:2::255:0:0m", "\033[K"
+		canvas.draw_text(0, 0, "aa", colour)
+		canvas.draw_text(0, 1, "bb", erase)
+		canvas.draw_text(0, 2, "cc")
+		canvas.render()
+		frame = canvas.stream.getvalue()
+		self.assertEqual(frame.count(colour), 2)  # every cell keeps its escape
+		self.assertEqual(frame.count(erase), 2)
+		self.assertIn(erase + "b", frame)
+		self.assertIn(screen.SGR_RESET, frame)  # the plain run still resets
 
 	def test_redrawing_an_unchanged_run_writes_nothing(self):
 		canvas = self.canvas()

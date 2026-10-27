@@ -4,10 +4,14 @@
 			=========
 The emitters' state machine, split out of `tui.canvas` so the canvas keeps its
 line budget and this one rule has a leaf home. `_sgr_state()` parses a colour
-prefix into the `(fg, bg, attrs)` triple the terminal really holds;
-`_emit_sgr()` appends a run's codes and inserts a reset only when the run would
-otherwise inherit a sticky attribute (reverse/bold/dim/bg) or a colour slot it
-does not set - never before every run, so pure-fg runs stay byte-identical.
+prefix into the `(fg, bg, attrs)` triple the terminal really holds, walking every
+parameter in a chunk (a `Canvas` cell colour may be any raw ANSI string, so
+`\033[1;31m` sets bold *and* red); `_emit_sgr()` appends a run's codes and inserts
+a reset only when the run would otherwise inherit a sticky attribute
+(reverse/bold/dim/bg) or a colour slot it does not set - never before every run,
+so pure-fg runs stay byte-identical. An escape this parser cannot read leaves the
+state unknown: the run is emitted as-is behind a reset, so a frame never raises
+and never suppresses a colour.
 
 No `tui` imports: this is a leaf. `tui.canvas` re-exports everything here, so
 `canvas._sgr_state`, `canvas._emit_sgr` and `canvas.SGR_RESET` keep resolving.
@@ -20,27 +24,52 @@ _SGR_UNKNOWN = object()
 
 
 def _sgr_state(color):
-	"""(fg, bg, attrs) the SGR state `color` leaves active on the terminal."""
+	"""(fg, bg, attrs) the SGR state `color` leaves active on the terminal.
+
+	`_SGR_UNKNOWN` when a chunk is not an SGR code this parser understands - the
+	caller must treat the whole run as unreadable rather than guess.
+	"""
 	fg = bg = None
 	attrs = set()
 	for chunk in str(color or "").split("\033[")[1:]:
-		params = chunk.split("m")[0].split(";")
-		code = int(params[0] or 0)
-		if code in (38, 48):
-			fg, bg = ((";".join(params), bg) if code == 38
-					  else (fg, ";".join(params)))
-		elif 30 <= code <= 37 or 90 <= code <= 97:
-			fg = code
-		elif 40 <= code <= 47 or 100 <= code <= 107:
-			bg = code
-		else:
-			attrs.add(code)
+		body, separator, _ = chunk.partition("m")
+		if not separator:
+			return _SGR_UNKNOWN
+		try:
+			params = [int(part or 0) for part in body.split(";")]
+		except ValueError:
+			return _SGR_UNKNOWN
+		index = 0
+		while index < len(params):
+			code = params[index]
+			if code in (38, 48):
+				kind = params[index + 1] if index + 1 < len(params) else None
+				width = 3 if kind == 5 else 5 if kind == 2 else 0
+				if not width or index + width > len(params):
+					return _SGR_UNKNOWN
+				value = ";".join(str(part) for part in params[index:index + width])
+				fg, bg = ((value, bg) if code == 38 else (fg, value))
+				index += width
+				continue
+			if 30 <= code <= 37 or 90 <= code <= 97:
+				fg = code
+			elif 40 <= code <= 47 or 100 <= code <= 107:
+				bg = code
+			else:
+				attrs.add(code)
+			index += 1
 	return fg, bg, frozenset(attrs)
 
 
 def _emit_sgr(out, active, color):
 	"""Append `color`'s codes; reset first when a run would inherit state."""
 	state = _sgr_state(color)
+	if state is _SGR_UNKNOWN:
+		# Unreadable escape: pass it through and leave no state to trust, so
+		# the next run cannot be suppressed by a state nobody knows.
+		if color:
+			out.append(color)
+		return _SGR_UNKNOWN
 	if state != active:
 		if active is not _SGR_UNKNOWN and color and not (
 				active[2] <= state[2]
