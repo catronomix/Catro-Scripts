@@ -70,15 +70,15 @@ class IndexSeamTests(unittest.TestCase):
 				self.assertTrue(0 <= index <= 15)
 
 	def test_index_accepts_rgb_tuples_and_other_themes(self):
-		accent = shipped_looks()["default"]["accent"]
+		accent = shipped_looks()["default"]["fg-accent"]
 		self.assertEqual(palette.index(palette.rgb(accent)),
 						 palette.index(accent))
 		for name in palette.THEMES:
 			with self.subTest(theme=name):
-				value = palette.index("accent", theme=name)
+				value = palette.index("fg-accent", theme=name)
 				self.assertTrue(0 <= value <= 255)
 				self.assertEqual(value, palette.index(
-					palette.THEMES[name]["accent"], theme=name))
+					palette.THEMES[name]["fg-accent"], theme=name))
 		self.assertNotEqual(palette.index("bg", theme="soft"),
 							palette.index("bg", theme="contrast-light"))
 

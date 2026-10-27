@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "name": "cozypurple",
   "display": "Cozy Purple",
   "properties": {
@@ -11,47 +11,62 @@
     "table_zebra": true,
     "focus_style": "reverse",
     "scrollbar_style": "block",
-    "selection_style": "accent"
+    "corner-char": "none"
   },
   "looks": {
     "default": {
       "bg": "#1B1726",
-      "surface": "#292238",
+      "bg-inside": "#292238",
+      "bg-inside-active": "#352B49",
+      "bg-stripe": "#352B49",
       "fg": "#D4C8EB",
-      "muted": "#A392C0",
-      "accent": "#F5CD68",
-      "success": "#7FD1A0",
-      "warn": "#E09F67",
-      "error": "#FF6B6B",
-      "border": "#A392C0",
-      "header": "#F5CD68",
-      "zebra_bg": "#352B49"
+      "fg-muted": "#A392C0",
+      "fg-accent": "#F5CD68",
+      "fg-success": "#7FD1A0",
+      "fg-warn": "#E09F67",
+      "fg-error": "#FF6B6B",
+      "border-bg": "#292238",
+      "border-fg": "#A392C0",
+      "border-bg-active": "#352B49",
+      "border-fg-active": "#F5CD68",
+      "header-fg": "#F5CD68",
+      "header-bg": "#292238"
     },
     "contrast-dark": {
       "bg": "#000000",
-      "surface": "#0A0A0A",
+      "bg-inside": "#0A0A0A",
+      "bg-inside-active": "#1A1A1A",
+      "bg-stripe": "#1A1A1A",
       "fg": "#FFFFFF",
-      "muted": "#D0D0D0",
-      "accent": "#00FFFF",
-      "success": "#00FF66",
-      "warn": "#FFFF00",
-      "error": "#FF4040",
-      "border": "#00FFFF",
-      "header": "#FFFF00",
-      "zebra_bg": "#1A1A1A"
+      "fg-muted": "#D0D0D0",
+      "fg-accent": "#00FFFF",
+      "fg-success": "#00FF66",
+      "fg-warn": "#FFFF00",
+      "fg-error": "#FF4040",
+      "border-bg": "#0A0A0A",
+      "border-fg": "#00FFFF",
+      "border-bg-active": "#1A1A1A",
+      "border-fg-active": "#00FFFF",
+      "header-fg": "#FFFF00",
+      "header-bg": "#0A0A0A"
     },
     "contrast-light": {
       "bg": "#FFFFFF",
-      "surface": "#E8F4F8",
+      "bg-inside": "#E8F4F8",
+      "bg-inside-active": "#CFE0E8",
+      "bg-stripe": "#E8F4F8",
       "fg": "#000000",
-      "muted": "#4A4A4A",
-      "accent": "#0000B3",
-      "success": "#0A7A2F",
-      "warn": "#8A5A00",
-      "error": "#B3261E",
-      "border": "#000000",
-      "header": "#A0007A",
-      "zebra_bg": "#E8F4F8"
+      "fg-muted": "#4A4A4A",
+      "fg-accent": "#0000B3",
+      "fg-success": "#0A7A2F",
+      "fg-warn": "#8A5A00",
+      "fg-error": "#B3261E",
+      "border-bg": "#E8F4F8",
+      "border-fg": "#000000",
+      "border-bg-active": "#E8F4F8",
+      "border-fg-active": "#0000B3",
+      "header-fg": "#A0007A",
+      "header-bg": "#E8F4F8"
     }
   }
 }

@@ -29,20 +29,26 @@ from tui import (caps, config, frame_corners, palette, table,  # noqa: E402
 				 table_glyphs, theme_engine, theme_migrate)
 
 SHIPPED = REPO / "themes" / "cozypurple.json"
+V1_SHIPPED = REPO / "tests" / "fixtures" / "themes" / "v1-cozypurple.json"
 TRUE = caps.Capabilities(level="true", unicode=True, width=None,
 						 isatty=False, plain=False, reason="test")
 ASCII = caps.Capabilities(level="true", unicode=False, width=None,
 						  isatty=False, plain=False, reason="test")
 
 
+def v1_document():
+	"""A frozen schema-1 copy of the shipped theme, kept after the C3 flip."""
+	return json.loads(V1_SHIPPED.read_text(encoding="utf-8"))
+
+
 def shipped_document():
-	"""The shipped file as JSON (schema 1 until the flip lands)."""
+	"""The shipped file as JSON (schema 2 since the flip)."""
 	return json.loads(SHIPPED.read_text(encoding="utf-8"))
 
 
 def v2_properties(**overrides):
 	"""A complete schema-2 property table, with `overrides` applied."""
-	values = dict(theme_migrate.migrate_doc(shipped_document())["properties"])
+	values = dict(theme_migrate.migrate_doc(v1_document())["properties"])
 	values.update(overrides)
 	return values
 
@@ -93,9 +99,9 @@ class MigrationMapTests(unittest.TestCase):
 				self.assertIn(source, theme_migrate.V1_PALETTE_KEYS)
 
 	def test_migration_preserves_every_hex_verbatim(self):
-		document = theme_migrate.migrate_doc(shipped_document())
+		document = theme_migrate.migrate_doc(v1_document())
 		for look in theme_engine.LOOKS:
-			v1 = shipped_document()["looks"][look]
+			v1 = v1_document()["looks"][look]
 			v2 = document["looks"][look]
 			with self.subTest(look=look):
 				for old, new in theme_migrate.V1_TO_V2.items():
@@ -104,27 +110,27 @@ class MigrationMapTests(unittest.TestCase):
 					self.assertEqual(v2[new], v1[old], new)
 
 	def test_migration_drops_selection_style_and_defaults_the_corner(self):
-		document = theme_migrate.migrate_doc(shipped_document())
+		document = theme_migrate.migrate_doc(v1_document())
 		self.assertEqual(document["schema"], theme_migrate.SCHEMA_CURRENT)
-		self.assertIn("selection_style", shipped_document()["properties"])
+		self.assertIn("selection_style", v1_document()["properties"])
 		self.assertNotIn("selection_style", document["properties"])
 		self.assertEqual(document["properties"]["corner-char"], "none")
 
 	def test_migration_emits_the_canonical_key_and_property_order(self):
-		document = theme_migrate.migrate_doc(shipped_document())
+		document = theme_migrate.migrate_doc(v1_document())
 		self.assertEqual(list(document["looks"]["default"]),
 						 list(theme_migrate.PALETTE_KEYS))
 		self.assertEqual(list(document["properties"]),
 						 list(theme_engine.PROPERTY_VALUES))
-		self.assertEqual(list(document), list(shipped_document()))
+		self.assertEqual(list(document), list(v1_document()))
 
 	def test_a_v2_document_is_returned_unchanged_and_idempotent(self):
-		document = theme_migrate.migrate_doc(shipped_document())
+		document = theme_migrate.migrate_doc(v1_document())
 		self.assertIs(theme_migrate.migrate_doc(document), document)
 		self.assertEqual(theme_migrate.migrate_doc(document), document)
 
 	def test_a_broken_v1_look_gains_no_invented_colour(self):
-		document = shipped_document()
+		document = v1_document()
 		del document["looks"]["default"]["accent"]
 		migrated = theme_migrate.migrate_doc(document)
 		self.assertIsNone(migrated["looks"]["default"]["fg-accent"])
@@ -133,6 +139,7 @@ class MigrationMapTests(unittest.TestCase):
 
 class EngineMigrationTests(Seam):
 	def test_a_v1_file_loads_as_v2_and_is_never_rewritten(self):
+		self.shipped.write_bytes(V1_SHIPPED.read_bytes())
 		before = self.shipped.read_bytes()
 		document = theme_engine.load_theme("cozypurple")
 		self.assertEqual(document["schema"], 2)
@@ -141,8 +148,8 @@ class EngineMigrationTests(Seam):
 						 "a read must not rewrite the file")
 
 	def test_a_v1_file_is_still_valid_on_its_own_terms(self):
-		self.assertEqual(theme_engine.validate(shipped_document()), [])
-		document = shipped_document()
+		self.assertEqual(theme_engine.validate(v1_document()), [])
+		document = v1_document()
 		document["looks"]["default"]["fg-muted"] = "#112233"
 		self.assertTrue(any("unknown keys" in error
 							for error in theme_engine.validate(document)))
@@ -168,13 +175,13 @@ class EngineMigrationTests(Seam):
 		self.assertEqual(Path(path).read_bytes(), first)
 
 	def test_saving_a_v1_document_writes_the_migrated_schema(self):
-		document = shipped_document()
+		document = v1_document()
 		document["name"] = "mymint"
 		path = theme_engine.save_theme(document)
 		written = json.loads(Path(path).read_text(encoding="utf-8"))
 		self.assertEqual(written["schema"], 2)
 		self.assertEqual(written["looks"], theme_migrate.migrate_doc(
-			shipped_document())["looks"])
+			v1_document())["looks"])
 
 	def test_an_unknown_schema_is_still_refused(self):
 		for schema in (0, 3, "2", True):

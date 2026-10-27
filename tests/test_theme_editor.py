@@ -316,6 +316,37 @@ class NavigationTests(EditorTestCase):
 		self.assertFalse(ed.dirty)
 
 
+class SchemaTwoDocumentTests(EditorTestCase):
+	"""The flipped document: every v2 token has an editor row and a value."""
+
+	def panel_text(self, ed, index):
+		ed.draw()
+		x, y, width, height = ed.rects[index]
+		rows = self.lines(ed)
+		return "\n".join(row[x:x + width] for row in rows[y:y + height])
+
+	def test_the_colours_panel_lists_every_v2_token(self):
+		ed = self.make()
+		ed.handle("tab")  # focus the Colours panel
+		seen = set()
+		for _ in range(len(theme_engine.PALETTE_KEYS)):
+			seen |= {key for key in theme_engine.PALETTE_KEYS
+					 if key in self.panel_text(ed, 4)}
+			ed.handle("down")
+		self.assertEqual(seen, set(theme_engine.PALETTE_KEYS))
+		self.assertNotIn("surface", self.panel_text(ed, 4))
+
+	def test_the_properties_panel_lists_the_surviving_keys(self):
+		ed = self.make()
+		seen = set()
+		for _ in range(len(editorviews.PROPERTY_KEYS) + 1):
+			band = self.panel_text(ed, 3)
+			seen |= {key for key in editorviews.PROPERTY_KEYS if key in band}
+			ed.handle("down")
+		self.assertEqual(seen, set(editorviews.PROPERTY_KEYS))
+		self.assertIn("corner-char", self.panel_text(ed, 3))
+
+
 class DoubleClickTests(EditorTestCase):
 	"""A second press on the same cell activates it; the first only selects."""
 

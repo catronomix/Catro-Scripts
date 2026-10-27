@@ -76,9 +76,24 @@ class ShippedDocumentTests(SeamCase):
 	def test_the_shipped_file_is_valid_and_matches_the_builtin_table(self):
 		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
 		self.assertEqual(theme_engine.validate(document), [])
-		# The file is still schema 1; the built-in table is its migrated form.
-		self.assertEqual(document["schema"], 1)
-		self.assertEqual(theme_migrate.migrate_doc(document), builtin())
+		# The file is schema 2 since the flip, so it is the built-in table.
+		self.assertEqual(document["schema"], 2)
+		self.assertEqual(theme_migrate.migrate_doc(document), document)
+		self.assertEqual(document, builtin())
+
+	def test_every_look_carries_the_sixteen_tokens(self):
+		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
+		for look in theme_engine.LOOKS:
+			with self.subTest(look=look):
+				self.assertEqual(list(document["looks"][look]),
+								 list(theme_engine.PALETTE_KEYS))
+		self.assertEqual(list(document["properties"])[-1], "corner-char")
+		self.assertNotIn("selection_style", document["properties"])
+
+	def test_the_shipped_file_round_trips_byte_identically(self):
+		path = theme_engine.save_theme(theme_engine.load_theme("cozypurple"),
+									   overwrite=True)
+		self.assertEqual(Path(path).read_bytes(), SHIPPED.read_bytes())
 
 	def test_load_preserves_the_file_spelling(self):
 		theme_engine.THEMES_DIR = REPO / "themes"
@@ -88,7 +103,7 @@ class ShippedDocumentTests(SeamCase):
 		self.assertEqual(document["looks"]["default"]["bg"],
 						 shipped["looks"]["default"]["bg"])
 		self.assertEqual(document["looks"]["contrast-dark"]["fg-accent"],
-						 shipped["looks"]["contrast-dark"]["accent"])
+						 shipped["looks"]["contrast-dark"]["fg-accent"])
 		# ... and the shipped file really is mixed-case, so the two pins above
 		# cannot pass on an accidentally lowercased file.
 		self.assertRegex(SHIPPED.read_text(encoding="utf-8"),
