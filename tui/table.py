@@ -64,7 +64,7 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 	if not box:
 		return "\n".join(_bare_rows(labels, data, widths, cap, theme, zebra))
 	if compact:
-		lines = [_bare_line(labels, widths, cap, theme, fg="header", bold=True)]
+		lines = [_bare_line(labels, widths, cap, theme, fg="header-fg", bold=True)]
 		lines.append(_span_rule(glyphs, widths, cap, theme))
 		for index, cells in enumerate(data):
 			lines.append(_bare_line(cells, widths, cap, theme,
@@ -98,12 +98,12 @@ def key_values(title, pairs, *, cap=None, theme=None):
 		lines.extend("{}\t{}".format(key, value) for key, value in items)
 		return "\n".join(lines)
 	if title:
-		lines.append(palette.style(_flat(title), fg="header", bold=True,
+		lines.append(palette.style(_flat(title), fg="header-fg", bold=True,
 								   cap=cap, theme=theme))
 	width = max([display_width(key) for key, _ in items] or [0])
 	for key, value in items:
 		lines.append("{}  {}".format(
-			palette.style(pad(key, width), fg="muted", cap=cap, theme=theme),
+			palette.style(pad(key, width), fg="fg-muted", cap=cap, theme=theme),
 			palette.style(value, fg="fg", cap=cap, theme=theme)))
 	return "\n".join(lines)
 
@@ -120,11 +120,11 @@ def banner(title, width=60, *, cap=None, theme=None):
 	right = inner - display_width(label) - left
 	return "\n".join([
 		palette.style(glyphs["tl"] + glyphs["h"] * inner + glyphs["tr"],
-					  fg="border", cap=cap, theme=theme),
+					  fg="border-fg", cap=cap, theme=theme),
 		palette.style(glyphs["v"] + " " * left + label + " " * right + glyphs["v"],
-					  fg="header", bold=True, cap=cap, theme=theme),
+					  fg="header-fg", bold=True, cap=cap, theme=theme),
 		palette.style(glyphs["bl"] + glyphs["h"] * inner + glyphs["br"],
-					  fg="border", cap=cap, theme=theme),
+					  fg="border-fg", cap=cap, theme=theme),
 	])
 
 
@@ -134,7 +134,7 @@ def section(title, *, cap=None, theme=None):
 	label = _flat(title)
 	if cap.plain:
 		return label
-	return palette.style(label, fg="header", bold=True, cap=cap, theme=theme)
+	return palette.style(label, fg="header-fg", bold=True, cap=cap, theme=theme)
 
 
 def _flat(value):
@@ -174,7 +174,7 @@ def _fit(widths, limit):
 
 def _rule(glyphs, widths, left, middle, right, cap, theme):
 	body = glyphs[middle].join(glyphs["h"] * (width + 2) for width in widths)
-	return palette.style(glyphs[left] + body + glyphs[right], fg="border",
+	return palette.style(glyphs[left] + body + glyphs[right], fg="border-fg",
 						 cap=cap, theme=theme)
 
 
@@ -187,7 +187,7 @@ def _header_row(glyphs, widths, labels, cap, theme):
 	"""
 	body = glyphs["v"].join(" " + pad(cell, width) + " "
 							for cell, width in zip(labels, widths))
-	return (palette.prefix(fg="border", cap=cap, theme=theme) + glyphs["v"]
+	return (palette.prefix(fg="border-fg", cap=cap, theme=theme) + glyphs["v"]
 			+ palette.prefix(bold=True, cap=cap, theme=theme) + body + glyphs["v"]
 			+ _reset(cap))
 
@@ -199,7 +199,7 @@ def _row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
 	text`), and only the closing border is preceded by a reset, so the row
 	carries the same escapes in the same order as the hand-built table did.
 	"""
-	border = palette.prefix(fg="border", cap=cap, theme=theme)
+	border = palette.prefix(fg="border-fg", cap=cap, theme=theme)
 	cell_style = palette.prefix(fg="fg", bg=bg, cap=cap, theme=theme)
 	reset = _reset(cap)
 	parts = []
@@ -220,7 +220,7 @@ def _reset(cap):
 
 def _bare_rows(labels, data, widths, cap, theme, zebra):
 	"""Borderless variant: padded columns separated by two spaces."""
-	lines = [_bare_line(labels, widths, cap, theme, fg="header", bold=True)]
+	lines = [_bare_line(labels, widths, cap, theme, fg="header-fg", bold=True)]
 	for index, cells in enumerate(data):
 		lines.append(_bare_line(cells, widths, cap, theme,
 								bg=_zebra_bg(index, zebra)))
@@ -231,13 +231,13 @@ def _zebra_bg(index, zebra):
 	"""Palette key for row `index`, or None when zebra shading is off."""
 	if not zebra:
 		return None
-	return "bg" if index % 2 == 0 else "surface"
+	return "bg" if index % 2 == 0 else "bg-inside"
 
 
 def _span_rule(glyphs, widths, cap, theme):
 	"""One rule as wide as the borderless row (`compact`'s top/bottom edge)."""
 	span = sum(widths) + 2 * max(0, len(widths) - 1)
-	return palette.style(glyphs["h"] * max(1, span), fg="border", cap=cap,
+	return palette.style(glyphs["h"] * max(1, span), fg="border-fg", cap=cap,
 						 theme=theme)
 
 

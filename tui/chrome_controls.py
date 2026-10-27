@@ -32,7 +32,7 @@ ASCII_DECORATIONS = dict(BUTTON_DECORATIONS, chevron=("<< ", " >>"),
 
 # button_style -> the palette roles and attributes the label is painted with.
 BUTTON_STYLES = {
-	"filled": {"fg": "bg", "bg": "accent"}, "outline": {"fg": "border"},
+	"filled": {"fg": "bg", "bg": "fg-accent"}, "outline": {"fg": "border-fg"},
 	"plain": {"fg": "fg"}, "underline": {"fg": "fg", "underline": True},
 }
 
@@ -49,7 +49,7 @@ def button(label, *, focused=False, disabled=False, cap=None, theme=None):
 
 	The stage-3 widgets wrap this seam, they never re-implement it. The
 	decoration always wraps the label, so the whole button carries the style;
-	`focused` re-styles per `focus_style` and `disabled` forces `muted` (it
+	`focused` re-styles per `focus_style` and `disabled` forces `fg-muted` (it
 	wins over both). Piped, the decorated label comes back with no escapes.
 	"""
 	cap = cap or caps.detect()
@@ -67,18 +67,18 @@ def button(label, *, focused=False, disabled=False, cap=None, theme=None):
 		if focus == "accent":
 			# Replacing the ground keeps the label legible on the accent.
 			attributes.pop("bg", None)
-			attributes["fg"] = "accent"
+			attributes["fg"] = "fg-accent"
 		elif focus == "underline":
 			attributes["underline"] = True
 		else:
 			attributes["reverse"] = True
 	if disabled:
-		attributes = {"fg": "muted"}
+		attributes = {"fg": "fg-muted"}
 	return palette.style(text, cap=cap, theme=theme, **attributes)
 
 
 def scrollbar(height, *, offset=0, total=None, cap=None, theme=None):
-	"""One single-column cell per row: `accent` thumb over a `muted` track.
+	"""One single-column cell per row: `fg-accent` thumb over a `fg-muted` track.
 
 	`scrollbar_style` picks the glyph pair (`block` blocks, `line` lines,
 	`ascii` `#`/`|`). `total` is the content height (`None` means everything
@@ -104,5 +104,5 @@ def scrollbar(height, *, offset=0, total=None, cap=None, theme=None):
 		start = int(round(offset * (height - length) / span)) if span else 0
 	last = start + length
 	return [palette.style(thumb if start <= row < last else track,
-						  fg="accent" if start <= row < last else "muted",
+						  fg="fg-accent" if start <= row < last else "fg-muted",
 						  cap=cap, theme=theme) for row in range(height)]

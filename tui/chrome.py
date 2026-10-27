@@ -45,8 +45,8 @@ DEFAULT_RULE_WIDTH = 40
 
 # kind -> palette key. Unknown kinds are treated as "info" so a typo can never
 # raise inside a renderer.
-STATUS_COLOURS = {"ok": "success", "warn": "warn",
-				  "error": "error", "info": "accent"}
+STATUS_COLOURS = {"ok": "fg-success", "warn": "fg-warn",
+				  "error": "fg-error", "info": "fg-accent"}
 # ASCII markers, valid under every glyph set and encoding.
 STATUS_MARKERS = {"ok": "[ok]", "warn": "[warn]",
 				  "error": "[error]", "info": "[info]"}
@@ -56,8 +56,8 @@ MENU_POINTER = ">"
 def header(title, subtitle=None, *, width=None, cap=None, theme=None):
 	"""Masthead: title, optional subtitle, then a border rule.
 
-	Title is `header` + bold on `surface`, subtitle `muted` on `surface`; both
-	are bands padded to the page width. `header_align` left/center/right places
+	Title is `header-fg` + bold on `header-bg`, subtitle `fg-muted` on the same
+	band; both are padded to the page width. `header_align` left/center/right places
 	the label inside the band; `left` is the shipped, byte-pinned default.
 	"""
 	cap = cap or caps.detect()
@@ -73,10 +73,10 @@ def header(title, subtitle=None, *, width=None, cap=None, theme=None):
 	if inner is None:
 		inner = max(display_width(title), display_width(subtitle or "")) + 2
 	inner = max(4, inner)
-	lines = [_band(title, inner, fg="header", bold=True, align=align,
+	lines = [_band(title, inner, fg="header-fg", bold=True, align=align,
 				   cap=cap, theme=theme)]
 	if subtitle:
-		lines.append(_band(subtitle, inner, fg="muted", align=align,
+		lines.append(_band(subtitle, inner, fg="fg-muted", align=align,
 						   cap=cap, theme=theme))
 	lines.append(rule(inner, cap=cap, theme=theme))
 	return "\n".join(lines)
@@ -91,12 +91,12 @@ def rule(width=None, *, char=None, cap=None, theme=None):
 	span = _span(width, cap)
 	if span is None:
 		span = DEFAULT_RULE_WIDTH
-	return palette.style(glyph * max(1, int(span)), fg="border", cap=cap,
+	return palette.style(glyph * max(1, int(span)), fg="border-fg", cap=cap,
 						 theme=theme)
 
 
 def field(key, value, *, width=None, cap=None, theme=None):
-	"""One row of a settings block: `muted` key, `fg` value.
+	"""One row of a settings block: `fg-muted` key, `fg` value.
 
 	`width` is the key column (so a block of fields lines up), not the whole
 	line. Piped, the row is `key<TAB>value`.
@@ -110,20 +110,21 @@ def field(key, value, *, width=None, cap=None, theme=None):
 	if display_width(key) > column:
 		key = _truncate(key, column)
 	return "{}  {}".format(
-		palette.style(pad(key, column), fg="muted", cap=cap, theme=theme),
+		palette.style(pad(key, column), fg="fg-muted", cap=cap, theme=theme),
 		palette.style(value, fg="fg", cap=cap, theme=theme))
 
 
 def status(kind, text, *, width=None, cap=None, theme=None):
 	"""`[ok]`/`[warn]`/`[error]`/`[info]` marker plus text.
 
-	The marker carries the colour (success/warn/error/accent), the text stays
-	`fg`, so a long message is not painted in an alarm colour. `width` is the
-	total line width; the text truncates. Unknown kinds render as info.
+	The marker carries the colour (fg-success/fg-warn/fg-error/fg-accent), the
+	text stays `fg`, so a long message is not painted in an alarm colour.
+	`width` is the total line width; the text truncates. Unknown kinds render
+	as info.
 	"""
 	cap = cap or caps.detect()
 	kind = str(kind).strip().lower()
-	colour = STATUS_COLOURS.get(kind, "accent")
+	colour = STATUS_COLOURS.get(kind, "fg-accent")
 	marker = STATUS_MARKERS.get(kind, STATUS_MARKERS["info"])
 	text = _flat(text)
 	if cap.plain:
@@ -157,7 +158,7 @@ def fill(text, width=None, *, bg="bg", fg="fg", cap=None, theme=None):
 def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	"""Numbered rows, one per item, with a selected-row bar.
 
-	The selected row is `accent` on `surface` behind an ASCII `>` pointer, the
+	The selected row is `fg-accent` on `bg-inside` behind a `>` pointer, the
 	others `fg`. `selected=None` means "nothing selected yet" (`ask_choice`).
 	Rows number from 1 so a prompt can ask for the number it prints; a caller
 	`width` pins the bar, otherwise it spans the widest row.
@@ -181,14 +182,14 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	span = max(2, span)
 	lines = []
 	if title:
-		lines.append(palette.style(pad(" " + title, span), fg="header",
-								   bg="surface", bold=True, cap=cap, theme=theme))
+		lines.append(palette.style(pad(" " + title, span), fg="header-fg",
+								   bg="bg-inside", bold=True, cap=cap, theme=theme))
 	cell = span - 2
 	for index, label in enumerate(labels):
 		label = _truncate(label, cell) if display_width(label) > cell else label
 		if index == selected:
 			lines.append(palette.style(MENU_POINTER + " " + pad(label, cell),
-									   fg="accent", bg="surface", bold=True,
+									   fg="fg-accent", bg="bg-inside", bold=True,
 									   cap=cap, theme=theme))
 		else:
 			lines.append(palette.style("  " + pad(label, cell), fg="fg",

@@ -2,7 +2,7 @@
 """
 			PAGE PANELS
 			============
-The framed half of `tui.chrome`: `panel()` (a surface-filled box with the title
+The framed half of `tui.chrome`: `panel()` (a bg-inside box with the title
 cut into the top rule) and `_band()`/`_top_frame()`, the single-line and border
 painters it is built from. `tui.chrome.header()` keeps the masthead itself but
 takes its title/subtitle bands from here, so the masthead and the panel share
@@ -38,7 +38,7 @@ def _body_lines(body):
 		return body.splitlines() or [""]
 	return [_flat(line) for line in body] or [""]
 def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
-	"""Framed box with `surface` interior and the title in the top rule.
+	"""Framed box with `bg-inside` interior and the title in the top rule.
 
 	`body` is a string (one line per `\\n`) or an iterable of lines; lines are
 	truncated to the interior, never wrapped, never raise. `padding` is the
@@ -64,36 +64,36 @@ def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
 	inner = max(4, inner)
 	lines = [_top_frame(glyphs, inner, title, cap, theme)]
 	cell = max(0, inner - 2 - 2 * padding)
-	edge = palette.prefix(fg="border", cap=cap, theme=theme)
-	inside = palette.prefix(fg="fg", bg="surface", cap=cap, theme=theme)
+	edge = palette.prefix(fg="border-fg", cap=cap, theme=theme)
+	inside = palette.prefix(fg="fg", bg="bg-inside", cap=cap, theme=theme)
 	reset = _reset(cap)
 	for line in body_lines:
 		text = _truncate(line, cell) if display_width(line) > cell else line
 		lines.append(edge + glyphs["v"] + inside + gutter + pad(text, cell)
 					 + gutter + edge + glyphs["v"] + reset)
 	lines.append(palette.style(glyphs["bl"] + glyphs["h"] * (inner - 2)
-							   + glyphs["br"], fg="border", cap=cap, theme=theme))
+							   + glyphs["br"], fg="border-fg", cap=cap, theme=theme))
 	return "\n".join(lines)
 def _top_frame(glyphs, inner, title, cap, theme):
 	"""Top border with the title cut into it, or a plain rule when untitled."""
 	if not title:
 		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
-							 + glyphs["tr"], fg="border", cap=cap, theme=theme)
+							 + glyphs["tr"], fg="border-fg", cap=cap, theme=theme)
 	label = title
 	if display_width(label) > inner - 6:
 		label = _truncate(label, max(0, inner - 6))
 	if not label:
 		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
-							 + glyphs["tr"], fg="border", cap=cap, theme=theme)
+							 + glyphs["tr"], fg="border-fg", cap=cap, theme=theme)
 	rest = max(0, inner - 5 - display_width(label))
-	return (palette.prefix(fg="border", cap=cap, theme=theme) + glyphs["tl"]
+	return (palette.prefix(fg="border-fg", cap=cap, theme=theme) + glyphs["tl"]
 			+ glyphs["h"]
-			+ palette.prefix(fg="header", bold=True, cap=cap, theme=theme)
+			+ palette.prefix(fg="header-fg", bold=True, cap=cap, theme=theme)
 			+ " " + label + " "
-			+ palette.prefix(fg="border", cap=cap, theme=theme)
+			+ palette.prefix(fg="border-fg", cap=cap, theme=theme)
 			+ glyphs["h"] * rest + glyphs["tr"] + _reset(cap))
 def _band(text, width, *, fg, bold=False, align="left", cap, theme):
-	"""One full-width `surface` band with the label placed by `align`.
+	"""One full-width `header-bg` band with the label placed by `align`.
 
 	`left` is the shipped shape: one space, the label, the padding (and one
 	trailing space), so the masthead bytes do not move; `center`/`right` only
@@ -109,5 +109,5 @@ def _band(text, width, *, fg, bold=False, align="left", cap, theme):
 	else:
 		left = 0
 	body = " " + " " * left + label + " " * (slack - left) + " "
-	return palette.style(body, fg=fg, bg="surface", bold=bold, cap=cap,
+	return palette.style(body, fg=fg, bg="header-bg", bold=bold, cap=cap,
 						 theme=theme)
