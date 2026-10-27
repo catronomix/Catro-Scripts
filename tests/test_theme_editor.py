@@ -1,4 +1,4 @@
-﻿# Full-screen theme editor tests
+# Full-screen theme editor tests
 """
 		THEME EDITOR (HEADLESS)
 		=======================
@@ -81,6 +81,73 @@ class EditorTestCase(unittest.TestCase):
 		"""Every non-None cell colour currently on the canvas."""
 		return {colour for row in ed.canvas._colors for colour in row
 				if colour is not None}
+
+
+class PreviewFrameTests(EditorTestCase):
+	"""Item 2: the document's border_style frames every preview look."""
+
+	def preview(self, style, look="default", *, width=29, height=12, cap=None):
+		"""Paint one preview band on a fresh 90x24 canvas; returns canvas, doc."""
+		document = copy.deepcopy(self.make().document)
+		document["properties"]["border_style"] = style
+		canvas = screen.Canvas(90, 24)
+		editorviews.draw_preview(canvas, 1, 2, width, height, document, look,
+								 cap=cap or self.cap)
+		lines = ["".join(row) for row in canvas._buffer]
+		return canvas, document, [line[1:1 + width] for line in lines[2:2 + height]]
+
+	def test_every_border_style_frames_every_look_with_its_own_glyphs(self):
+		for style in ("rounded", "square", "heavy", "double", "ascii", "none"):
+			glyphs = table.BORDER_GLYPHS[style]
+			for look in editorviews.LOOK_ORDER:
+				with self.subTest(style=style, look=look):
+					canvas, document, band = self.preview(style, look)
+					if style == "none":
+						# No frame at all: the header keeps the first row.
+						self.assertEqual(band[0][0], " ")
+						self.assertIn(editorviews.preview_title(document, look),
+									  band[0])
+					else:
+						self.assertEqual(band[0][0], glyphs["tl"])
+						self.assertEqual(band[0][-1], glyphs["tr"])
+						self.assertEqual(band[-1][0], glyphs["bl"])
+						self.assertEqual(band[-1][-1], glyphs["br"])
+						self.assertIn(editorviews.preview_title(document, look),
+									  band[0])
+						# The edge uses the look's own border hex, not the
+						# selected theme's: all three previews stay accurate.
+						self.assertEqual(
+							canvas._colors[2][1],
+							palette.prefix(
+								fg=document["looks"][look]["border"],
+								cap=self.cap))
+
+	def test_ascii_console_degrades_the_frame_but_keeps_the_band(self):
+		canvas, _, band = self.preview("heavy", cap=make_cap(unicode=False))
+		self.assertEqual(band[0][0], "+")
+		self.assertEqual(band[0][-1], "+")
+		self.assertEqual(band[-1][0], "+")
+		self.assertEqual(band[1][0], "|")
+		self.assertIn("-", band[0])
+		self.assertIn("60%", band[-2])
+
+	def test_the_twelve_row_band_keeps_the_bar_and_drops_the_closing_rule(self):
+		_, document, band = self.preview("rounded")
+		title = editorviews.preview_title(document, "default")
+		self.assertEqual(len(band), 12)
+		self.assertEqual(band[0].count(title), 1)  # title lives in the top rule
+		self.assertEqual(band[0][0], "\u250c")
+		self.assertEqual(band[-1][0], "\u2514")
+		self.assertIn("60%", band[-2])
+		# The table's own closing rule never fits at this budget.
+		self.assertFalse(any("\u2500" in row for row in band[1:-1]))
+
+	def test_a_short_preview_never_drops_the_progress_bar(self):
+		for height in range(6, 13):
+			with self.subTest(height=height):
+				_, _, band = self.preview("rounded", height=height)
+				self.assertIn("60%", band[-2], "bar dropped at height %d" % height)
+				self.assertEqual(band[-1][0], "\u2514")
 
 
 class RedrawBudgetTests(EditorTestCase):
