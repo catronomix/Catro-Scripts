@@ -312,12 +312,31 @@ class DrawTests(unittest.TestCase):
 		blank = "".join(popup.canvas._buffer[popup.grid_y + 4])
 		self.assertEqual(blank[x + 2:x + width - 1].strip(), "")
 
-	def test_a_narrow_popup_skips_the_panel_instead_of_overwriting_the_grid(self):
-		popup = picker(width=CELL * STEPS + 2)
+	def test_the_grid_never_erases_the_border_at_any_supported_width(self):
+		for width in range(CELL * STEPS + 2, WIDTH):
+			with self.subTest(width=width):
+				popup = picker(width=width)
+				popup.draw()
+				x, y, actual, height = popup.rect()
+				self.assertEqual(actual, width)
+				self.assertGreaterEqual(popup.grid_x, x + 1)
+				self.assertLessEqual(popup.grid_x + CELL * STEPS - 1, x + actual - 2)
+				for grid_row in range(len(ROWS)):
+					line = "".join(popup.canvas._buffer[popup.grid_y + grid_row])
+					self.assertEqual(line[x], "\u2502", "left border lost")
+					self.assertEqual(line[x + actual - 1], "\u2502",
+									 "right border lost")
+					cells = row(popup.canvas, popup.grid_x,
+								popup.grid_y + grid_row, CELL * STEPS)
+					self.assertEqual(cells.count("\u2588"), CELL * STEPS)
+				self.assertIsNone(popup._panel_x())
+
+	def test_a_narrow_popup_truncates_the_facts_to_the_popup_not_the_panel(self):
+		popup = picker("#ffffff", width=CELL * STEPS + 2,
+					   colours={"bg": "#000000", "zebra_bg": "#000000"})
 		popup.draw()
-		self.assertEqual(popup.width, CELL * STEPS + 2)
-		line = row(popup.canvas, popup.grid_x, popup.grid_y, CELL * STEPS)
-		self.assertEqual(line.count("\u2588"), CELL * STEPS)
+		facts = "".join(popup.canvas._buffer[popup.grid_y + len(ROWS)])
+		self.assertIn("zebra_bg", facts)
 
 	def test_the_selected_swatch_carries_the_reverse_marker(self):
 		popup = picker()

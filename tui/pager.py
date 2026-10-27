@@ -11,8 +11,8 @@ terminal settings are always restored, including on an exception.
 
 import sys
 
-from . import keys
-from .screen import Screen, terminal_size
+from . import canvas, keys
+from .screen import Screen
 
 _FORWARD = ("space", "enter", "n", "pagedown", "down")
 _BACK = ("b", "p", "pageup", "up")
@@ -28,7 +28,7 @@ def page(lines, page_size=None, stream=None):
 			stream.write(line + "\n")
 		stream.flush()
 		return
-	size = int(page_size or max(1, terminal_size(stream)[1] - 1))
+	size = int(page_size or max(1, canvas.terminal_size(stream)[1] - 1))
 	offset = 0
 	with Screen(stream) as screen, keys.raw_mode():
 		while True:

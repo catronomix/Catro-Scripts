@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import keys, pager  # noqa: E402  (import after sys.path setup)
+from tui import canvas, keys, pager  # noqa: E402  (import after sys.path setup)
 
 
 class FakeStream:
@@ -181,6 +181,18 @@ class RawModeLifecycleTests(unittest.TestCase):
 		self.assertIn("line-2\n", out)
 		self.assertEqual(out.count("line-0\n"), 2, "pageup did not go back")
 		self.assertEqual(out.count("line-2\n"), 1, "pagedown did not advance")
+
+	def test_the_page_size_follows_the_canvas_terminal_size_seam(self):
+		lines = ["line-{}".format(index) for index in range(4)]
+		stream = FakeStream(tty=True)
+		with mock.patch.object(canvas, "terminal_size",
+							   lambda stream=None: (10, 3)), \
+				mock.patch.object(keys, "raw_mode", contextlib.nullcontext), \
+				mock.patch.object(keys, "read_key", lambda: "q"):
+			pager.page(lines, stream=stream)
+		out = stream.getvalue()
+		self.assertIn("line-1", out)
+		self.assertNotIn("line-2", out)  # 3 lines - 1 prompt = a 2-line page
 
 	def test_raw_mode_is_restored_when_a_read_fails(self):
 		events = []

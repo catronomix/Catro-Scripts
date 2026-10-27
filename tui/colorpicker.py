@@ -14,16 +14,16 @@ The conversions and the WCAG gate live in `tui.color_math`; they are
 re-exported here so `tui.colorpicker.hex_to_rgb()` and friends keep resolving.
 """
 
-from . import caps, editor_overlays, mouse, palette, widgets
+from . import caps, colorpicker_panel, editor_overlays, mouse, palette, widgets
 from .color_math import (STEPS, WCAG_AA, cell_index, contrast_ratio,  # noqa: F401
 						 hex_to_rgb, hsv_to_rgb, luminance, rgb_to_hex,
 						 rgb_to_hsv)
+from .colorpicker_panel import PANEL  # noqa: F401  (tests read it here)
 from .text import truncate
 
 LIMITS = (360, 100, 100)
 CELL = 2  # two cells per swatch: a 32-cell grid
 WIDTH, HEIGHT = 44, 9  # bordered popup: poles, 3 grid rows, 4 info rows
-PANEL = 8  # the preview swatch: a solid block beside the grid
 SWATCH = "\u2588"  # full block; ASCII falls back to `#`
 ROWS = ("hue", "saturation", "value")
 
@@ -42,8 +42,9 @@ class ColorPicker:
 		self.row, self.col = 0, cell_index(self.hue / 360)
 		self._original_cell = (self.row, self.col)
 		self.result, self.closed, self._queue, self._grab = None, False, list(keys), None
-		# One pad cell, the 32-cell grid, then the panel on the right.
-		self.grid_x = self.x + 2
+		# One pad cell, the 32-cell grid, then the panel on the right; at the
+		# minimum width the grid clamps to the left border so it cannot spill.
+		self.grid_x = self.x + min(2, max(1, (self.width - CELL * STEPS) // 2))
 		self.grid_y = self.y + 1
 
 	# -- model -----------------------------------------------------------
@@ -215,8 +216,11 @@ class ColorPicker:
 			facts = "  ".join("{} {:.1f}:1".format(*pair)
 							  for pair in ratios.items())
 			facts = self.value + ("  " + facts if facts else "")
-		# One blank row between the facts and the HSV triple.
-		rows = ((truncate(facts, max(1, self.width - PANEL - 4)),
+		# One blank row between the facts and the HSV triple. The facts stop
+		# short of the panel only when the panel is actually painted.
+		panel = self._panel_x()
+		limit = inner - 2 if panel is None else panel - self.x - 3
+		rows = ((truncate(facts, max(1, limit)),
 				 "warn" if low else "fg"),
 				(None, None),
 				("h {:3.0f}  s {:3.0f}%  v {:3.0f}%".format(
@@ -231,14 +235,13 @@ class ColorPicker:
 							 palette.prefix(fg=role, bg="surface", cap=cap))
 		return self
 
+	def _panel_x(self):
+		"""Left edge of the preview panel, or None when the grid leaves no room."""
+		return colorpicker_panel.panel_x(self.x, self.width,
+										 self.grid_x + CELL * STEPS)
+
 	def _draw_panel(self, glyph, cap):
 		"""The selected colour as a solid block beside the grid, hex beneath."""
-		x = self.x + self.width - PANEL - 1
-		if x <= self.grid_x + CELL * STEPS:
-			return
-		colour = palette.prefix(fg=self.value, cap=cap)
-		for row in range(len(ROWS)):
-			self.canvas.draw_text(x, self.grid_y + row, glyph * PANEL, colour)
-		self.canvas.draw_text(x, self.grid_y + len(ROWS),
-							  truncate(self.value, PANEL),
-							  palette.prefix(fg="fg", bg="surface", cap=cap))
+		colorpicker_panel.draw(self.canvas, self.x, self.width,
+							   self.grid_x + CELL * STEPS, self.grid_y,
+							   len(ROWS), self.value, glyph, cap)
