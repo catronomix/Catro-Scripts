@@ -101,17 +101,24 @@ def draw_menu(stream, names, selected_idx, cap):
 	title = " SCREENSAVERS "
 	width = max(len(title), max(len(n) for n in names) + 8)
 
+	# A cp1252 console cannot encode U+2500, so the frame degrades to the same
+	# `+ - |` family `tui/table.py` falls back to; Unicode keeps the old bytes.
+	tl, tr, h, v, ml, mr, bl, br = (
+		("\u250c", "\u2510", "\u2500", "\u2502",
+		 "\u251c", "\u2524", "\u2514", "\u2518")
+		if cap.unicode else ("+", "+", "-", "|", "+", "+", "+", "+"))
+
 	# Draw Top Border
-	stream.write(border("┌" + "─" * width + "┐") + "\n")
+	stream.write(border(tl + h * width + tr) + "\n")
 
 	# Draw Title
 	pad_left = (width - len(title)) // 2
 	pad_right = width - len(title) - pad_left
-	stream.write(border("│") + " " * pad_left + title + " " * pad_right
-				 + border("│") + "\n")
+	stream.write(border(v) + " " * pad_left + title + " " * pad_right
+				 + border(v) + "\n")
 
 	# Draw Divider
-	stream.write(border("├" + "─" * width + "┤") + "\n")
+	stream.write(border(ml + h * width + mr) + "\n")
 
 	# Draw Rows
 	for i, name in enumerate(names):
@@ -120,14 +127,14 @@ def draw_menu(stream, names, selected_idx, cap):
 		pad = width - len(text)
 
 		if i == selected_idx:
-			stream.write(border("│")
+			stream.write(border(v)
 						 + tui.style(text + " " * pad, reverse=True, cap=cap)
-						 + border("│") + "\n")
+						 + border(v) + "\n")
 		else:
-			stream.write(border("│") + text + " " * pad + border("│") + "\n")
+			stream.write(border(v) + text + " " * pad + border(v) + "\n")
 
 	# Draw Bottom Border
-	stream.write(border("└" + "─" * width + "┘") + "\n")
+	stream.write(border(bl + h * width + br) + "\n")
 	stream.write("Use UP/DOWN arrows to select, ENTER to run.\n")
 	stream.flush()
 

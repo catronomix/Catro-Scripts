@@ -443,6 +443,27 @@ class ScreensaverMenuTest(unittest.TestCase):
 		self.assertNotIn("  > alpha", out)
 		self.assertIn("Use UP/DOWN arrows", out)
 
+	def test_menu_paints_on_cp1252(self):
+		# Regression: draw_menu hardcoded U+2500 glyphs and ignored cap.unicode,
+		# so a cp1252 console died with UnicodeEncodeError before the frame.
+		stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+		cap = tui.Capabilities(level="16", unicode=False, width=None,
+							   isatty=True, plain=False, reason="test")
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap)
+		stream.flush()
+		out = stream.buffer.getvalue().decode("cp1252")
+		out.encode("ascii")  # pure ASCII: the frame degraded, nothing raised
+		self.assertIn("+", out)
+		self.assertIn("|", out)
+		self.assertNotIn("\u2500", out)
+
+	def test_menu_keeps_the_box_frame_when_unicode_is_allowed(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha"], 0, cap16())
+		out = stream.getvalue()
+		for glyph in "\u250c\u2510\u2514\u2518\u2500\u2502\u251c\u2524":
+			self.assertIn(glyph, out)
+
 	def test_select_returns_the_file_through_the_decoded_keys(self):
 		stream = self.Stream()
 		keys = iter(["down", "enter"])
