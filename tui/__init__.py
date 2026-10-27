@@ -11,6 +11,7 @@ Layout:
 	caps      Capabilities and detection precedence
 	text      display width, truncate, pad, wrap, strip ANSI
 	palette   soft and contrast palettes, style() and level downgrade
+	color_levels  numeric twin: RGB resolve, xterm-256/16 index, SGR codes
 	table     box/plain tables, banner, section, key-value blocks
 	chrome    masthead, panel, rule, field, status, fill, menu, button, scrollbar
 	color_math  hex/RGB/HSV conversions, WCAG helpers, grid cell scale
@@ -36,7 +37,7 @@ Usage:
 	from tui import caps, palette, table
 """
 
-from . import caps, chrome, color_math, colorpicker, config, keys, loop, mouse, palette, pager, progress, prompts, screen, table, text, widgetkit, widgets
+from . import caps, chrome, color_levels, color_math, colorpicker, config, keys, loop, mouse, palette, pager, progress, prompts, screen, table, text, widgetkit, widgets
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .chrome import button, field, fill, header, menu, panel, rule, scrollbar, status
 from .color_math import (WCAG_AA, contrast_ratio, hex_to_rgb, hsv_to_rgb,
@@ -56,9 +57,9 @@ from .widgets import (Button, CheckField, Clip, ListBox, Panel,
 					  focus_prefix, resize_notice, small_terminal)
 
 __all__ = [
-	"caps", "chrome", "color_math", "colorpicker", "config", "keys", "loop",
-	"mouse", "palette", "pager", "progress", "prompts", "screen", "table",
-	"text", "widgetkit", "widgets",
+	"caps", "chrome", "color_levels", "color_math", "colorpicker", "config",
+	"keys", "loop", "mouse", "palette", "pager", "progress", "prompts",
+	"screen", "table", "text", "widgetkit", "widgets",
 	"Capabilities", "detect", "init_ansi", "require_tty",
 	"WCAG_AA", "ColorPicker", "contrast_ratio", "hex_to_rgb", "hsv_to_rgb",
 	"luminance", "rgb_to_hex", "rgb_to_hsv",

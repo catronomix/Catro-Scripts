@@ -29,6 +29,11 @@ for callers that must re-assert a style between cells without paying a reset -
 the table renderer's rows are such a caller - and `style()` is defined in terms
 of it so the two can never drift.
 
+The numeric half that needs no look at all - `rgb()`, `index()`, the hex
+resolution, the xterm-256 table and `_sgr()` - lives in `tui.color_levels`; it
+is re-exported here so `tui.palette.rgb()`/`index()` and the private helpers a
+test may reach keep resolving at their old path.
+
 A full-screen painter resolves the same look hundreds of times per frame, and
 each resolution costs a stat plus a copy. `begin_frame()`/`end_frame()` open a
 one-frame memo for the look palette, the selection and the theme properties;
@@ -40,6 +45,8 @@ keeps the mtime-keyed freshness of `tui.theme_engine`.
 import os
 
 from . import caps, theme_engine
+from .color_levels import (_BASE16, _CUBE, _NEAREST, _XTERM256,  # noqa: F401
+						   _hex, _nearest, _rgb, _sgr, index, rgb)
 
 # The active frame memo (None outside a frame); see the module docstring.
 _FRAME = None
@@ -115,19 +122,6 @@ THEME_ALIASES = {
 # The only reset this package emits; callers composing their own spans use it
 # instead of hardcoding the escape.
 RESET = "\033[0m"
-
-_BASE16 = (
-	(0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0),
-	(0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192),
-	(128, 128, 128), (255, 0, 0), (0, 255, 0), (255, 255, 0),
-	(0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255),
-)
-_CUBE = (0, 95, 135, 175, 215, 255)
-_XTERM256 = (_BASE16
-			 + tuple((r, g, b) for r in _CUBE for g in _CUBE for b in _CUBE)
-			 + tuple((8 + 10 * step,) * 3 for step in range(24)))
-
-_NEAREST = {}
 
 
 def fold(name):
@@ -222,23 +216,6 @@ def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
 	return "".join(parts)
 
 
-def rgb(value, theme=None):
-	"""(r, g, b) for a semantic key, "#rrggbb" or an (r, g, b) tuple."""
-	return _rgb(value, palette(theme), "fg")
-
-
-def index(value, theme=None, level="256"):
-	"""Nearest colour index for `value`, for curses `init_pair` callers.
-
-	`value` is a semantic key, "#rrggbb" or an (r, g, b) tuple. Level "16"
-	searches the basic sixteen colours only, anything else the full xterm-256
-	table. The number is the one `style()` would emit at the same level, so a
-	curses renderer and the escape-code renderer cannot disagree.
-	"""
-	stop = 16 if str(level) == "16" else None
-	return _nearest(rgb(value, theme), 0, stop=stop)
-
-
 def _active(override=None):
 	"""(theme name, look) for one call: override > CATRO_THEME > theme.ini."""
 	name, selector = _memo("selection", theme_engine.selection)
@@ -262,57 +239,3 @@ def _theme_id(look_value):
 	"""The legacy theme id (`soft`/`contrast-light`/`contrast-dark`) for a look."""
 	look_id = theme_engine.SELECTORS.get(fold(look_value), "default")
 	return _ID_OF_LOOK[look_id]
-
-
-def _rgb(value, colours, default_key):
-	"""Resolve a semantic key, hex string or RGB tuple to (r, g, b)."""
-	if isinstance(value, (tuple, list)) and len(value) == 3:
-		try:
-			return tuple(max(0, min(255, int(part))) for part in value)
-		except (TypeError, ValueError):
-			return _hex(colours[default_key])
-	if isinstance(value, str):
-		if value.strip().lower() in colours:
-			return _hex(colours[value.strip().lower()])
-		try:
-			return _hex(value)
-		except (AttributeError, ValueError):
-			pass
-	return _hex(colours[default_key])
-
-
-def _hex(value):
-	text = str(value).strip().lstrip("#")
-	if len(text) != 6:
-		raise ValueError("not a #rrggbb colour: {!r}".format(value))
-	return tuple(int(text[index:index + 2], 16) for index in (0, 2, 4))
-
-
-def _sgr(rgb, level, background):
-	"""Escape sequence for one colour at the requested level."""
-	if level == "true":
-		return "\033[{};2;{};{};{}m".format(48 if background else 38, *rgb)
-	if level == "256":
-		code = _nearest(rgb, 0)
-		return "\033[{};5;{}m".format(48 if background else 38, code)
-	index = _nearest(rgb, 0, stop=16)
-	if background:
-		return "\033[{}m".format(40 + index if index < 8 else 100 + index - 8)
-	return "\033[{}m".format(30 + index if index < 8 else 90 + index - 8)
-
-
-def _nearest(rgb, start, stop=None):
-	"""(colours cached) index of the closest xterm entry; ties keep the lowest."""
-	key = (rgb, start, stop)
-	cached = _NEAREST.get(key)
-	if cached is not None:
-		return cached
-	best_index, best_distance = start, None
-	for index in range(start, len(_XTERM256) if stop is None else stop):
-		entry = _XTERM256[index]
-		distance = ((entry[0] - rgb[0]) ** 2 + (entry[1] - rgb[1]) ** 2
-					+ (entry[2] - rgb[2]) ** 2)
-		if best_distance is None or distance < best_distance:
-			best_index, best_distance = index, distance
-	_NEAREST[key] = best_index
-	return best_index
