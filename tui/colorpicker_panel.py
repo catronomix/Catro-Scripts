@@ -34,4 +34,4 @@ def draw(canvas, x, width, grid_end, y, rows, value, glyph, cap):
 	for row in range(rows):
 		canvas.draw_text(left, y + row, glyph * PANEL, colour)
 	canvas.draw_text(left, y + rows, truncate(value, PANEL),
-					 palette.prefix(fg="fg", bg="surface", cap=cap))
+					 palette.prefix(fg="fg", bg="bg-inside", cap=cap))

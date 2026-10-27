@@ -40,13 +40,13 @@ def button_text(label, properties, colours, *, focused=False, disabled=False,
 		focus = str(properties.get("focus_style", "reverse"))
 		if focus == "accent":
 			attributes.pop("bg", None)
-			attributes["fg"] = "accent"
+			attributes["fg"] = "fg-accent"
 		elif focus == "underline":
 			attributes["underline"] = True
 		else:
 			attributes["reverse"] = True
 	if disabled:
-		attributes = {"fg": "muted"}
+		attributes = {"fg": "fg-muted"}
 	fg = colours.get(palette.role(attributes.pop("fg", "fg")))
 	bg = colours.get(palette.role(attributes.pop("bg", "")), None)
 	return palette.style(text, fg=fg, bg=bg, cap=cap, **attributes)
@@ -83,16 +83,16 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 		# `none` keeps the old borderless band: header row, table rule, then
 		# the same rows. The frame's top rule replaces both when a frame is
 		# drawn, so the space is spent on content there.
-		rows.append(("header", "header"))
-		rows.append(("rule", "border"))
-	rows += [("name", "border"), ("alpha", "fg"), ("beta", "fg")]
+		rows.append(("header", "header-fg"))
+		rows.append(("rule", "border-fg"))
+	rows += [("name", "border-fg"), ("alpha", "fg"), ("beta", "fg")]
 	rows.append(("buttons", None))
-	rows += [("field", "fg"), ("look", "fg"), ("preview", "accent"),
-			 ("menu", "fg"), ("ready", "success")]
+	rows += [("field", "fg"), ("look", "fg"), ("preview", "fg-accent"),
+			 ("menu", "fg"), ("ready", "fg-success")]
 	# One row is reserved for the progress bar; the closing table rule is
 	# therefore the first thing a 12-row band gives up.
 	if inner_h > len(rows) + 1:
-		rows.insert(3 if framed else 5, ("rule", "border"))
+		rows.insert(3 if framed else 5, ("rule", "border-fg"))
 	while len(rows) + 1 > inner_h:
 		drop = next((name for name in ("rule", "header", "name", "alpha",
 									   "beta", "buttons", "field", "look",
@@ -104,7 +104,7 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 
 	table_style = str(properties.get("table_style", "box"))
 	borderless = table_style == "borderless"
-	zebra = "zebra_bg" if properties.get("table_zebra") else None
+	zebra = "bg-stripe" if properties.get("table_zebra") else None
 	mark = " *" if active else ""
 	texts = {
 		"name": " name            value",
@@ -130,13 +130,13 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 				header = header.rjust(inner_w)
 			canvas.draw_text(inner_x, top, pad(truncate(header, inner_w),
 											   inner_w),
-							 palette.prefix(fg=ink("header"),
-											bg=ink("surface"), bold=True,
+							 palette.prefix(fg=ink("header-fg"),
+											bg=ink("header-bg"), bold=True,
 											cap=cap))
 		elif kind == "rule":
 			glyph = " " if borderless else glyphs["h"]
 			canvas.draw_text(inner_x, top, truncate(glyph * inner_w, inner_w),
-							 palette.prefix(fg=ink("border"), cap=cap))
+							 palette.prefix(fg=ink("border-fg"), cap=cap))
 		elif kind == "buttons":
 			column = 1
 			for label, focused, disabled in (("OK", False, False),
@@ -164,7 +164,7 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 	bar = progress.bar(3, 5, max(5, min(10, inner_w - 12)), cap=cap)
 	canvas.draw_text(inner_x, inner_y + max(0, inner_h - 1),
 					 truncate(" build {} 60%".format(bar), inner_w),
-					 palette.prefix(fg=ink("accent"), cap=cap))
+					 palette.prefix(fg=ink("fg-accent"), cap=cap))
 	_draw_scrollbar(canvas, inner_x + inner_w - 1,
 					inner_y + (0 if not framed else 1),
 					max(1, inner_h - (2 if framed else 3)),
@@ -183,5 +183,5 @@ def _draw_scrollbar(canvas, x, y, height, properties, colours, cap):
 		active = row < stop
 		glyph = thumb if active else track
 		canvas.draw_char(x, y + row, glyph, palette.prefix(
-			fg=colours.get(palette.role("accent" if active else "muted")),
+			fg=colours.get(palette.role("fg-accent" if active else "fg-muted")),
 			cap=cap))

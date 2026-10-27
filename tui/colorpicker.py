@@ -190,7 +190,7 @@ class ColorPicker:
 		inner = max(1, self.width - 2)
 		ratios = {palette.role(name): contrast_ratio(
 					  self.value, self.colours[palette.role(name)])
-				  for name in ("bg", "zebra_bg")
+				  for name in ("bg", "bg-stripe")
 				  if palette.role(name) in self.colours}
 		low = bool(ratios) and min(ratios.values()) < WCAG_AA
 		if low:
@@ -204,18 +204,18 @@ class ColorPicker:
 		panel = self._panel_x()
 		limit = inner - 2 if panel is None else panel - self.x - 3
 		rows = ((truncate(facts, max(1, limit)),
-				 "warn" if low else "fg"),
+				 "fg-warn" if low else "fg"),
 				(None, None),
 				("h {:3.0f}  s {:3.0f}%  v {:3.0f}%".format(
 					self.hue, self.saturation * 100, self.brightness * 100),
-				 "muted"),
-				("arrows  Enter apply  Esc cancel", "muted"))
+				 "fg-muted"),
+				("arrows  Enter apply  Esc cancel", "fg-muted"))
 		for offset, (text, role) in enumerate(rows, start=len(ROWS)):
 			if text is None:
 				continue
 			canvas.draw_text(self.x + 2, self.grid_y + offset,
 							 truncate(text, max(1, inner - 2)),
-							 palette.prefix(fg=role, bg="surface", cap=cap))
+							 palette.prefix(fg=role, bg="bg-inside", cap=cap))
 		return self
 
 	def _panel_x(self):

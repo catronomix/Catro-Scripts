@@ -30,9 +30,10 @@ from .text import truncate
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
-# Properties panel rows, in schema order, and the key column width.
+# Properties panel rows, in schema order, and the two key column widths.
 PROPERTY_KEYS = tuple(theme_engine.PROPERTY_VALUES)
 PROPERTY_WIDTH = max(len(key) for key in PROPERTY_KEYS)
+COLOUR_WIDTH = max(len(key) for key in theme_engine.PALETTE_KEYS)
 
 
 def clear(canvas):
@@ -53,7 +54,8 @@ def blank_rect(canvas, x, y, width, height):
 		canvas.draw_text(x, y + row, truncate(blank, width), None)
 
 
-def fill_rect(canvas, x, y, width, height, *, fg="fg", bg="surface", cap=None):
+def fill_rect(canvas, x, y, width, height, *, fg="fg", bg="bg-inside",
+			  cap=None):
 	"""Paint a rectangle of spaces so an overlay hides what is behind it."""
 	colour = palette.prefix(fg=fg, bg=bg, cap=cap)
 	blank = " " * max(0, width)
@@ -69,14 +71,14 @@ def notice(canvas, cap=None):
 	colour, visible = widgets.cells(line)
 	canvas.draw_text(0, 0, visible, colour)
 	hint = "Q or Delete quits"
-	canvas.draw_text(0, 1, hint, palette.prefix(fg="muted", cap=cap))
+	canvas.draw_text(0, 1, hint, palette.prefix(fg="fg-muted", cap=cap))
 	return visible
 
 
 def frame(canvas, x, y, width, height, title=None, cap=None):
 	"""A box frame with an optional title cut into the top rule."""
 	glyphs = table.glyphs_for(cap)
-	edge = palette.prefix(fg="border", cap=cap)
+	edge = palette.prefix(fg="border-fg", cap=cap)
 	label = " {} ".format(title) if title else ""
 	top = glyphs["tl"] + glyphs["h"] * max(0, width - 2) + glyphs["tr"]
 	if label and len(label) <= width - 2:

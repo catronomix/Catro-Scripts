@@ -91,7 +91,7 @@ def _draw_title(editor, canvas, cap):
 	dirty = " * unsaved" if editor.dirty else ""
 	text = " Theme editor - {} ({}){}".format(display, name, dirty)
 	canvas.draw_text(0, 0, pad(truncate(text, canvas.width), canvas.width),
-					 palette.prefix(fg="header", bg="surface", bold=True,
+					 palette.prefix(fg="header-fg", bg="header-bg", bold=True,
 									cap=cap))
 
 
@@ -135,7 +135,7 @@ def _draw_colours(editor, canvas, cap):
 						 palette.prefix(fg=colours.get(key), cap=cap))
 		ink = (widgets.focus_prefix(focused, cap)
 			   or palette.prefix(fg="fg", cap=cap))
-		text = pad(key, 9) + " " + str(colours.get(key, ""))
+		text = pad(key, editorviews.COLOUR_WIDTH) + " " + str(colours.get(key, ""))
 		canvas.draw_text(x + 5, top, truncate(text, max(1, width - 7)), ink)
 
 
@@ -162,7 +162,7 @@ def _draw_status(editor, canvas, cap):
 	if editor.dirty:
 		hint = "* unsaved  " + hint
 	canvas.draw_text(1, canvas.height - 1, truncate(hint, canvas.width - 2),
-					 palette.prefix(fg="muted", cap=cap))
+					 palette.prefix(fg="fg-muted", cap=cap))
 
 
 def _blit(canvas, x, y, styled, width):

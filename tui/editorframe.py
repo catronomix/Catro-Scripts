@@ -12,7 +12,7 @@ pushing `editorviews.py` past its budget, and without a second style engine.
 keep the padding, so the preview keeps today's borderless band look. A console
 without Unicode degrades every other family to `+ - |`, exactly like a table.
 
-The edge colour is the look's own `border` hex (the document under edit, not
+The edge colour is the look's own `border-fg` hex (the document under edit,
 whatever `theme.ini` selects), so all three previews stay theme-accurate.
 """
 
@@ -35,7 +35,7 @@ def framed(glyphs):
 
 
 def draw(canvas, x, y, width, height, glyphs, title=None, colour=None):
-	"""Draw one preview frame; `colour` is the look's own border prefix."""
+	"""Draw one preview frame; `colour` is the look's own border-fg prefix."""
 	if not framed(glyphs) or width < 2 or height < 2:
 		return None
 	top = glyphs["tl"] + glyphs["h"] * (width - 2) + glyphs["tr"]
@@ -53,5 +53,6 @@ def draw(canvas, x, y, width, height, glyphs, title=None, colour=None):
 
 
 def edge(colours, cap=None):
-	"""The SGR prefix for a preview frame: the look's own `border` hex."""
-	return palette.prefix(fg=colours.get(palette.role("border"), "border"), cap=cap)
+	"""The SGR prefix for a preview frame: the look's own `border-fg` hex."""
+	return palette.prefix(fg=colours.get(palette.role("border-fg"),
+										 "border-fg"), cap=cap)

@@ -50,25 +50,25 @@ def _draw_help(editor, canvas, cap):
 								   "Help - F1/Esc closes")
 	for row, line in enumerate(editorviews.HELP_LINES):
 		canvas.draw_text(x + 2, y + 1 + row, truncate(line, width - 4),
-						 palette.prefix(fg="fg", bg="surface", cap=cap))
+						 palette.prefix(fg="fg", bg="bg-inside", cap=cap))
 	return x, y, width, height
 
 
 def _draw_save(editor, canvas, cap):
 	x, y, width, height = _overlay(canvas, cap, 46, 6, "Save theme")
 	canvas.draw_text(x + 2, y + 2, "name",
-					 palette.prefix(fg="muted", bg="surface", cap=cap))
+					 palette.prefix(fg="fg-muted", bg="bg-inside", cap=cap))
 	editor.save_field.x, editor.save_field.y = x + 8, y + 2
 	editor.save_field.width = max(6, width - 10)
 	editor.save_field.cap = editor.cap
 	editor.save_field.draw(canvas, focused=True)
 	note = ".json is added; Enter saves, Esc cancels"
 	canvas.draw_text(x + 2, y + 3, truncate(note, width - 4),
-					 palette.prefix(fg="muted", bg="surface", cap=cap))
+					 palette.prefix(fg="fg-muted", bg="bg-inside", cap=cap))
 	if editor.save_field.error:
 		canvas.draw_text(x + 2, y + 4, truncate(editor.save_field.error,
 												width - 4),
-						 palette.prefix(fg="error", bg="surface", cap=cap))
+						 palette.prefix(fg="fg-error", bg="bg-inside", cap=cap))
 	return x, y, width, height
 
 
@@ -81,5 +81,5 @@ def _draw_load(editor, canvas, cap):
 	editor.load_box.draw(canvas, focused=True)
 	hint = "Enter loads, Esc cancels - ! marks an unreadable file"
 	canvas.draw_text(x + 2, y + height - 2, truncate(hint, width - 4),
-					 palette.prefix(fg="muted", bg="surface", cap=cap))
+					 palette.prefix(fg="fg-muted", bg="bg-inside", cap=cap))
 	return x, y, width, height
