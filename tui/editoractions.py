@@ -76,6 +76,29 @@ def commit_property(editor):
 	return True
 
 
+def nudge_property(editor, step):
+	"""Left/right on Properties: cycle the selected value in place.
+
+	No draft is opened and nothing else moves: enums and the zebra tuple wrap by
+	index (an unknown current value starts at the first entry), a single-valued
+	key reports itself and leaves the document alone, and a change marks the
+	document dirty without touching the palette selection or the look.
+	"""
+	key = editorviews.PROPERTY_KEYS[editor.property_index]
+	options = theme_engine.PROPERTY_VALUES[key]
+	value = editor.document["properties"][key]
+	if len(options) < 2:
+		editor.message = ("info", "{} = {} (only value)".format(key, value))
+		return True
+	index = options.index(value) if value in options else 0
+	new = options[(index + step) % len(options)]
+	if new != value:
+		editor.document["properties"][key] = new
+		editor.dirty = True
+		editor.message = ("ok", "{} = {}".format(key, new))
+	return True
+
+
 # -- colour picker ------------------------------------------------------------
 
 def open_picker(editor):

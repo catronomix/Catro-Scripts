@@ -63,6 +63,8 @@ class EditorKeys:
 			return True
 		if token in ("left", "right"):
 			step = 1 if token == "right" else -1
+			if self.focus == 0:
+				return editoractions.nudge_property(self, step)
 			self.look_index = (self.look_index + step) % 3
 			self.message = ("info", "editing the {} look".format(
 				editorviews.look_label(self._current_look())))

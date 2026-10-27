@@ -244,6 +244,7 @@ class NavigationTests(EditorTestCase):
 
 	def test_left_right_and_clicks_select_the_look(self):
 		ed = self.make()
+		ed.pump(["tab"])  # the look is switched from the Colours pane
 		ed.pump(["right"])
 		self.assertEqual(ed.look_index, 1)
 		self.assertIn("light", ed.message[1])
@@ -378,6 +379,43 @@ class DoubleClickTests(EditorTestCase):
 
 
 class EditingTests(EditorTestCase):
+	def test_left_right_nudge_the_selected_property_in_place(self):
+		ed = self.make()
+		key = editorviews.PROPERTY_KEYS[0]
+		before = ed.document["properties"][key]
+		ed.handle("right")
+		self.assertEqual(ed.document["properties"][key],
+						 theme_engine.PROPERTY_VALUES[key][1])
+		self.assertNotEqual(ed.document["properties"][key], before)
+		self.assertTrue(ed.dirty)
+		self.assertEqual((ed.look_index, ed.colour_index), (0, 0))
+		self.assertIn(key + " = ", ed.message[1])
+		ed.handle("left")
+		self.assertEqual(ed.document["properties"][key], before)
+
+	def test_a_single_valued_property_nudges_to_nothing(self):
+		ed = self.make()
+		ed.pump(["end"])  # `selection_style` is the last row and has one value
+		self.assertEqual(ed.property_index,
+						 len(editorviews.PROPERTY_KEYS) - 1)
+		before = copy.deepcopy(ed.document)
+		ed.handle("right")
+		ed.handle("left")
+		self.assertEqual(ed.document, before)
+		self.assertFalse(ed.dirty)
+		self.assertIn("only value", ed.message[1])
+
+	def test_zebra_toggles_in_place(self):
+		ed = self.make()
+		for _ in range(editorviews.PROPERTY_KEYS.index("table_zebra")):
+			ed.handle("down")
+		before = ed.document["properties"]["table_zebra"]
+		ed.handle("right")
+		self.assertEqual(ed.document["properties"]["table_zebra"], not before)
+		self.assertTrue(ed.dirty)
+		ed.handle("right")
+		self.assertEqual(ed.document["properties"]["table_zebra"], before)
+
 	def test_enter_drafts_a_property_and_a_second_enter_commits_it(self):
 		ed = self.make()
 		first = editorviews.PROPERTY_KEYS[0]
@@ -423,7 +461,10 @@ class EditingTests(EditorTestCase):
 		self.assertEqual(ed.document["properties"][first], before)
 		self.assertFalse(ed.dirty)
 		ed.handle("right")
-		self.assertEqual(ed.look_index, 1)  # editing is over, looks switch again
+		# Editing is over, but Properties nudges in place: the look stays put.
+		self.assertEqual(ed.look_index, 0)
+		self.assertNotEqual(ed.document["properties"][first], before)
+		self.assertTrue(ed.dirty)
 
 	def test_picker_commit_writes_the_selected_look_only(self):
 		ed = self.make()
