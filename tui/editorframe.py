@@ -8,15 +8,15 @@ one rectangle around the preview band. Keeping it here (rather than in
 `tui.editorviews`) is what lets the preview carry a per-document frame without
 pushing `editorviews.py` past its budget, and without a second style engine.
 
-`none` is the space glyph set: the frame is not drawn at all and the callers
-keep the padding, so the preview keeps today's borderless band look. A console
-without Unicode degrades every other family to `+ - |`, exactly like a table.
+`none` is the space glyph set: no frame is drawn and the callers keep the
+padding. A console without Unicode degrades to `+ - |` first, then the
+document's `corner-char` lands on the four corners, exactly like a table.
 
 The edge colour is the look's own `border-fg` hex (the document under edit,
 whatever `theme.ini` selects), so all three previews stay theme-accurate.
 """
 
-from . import palette, table
+from . import frame_corners, palette, table
 
 
 def glyphs_for(properties, cap):
@@ -25,8 +25,8 @@ def glyphs_for(properties, cap):
 		str(properties.get("border_style", "rounded")),
 		table.UNICODE_GLYPHS)
 	if not cap.unicode and glyphs is not table.SPACE_GLYPHS:
-		return table.ASCII_GLYPHS
-	return glyphs
+		glyphs = table.ASCII_GLYPHS
+	return frame_corners.apply_corners(glyphs, cap, properties)
 
 
 def framed(glyphs):

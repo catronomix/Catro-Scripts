@@ -111,10 +111,12 @@ class PreviewSplitShimTests(unittest.TestCase):
 class PreviewFrameTests(EditorTestCase):
 	"""Item 2: the document's border_style frames every preview look."""
 
-	def preview(self, style, look="default", *, width=29, height=12, cap=None):
+	def preview(self, style, look="default", *, width=29, height=12, cap=None,
+				**properties):
 		"""Paint one preview band on a fresh 90x24 canvas; returns canvas, doc."""
 		document = copy.deepcopy(self.make().document)
 		document["properties"]["border_style"] = style
+		document["properties"].update(properties)
 		canvas = screen.Canvas(90, 24)
 		editorviews.draw_preview(canvas, 1, 2, width, height, document, look,
 								 cap=cap or self.cap)
@@ -155,6 +157,37 @@ class PreviewFrameTests(EditorTestCase):
 		self.assertEqual(band[1][0], "|")
 		self.assertIn("-", band[0])
 		self.assertIn("60%", band[-2])
+
+	def test_the_documents_corner_char_lands_on_the_preview(self):
+		for char in ("@", "x", "#", "+", "o", "*"):
+			with self.subTest(char=char):
+				_, _, band = self.preview("rounded", **{"corner-char": char})
+				self.assertEqual([band[0][0], band[0][-1],
+								  band[-1][0], band[-1][-1]], [char] * 4)
+
+	def test_corner_none_keeps_the_family_corners_byte_identical(self):
+		_, _, band = self.preview("double", **{"corner-char": "none"})
+		glyphs = table.BORDER_GLYPHS["double"]
+		self.assertEqual([band[0][0], band[0][-1], band[-1][0], band[-1][-1]],
+						 [glyphs["tl"], glyphs["tr"],
+						  glyphs["bl"], glyphs["br"]])
+
+	def test_an_ascii_console_keeps_ascii_corners_unless_one_is_asked_for(self):
+		ascii_cap = make_cap(unicode=False)
+		_, _, plain = self.preview("heavy", cap=ascii_cap)
+		self.assertEqual([plain[0][0], plain[0][-1],
+						  plain[-1][0], plain[-1][-1]], ["+"] * 4)
+		_, _, custom = self.preview("heavy", cap=ascii_cap,
+									**{"corner-char": "@"})
+		self.assertEqual([custom[0][0], custom[0][-1],
+						  custom[-1][0], custom[-1][-1]], ["@"] * 4)
+		self.assertEqual(custom[1][0], "|")
+		self.assertIn("-", custom[0])
+
+	def test_a_borderless_preview_gains_no_corner(self):
+		_, _, band = self.preview("none", **{"corner-char": "@"})
+		self.assertEqual(band[0][0], " ")
+		self.assertEqual(band[-1][0], " ")
 
 	def test_the_twelve_row_band_keeps_the_bar_and_drops_the_closing_rule(self):
 		_, document, band = self.preview("rounded")
