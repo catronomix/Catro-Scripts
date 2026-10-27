@@ -7,11 +7,19 @@ The drawing half of `tui.editor`, split out so the editor stays inside the
 frame and returns nothing; `draw()` composes them in order (title, previews,
 panels, status, then help/save/load/picker overlays on top).
 
+The three popup overlays - help, Save and Load, with the centred box they share
+- live in `tui.editor_overlays` and are re-exported here, so
+`editorpaint._draw_save(...)` and the old attribute paths keep resolving. The
+band painters (title, the three panels, status and the run-splitting `_blit`)
+stay in this module.
+
 All colour comes from `palette.prefix()`/`chrome.status()`, so the editor emits
 no private ANSI; the preview shell itself lives in `tui.editorviews`.
 """
 
 from . import caps, chrome, editorviews, palette, theme_engine, widgets
+from .editor_overlays import (_draw_help, _draw_load, _draw_save,  # noqa: F401
+							  _overlay)
 from .text import pad, truncate
 from .widgetkit import cells
 
@@ -155,59 +163,6 @@ def _draw_status(editor, canvas, cap):
 		hint = "* unsaved  " + hint
 	canvas.draw_text(1, canvas.height - 1, truncate(hint, canvas.width - 2),
 					 palette.prefix(fg="muted", cap=cap))
-
-
-def _overlay(canvas, cap, width, height, title):
-	"""A centred surface box; returns its (x, y, width, height)."""
-	width = min(max(20, width), canvas.width - 2)
-	height = min(max(4, height), canvas.height - 2)
-	x = max(1, (canvas.width - width) // 2)
-	y = max(1, (canvas.height - height) // 2)
-	editorviews.fill_rect(canvas, x, y, width, height, cap=cap)
-	editorviews.frame(canvas, x, y, width, height, title, cap)
-	return x, y, width, height
-
-
-def _draw_help(editor, canvas, cap):
-	width = min(64, canvas.width - 2)
-	x, y, width, height = _overlay(canvas, cap, width,
-								   len(editorviews.HELP_LINES) + 2,
-								   "Help - F1/Esc closes")
-	for row, line in enumerate(editorviews.HELP_LINES):
-		canvas.draw_text(x + 2, y + 1 + row, truncate(line, width - 4),
-						 palette.prefix(fg="fg", bg="surface", cap=cap))
-	return x, y, width, height
-
-
-def _draw_save(editor, canvas, cap):
-	x, y, width, height = _overlay(canvas, cap, 46, 6, "Save theme")
-	canvas.draw_text(x + 2, y + 2, "name",
-					 palette.prefix(fg="muted", bg="surface", cap=cap))
-	editor.save_field.x, editor.save_field.y = x + 8, y + 2
-	editor.save_field.width = max(6, width - 10)
-	editor.save_field.cap = editor.cap
-	editor.save_field.draw(canvas, focused=True)
-	note = ".json is added; Enter saves, Esc cancels"
-	canvas.draw_text(x + 2, y + 3, truncate(note, width - 4),
-					 palette.prefix(fg="muted", bg="surface", cap=cap))
-	if editor.save_field.error:
-		canvas.draw_text(x + 2, y + 4, truncate(editor.save_field.error,
-												width - 4),
-						 palette.prefix(fg="error", bg="surface", cap=cap))
-	return x, y, width, height
-
-
-def _draw_load(editor, canvas, cap):
-	height = min(14, 4 + len(editor.load_box.items))
-	x, y, width, _ = _overlay(canvas, cap, 56, height, "Load theme")
-	editor.load_box.x, editor.load_box.y = x + 2, y + 2
-	editor.load_box.width = max(10, width - 4)
-	editor.load_box.cap = editor.cap
-	editor.load_box.draw(canvas, focused=True)
-	hint = "Enter loads, Esc cancels - ! marks an unreadable file"
-	canvas.draw_text(x + 2, y + height - 2, truncate(hint, width - 4),
-					 palette.prefix(fg="muted", bg="surface", cap=cap))
-	return x, y, width, height
 
 
 def _blit(canvas, x, y, styled, width):

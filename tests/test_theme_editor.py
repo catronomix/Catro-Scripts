@@ -31,9 +31,9 @@ if str(REPO) not in sys.path:
 
 from types import SimpleNamespace
 
-from tui import (caps, config, editor, editor_nav, editor_preview, editoractions,
-				 editor_store, editorviews, keys, palette, screen, table,
-				 theme_engine)  # noqa: E402
+from tui import (caps, config, editor, editor_nav, editor_overlays,
+				 editor_preview, editoractions, editorpaint, editor_store,
+				 editorviews, keys, palette, screen, table, theme_engine)  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -866,6 +866,36 @@ class StoreSplitShimTests(unittest.TestCase):
 				   if line.startswith("from .") or line.startswith("import ")]
 		self.assertNotIn("from . import editor", imports)
 		self.assertNotIn("from .editor import", " ".join(imports))
+
+
+class OverlaySplitShimTests(unittest.TestCase):
+	"""The popup painters moved to `tui.editor_overlays`; old paths must resolve."""
+
+	MOVED = ("_overlay", "_draw_help", "_draw_save", "_draw_load")
+
+	def test_the_moved_names_still_resolve_through_editorpaint(self):
+		for name in self.MOVED:
+			with self.subTest(name=name):
+				self.assertIs(getattr(editorpaint, name),
+							  getattr(editor_overlays, name))
+
+	def test_the_band_painters_stayed_in_editorpaint(self):
+		for name in ("draw", "_paint", "_draw_title", "_draw_properties",
+					 "_draw_colours", "_draw_actions", "_draw_status", "_blit"):
+			with self.subTest(name=name):
+				self.assertTrue(hasattr(editorpaint, name))
+				self.assertFalse(hasattr(editor_overlays, name))
+
+	def test_editor_overlays_does_not_import_the_painter_or_the_editor(self):
+		source = (REPO / "tui" / "editor_overlays.py").read_text(encoding="utf-8")
+		imports = [line for line in source.splitlines()
+				   if line.startswith("from .") or line.startswith("import ")]
+		self.assertTrue(imports)
+		for line in imports:
+			for blocked in ("editorpaint", "editoractions", "editorimport",
+							"editor_store"):
+				self.assertNotIn(blocked, line)
+		self.assertNotIn("from . import editor", imports)
 
 
 if __name__ == "__main__":
