@@ -10,7 +10,8 @@ screensaver name, kept as a subclass so `.screensaver` files keep working.
 
 Self-contained by design - no `Screen`, no alternate screen, no cursor or input,
 grid in/frame out - which makes it the landing zone for the stale-tint repaint
-fix: a repaint may only consult `_buffer`, `_colors` and `_previous*`.
+fix: a repaint may only consult `_buffer`, `_colors` and `_previous*`. The SGR
+state machine that fix relies on lives in `tui.sgr`, re-exported here;
 `terminal_size` lives here because a canvas must know its size; `tui.screen`
 re-exports it.
 """
@@ -19,42 +20,7 @@ import os
 import shutil
 import sys
 
-SGR_RESET = "\033[0m"
-
-# No cell colour ever equals this: the first changed cell always emits.
-_SGR_UNKNOWN = object()
-
-
-def _sgr_state(color):
-	"""(fg, bg, attrs) the SGR state `color` leaves active on the terminal."""
-	fg = bg = None
-	attrs = set()
-	for chunk in str(color or "").split("\033[")[1:]:
-		params = chunk.split("m")[0].split(";")
-		code = int(params[0] or 0)
-		if code in (38, 48):
-			fg, bg = ((";".join(params), bg) if code == 38
-					  else (fg, ";".join(params)))
-		elif 30 <= code <= 37 or 90 <= code <= 97:
-			fg = code
-		elif 40 <= code <= 47 or 100 <= code <= 107:
-			bg = code
-		else:
-			attrs.add(code)
-	return fg, bg, frozenset(attrs)
-
-
-def _emit_sgr(out, active, color):
-	"""Append `color`'s codes; reset first when a run would inherit state."""
-	state = _sgr_state(color)
-	if state != active:
-		if active is not _SGR_UNKNOWN and color and not (
-				active[2] <= state[2]
-				and (state[0] is not None or active[0] is None)
-				and (state[1] is not None or active[1] is None)):
-			out.append(SGR_RESET)
-		out.append(color if color else SGR_RESET)
-	return state
+from .sgr import SGR_RESET, _SGR_UNKNOWN, _emit_sgr, _sgr_state  # noqa: F401
 
 
 def terminal_size(stream=None):
