@@ -3,15 +3,13 @@
 			WIDGET KIT
 			===========
 The mechanical half of `tui.widgets`: the `Widget` rectangle/hit-test base, the
-`Panel`/`Clip` clipping rectangle, `cells()` (the lead-colour / visible-text
-split of one styled string), the focus-visible prefix and the small-terminal
-fallback. It was split out of `widgets.py` when that module reached its 400-line
-ceiling, so the editor work has headroom; `tui.widgets` re-exports every name
-here, so `from tui.widgets import Panel, cells, ...` keeps working.
+`Panel`/`Clip` clipping rectangle, `cells()` (lead-colour / visible-text split
+of one styled string), the focus prefix and the small-terminal fallback. Split
+out of `widgets.py` for budget headroom and re-exported by `tui.widgets`, so
+`from tui.widgets import Panel, cells, ...` keeps working.
 
 Nothing here prints or writes to a stream: every helper returns a string, a
-prefix or a rectangle. ANSI stripping goes through `tui.text.strip_ansi`, so the
-escape table lives in exactly one place.
+prefix or a rectangle; ANSI stripping goes through `tui.text.strip_ansi` alone.
 """
 
 import re
