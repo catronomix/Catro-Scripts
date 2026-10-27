@@ -131,6 +131,10 @@ class ThemeEditor(EditorKeys):
 		rect = self.rects.get(panel)
 		return max(1, rect[3] - 2) if rect else 9
 
+	def _rows(self, panel):
+		"""The display-order key names of the Properties or Colours pane."""
+		return (editorviews.PROPERTY_KEYS, theme_engine.PALETTE_KEYS)[panel - 3]
+
 	@staticmethod
 	def _window(selected, offset, count, visible):
 		"""Scroll `offset` so `selected` is inside a `visible`-row window."""

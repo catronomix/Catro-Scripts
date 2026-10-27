@@ -78,6 +78,7 @@ def commit_save(editor, slug, overwrite=False):
 
 def load_popup(editor):
 	"""Open the Load popup; returns the rows it lists (invalid ones marked)."""
+	editor.clicks.reset()
 	editor.entries = editorviews.theme_entries()
 	labels = [entry["label"] for entry in editor.entries] or ["(no themes yet)"]
 	selected = next((index for index, entry in enumerate(editor.entries)
@@ -124,6 +125,7 @@ def open_document(editor, slug):
 		editor.message = ("error", str(exc))
 		return False
 	editor.document, editor.dirty = document, False
+	editor.clicks.reset()
 	selected, selector = theme_engine.selection()
 	look_id = theme_engine.SELECTORS.get(selector, "default")
 	editor.look_index = (editorviews.LOOK_ORDER.index(look_id)

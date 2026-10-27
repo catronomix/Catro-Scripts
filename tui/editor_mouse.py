@@ -74,14 +74,14 @@ def scroll(editor, panel, delta):
 def _select_row(editor, panel, y):
 	"""Focus that pane and select the row under the pointer, if it is a row."""
 	top = editor.rects[panel][1] + 1
-	attr = "property_offset" if panel == 3 else "colour_offset"
-	offset = getattr(editor, attr)
-	if not top + offset <= y < top + offset + editor._visible(panel):
+	offset = getattr(editor, ("property_offset", "colour_offset")[panel - 3])
+	if not top <= y < top + editor._visible(panel):
 		return False
+	index = min(offset + y - top, len(editor._rows(panel)) - 1)
 	if panel == 3:
-		editor.focus, editor.property_index = 0, y - top
+		editor.focus, editor.property_index = 0, index
 	else:
-		editor.focus, editor.colour_index = 1, y - top
+		editor.focus, editor.colour_index = 1, index
 	return True
 
 

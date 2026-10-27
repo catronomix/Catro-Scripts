@@ -419,6 +419,51 @@ class LookScopeTests(EditorTestCase):
 		self.assertEqual(ed.look_index, 0)
 
 
+class ScrolledPaneTests(EditorTestCase):
+	"""A scrolled pane hits rows in screen space and never past its last key."""
+
+	def test_a_double_press_on_the_first_visible_colour_row_opens_that_key(self):
+		ed = self.make()  # 90x24: Colours shows 5 of 11 keys
+		ed.colour_offset = 1
+		ed.handle("mouse:press:45:16")
+		self.assertEqual((ed.focus, ed.colour_index), (1, 1))
+		self.assertIsNone(ed.picker)
+		ed.handle("mouse:press:45:16")
+		self.assertIsNotNone(ed.picker)
+
+	def test_a_double_press_on_a_scrolled_property_row_drafts_that_key(self):
+		ed = self.make()  # 90x24: Properties shows 5 of 9 keys
+		ed.property_offset = 1
+		ed.handle("mouse:press:2:16")
+		self.assertEqual((ed.focus, ed.property_index), (0, 1))
+		self.assertIsNone(ed.edit)
+		ed.handle("mouse:press:2:16")
+		self.assertIsNotNone(ed.edit)
+		self.assertEqual(ed.edit["key"], editorviews.PROPERTY_KEYS[1])
+
+	def test_a_stale_offset_cannot_select_past_the_last_colour_key(self):
+		ed = self.make()
+		ed.colour_offset = 99
+		ed.handle("mouse:press:45:16")
+		self.assertEqual(ed.colour_index, len(theme_engine.PALETTE_KEYS) - 1)
+
+
+class ClickResetTests(EditorTestCase):
+	"""A press pair cannot straddle a Load popup or a loaded document."""
+
+	def test_opening_the_load_popup_forgets_an_armed_press(self):
+		ed = self.make()
+		ed.clicks.push("press", 5, 5)
+		ed.load_popup()
+		self.assertEqual(ed.clicks.push("press", 5, 5), "press")
+
+	def test_opening_a_document_forgets_an_armed_press(self):
+		ed = self.make()
+		ed.clicks.push("press", 5, 5)
+		editor_store.open_document(ed, "cozypurple")
+		self.assertEqual(ed.clicks.push("press", 5, 5), "press")
+
+
 class EditingTests(EditorTestCase):
 	def test_left_right_nudge_the_selected_property_in_place(self):
 		ed = self.make()
