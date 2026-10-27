@@ -22,7 +22,10 @@ The listing pages render through `tui.chrome`: a masthead, one `field` per fact
 and, for the palette, a swatch painted in each key's own palette colour next to
 the readable hex value. Message lines (usage, invalid value, unwritable file)
 keep their exact wording and only gain a semantic colour, so piped output and
-the pinned exit codes do not move. Nothing here runs at import time, and the
+the pinned exit codes do not move. A broken install (the shipped
+`themes/cozypurple.json` missing or unreadable) is the one `ThemeError` no command
+can place; `main()` turns it into one error line and exit 2 instead of a
+traceback. Nothing here runs at import time, and the
 editor is imported only when `edit` actually launches.
 """
 
@@ -137,6 +140,33 @@ def main(argv=None):
 	# actually going to emit codes (a pipe or level "none" emits none).
 	if not cap.plain and cap.level != "none":
 		caps.init_ansi()
+	try:
+		return _dispatch(args, out, cap)
+	except theme_engine.ThemeError as exc:
+		# Last-resort seam for the one theme error no command can place: the
+		# shipped themes/cozypurple.json is the only copy of the built-in
+		# palette, so a broken install that loses it fails here. Every other
+		# ThemeError is caught where it happens (select/set/edit); this one
+		# still gets the same one-line, exit-2 shape instead of a traceback.
+		out.write(_error_line(str(exc), cap) + "\n")
+		return 2
+
+
+def _error_line(message, cap):
+	"""One error line, unstyled when the palette is what is missing.
+
+	Colouring the message reads the look palette, which is exactly what can be
+	unavailable here; failing to print the failure is worse than printing it
+	without colour.
+	"""
+	try:
+		return palette.style(message, fg="error", cap=cap)
+	except theme_engine.ThemeError:
+		return message
+
+
+def _dispatch(args, out, cap):
+	"""Route one command to its page/writer; the caller owns ThemeError."""
 	command = palette.fold(args[0]) if args else "show"
 	if command in ("show", "status", ""):
 		out.write(_page("theme", "terminal preferences", summary(out, cap=cap),

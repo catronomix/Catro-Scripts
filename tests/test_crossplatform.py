@@ -374,6 +374,8 @@ class SmokeTests(unittest.TestCase):
 			# taken out of the checkout has to carry the library with it.
 			shutil.copytree(REPO / "tui", target / "tui",
 							ignore=shutil.ignore_patterns("__pycache__"))
+			# The shipped theme document is part of that library.
+			shutil.copytree(REPO / "themes", target / "themes")
 
 			proc = run([sys.executable, "alias.py", "smokealias"], cwd=td)
 			self.assertEqual(proc.returncode, 0,

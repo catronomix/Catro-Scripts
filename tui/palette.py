@@ -11,9 +11,10 @@ CONTRAST_DARK are `mdreader` modes 1 and 2, so the reader and the scripts agree.
 The hexes themselves belong to `tui.theme_engine` (and `themes/cozypurple.json`);
 this module stays the public API and the only place that emits SGR codes. The
 active theme comes from `theme.ini` through the engine, with the legacy
-`config.ini [theme] mode` value migrated behind it. `SOFT`/`THEMES` keep their
-names and values, so no renderer changed and the golden fixture still pins
-`soft`'s own bytes.
+`config.ini [theme] mode` value migrated behind it. `SOFT`/`CONTRAST_*`/`THEMES`
+keep their names and values but are resolved on access from the shipped
+document, so nothing is read at import and no renderer changed; the golden
+fixture still pins `soft`'s own bytes.
 
 The default is deliberately not the old per-script `Colors` identity (#AA00FF
 on #000000): that palette is gone, and `dark` survives only as an alias input
@@ -64,22 +65,32 @@ def _memo(key, build):
 		_FRAME[key] = build()
 	return _FRAME[key]
 
-# The default look: mdreader mode 0, "Cozy Purple", mirrored from the engine's
-# built-in document (`themes/cozypurple.json` carries the same hexes).
-SOFT = dict(theme_engine.BUILTIN_LOOKS["default"])
-
-# mdreader mode 1, "High Contrast Light".
-CONTRAST_LIGHT = dict(theme_engine.BUILTIN_LOOKS["contrast-light"])
-
-# mdreader mode 2, "High Contrast Dark". Selectable like the others, never
-# chosen automatically.
-CONTRAST_DARK = dict(theme_engine.BUILTIN_LOOKS["contrast-dark"])
-
-THEMES = {
-	"soft": SOFT,
-	"contrast-light": CONTRAST_LIGHT,
-	"contrast-dark": CONTRAST_DARK,
+# The published look tables, resolved lazily (see `__getattr__`): name ->
+# (theme id, look id in the shipped document).
+_LOOK_TABLES = {
+	"SOFT": ("soft", "default"),
+	"CONTRAST_LIGHT": ("contrast-light", "contrast-light"),
+	"CONTRAST_DARK": ("contrast-dark", "contrast-dark"),
 }
+
+
+def __getattr__(name):
+	"""`SOFT`, `CONTRAST_LIGHT`, `CONTRAST_DARK` and `THEMES`, read on demand.
+
+	The tables are the shipped `themes/cozypurple.json` document, resolved by
+	the engine when the name is first used, so importing this module stays I/O
+	free and the published hexes cannot drift from the theme file (issue #33).
+	Each access returns fresh dicts: mutating one changes nothing.
+	"""
+	if name in _LOOK_TABLES:
+		_theme_id, look_id = _LOOK_TABLES[name]
+		return dict(theme_engine.builtin_looks()[look_id])
+	if name == "THEMES":
+		looks = theme_engine.builtin_looks()
+		return {theme_id: dict(looks[look_id])
+				for theme_id, look_id in _LOOK_TABLES.values()}
+	raise AttributeError(
+		"module {!r} has no attribute {!r}".format(__name__, name))
 
 # Every accepted spelling, folded by `fold()` before lookup. Only the three
 # names in THEMES are real palettes; the rest are inputs, including the legacy

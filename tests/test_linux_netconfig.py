@@ -193,6 +193,8 @@ class ActionsFileTests(unittest.TestCase):
 		# taken out of the checkout has to carry the library with it.
 		shutil.copytree(REPO / "tui", self.dir / "tui",
 						ignore=shutil.ignore_patterns("__pycache__"))
+		# ... and the shipped theme document, which is the built-in fallback.
+		shutil.copytree(REPO / "themes", self.dir / "themes")
 
 	def tearDown(self):
 		self.tmp.cleanup()

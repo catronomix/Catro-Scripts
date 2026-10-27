@@ -391,15 +391,21 @@ class UnderlineAttributeTests(unittest.TestCase):
 
 
 class FallbackTests(PropertyCase):
-	"""A corrupt or missing theme renders with the built-in properties."""
+	"""A bad theme still renders; a broken install surfaces, it is not masked."""
 
-	def test_a_corrupt_document_falls_back_to_the_built_in_look(self):
-		(self.themes / "cozypurple.json").write_text("{not json", encoding="utf-8")
+	def test_a_corrupt_selected_theme_falls_back_to_the_shipped_one(self):
+		(self.themes / "mint.json").write_text("{not json", encoding="utf-8")
+		theme_engine.theme_file().write_text(
+			"[theme]\nname = mint\nlook = soft\n", encoding="utf-8")
 		theme_engine._CACHE.clear()
 		self.assertEqual(palette.properties()["border_style"], "rounded")
 		self.assertIn("\u250c", self.render())
 
-	def test_a_missing_themes_directory_falls_back_too(self):
+	def test_a_missing_themes_directory_raises_at_the_point_of_use(self):
+		# The shipped document is the only fallback (issue #33): with no themes
+		# directory at all there is nothing to render and no embedded copy to
+		# hide a broken install, so the read raises instead of guessing.
 		shutil.rmtree(self.themes)
-		self.assertEqual(palette.properties(), theme_engine.BUILTIN_PROPERTIES)
-		self.assertIn("\u250c", self.render())
+		theme_engine._CACHE.clear()
+		with self.assertRaises(theme_engine.ThemeError):
+			palette.properties()

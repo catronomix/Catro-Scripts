@@ -58,7 +58,7 @@
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. On Linux/macOS it uses `sudo` unless already root, finds `shutdown` on PATH or in `/sbin`/`/usr/sbin`, and exits 1 with one error line when the command is missing or fails.
 
-- **`theme`**: Shows and changes the checkout-local terminal theme. A theme is one JSON file under `themes/` (three looks plus rendering properties); the gitignored `theme.ini` selects the theme name and the look. Commands: `theme` (overview), `theme <name>`, `theme list`, `theme soft|default|light|contrast-light|dark|contrast-dark|toggle`, `theme palette`, `theme set theme.name|theme.look|color.level|table.style <value>`, and `theme edit [name]` - the full-screen editor with Save/Load and a colour picker. Selecting a missing or invalid theme prints one line and exits 2; rendering itself never breaks (built-in fallback). `python -m tui` runs the same commands.
+- **`theme`**: Shows and changes the checkout-local terminal theme. A theme is one JSON file under `themes/` (three looks plus rendering properties); the gitignored `theme.ini` selects the theme name and the look. Commands: `theme` (overview), `theme <name>`, `theme list`, `theme soft|default|light|contrast-light|dark|contrast-dark|toggle`, `theme palette`, `theme set theme.name|theme.look|color.level|table.style <value>`, and `theme edit [name]` - the full-screen editor with Save/Load and a colour picker. Selecting a missing or invalid theme prints one line and exits 2. Rendering falls back to the shipped `themes/cozypurple.json`, which is the only copy of the built-in palette: if that file itself is missing or unreadable, the `theme` command reports it in one line and exits 2, and a rendering script stops with the same `ThemeError` naming the file rather than guessing a palette. `python -m tui` runs the same commands.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems use conventional timestamp modification.
 
@@ -169,9 +169,11 @@ properties, Colours opens a hex/HSV colour picker per palette key, and the
 picker warns below WCAG AA (4.5:1 against `bg`/`zebra_bg`) but never blocks.
 `Ctrl-S` saves atomically to `themes/<name>.json` (the filename is preseeded,
 `.json` is implied, and an existing different file asks before it is
-overwritten); Load lists every theme, marks the active one `*` and keeps an
-invalid file as an `!` row. To share a theme, copy its JSON into `themes/`,
-keeping `name` equal to the filename.
+overwritten). A save only rewrites the lines you changed: the document's hex
+spelling is kept, so re-saving an untouched theme leaves the file byte-identical.
+Load lists every theme, marks the active one `*` and keeps an invalid file as an
+`!` row. To share a theme, copy its JSON into `themes/`, keeping `name` equal to
+the filename.
 
 `CATRO_ASCII=1` forces ASCII box fallbacks, and
 `CATRO_THEME=soft|contrast-light|contrast-dark` overrides the file for one run.

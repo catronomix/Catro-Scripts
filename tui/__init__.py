@@ -42,7 +42,7 @@ from .colorpicker import (WCAG_AA, ColorPicker, contrast_ratio, hex_to_rgb, hsv_
 						  luminance, rgb_to_hex, rgb_to_hsv)
 from .loop import FrameLoop, ScreensaverHost
 from .mouse import decode, disable, enable, parse_token, reporting, token
-from .palette import CONTRAST_DARK, CONTRAST_LIGHT, RESET, SOFT, THEMES, prefix, style, theme
+from .palette import RESET, prefix, style, theme
 from .pager import page
 from .progress import LiveRegion, ProgressBar, Spinner
 from .prompts import ask_choice, ask_int, ask_text
@@ -75,3 +75,17 @@ __all__ = [
 	"LiveRegion", "ProgressBar", "Spinner",
 	"page", "FrameLoop", "ScreensaverHost",
 ]
+
+
+# The look tables are read from `themes/cozypurple.json` on demand (issue #33),
+# so the package cannot re-export them at import time without doing I/O. They
+# keep their top-level names; the lookup happens on first use.
+_LAZY_TABLES = ("CONTRAST_DARK", "CONTRAST_LIGHT", "SOFT", "THEMES")
+
+
+def __getattr__(name):
+	"""Forward the lazily-loaded look tables to `tui.palette`."""
+	if name in _LAZY_TABLES:
+		return getattr(palette, name)
+	raise AttributeError(
+		"module {!r} has no attribute {!r}".format(__name__, name))

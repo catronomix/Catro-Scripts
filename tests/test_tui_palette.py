@@ -13,6 +13,7 @@ gate recomputed from the hexes for all three themes, and the degradation paths
 (16-colour, pipe, NO_COLOR on a tty).
 """
 
+import json
 import os
 import re
 import sys
@@ -29,6 +30,13 @@ from tui import caps, config, palette, table, theme_engine  # noqa: E402  (impor
 from support import isolate_checkout_config, module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
+
+SHIPPED = REPO / "themes" / "cozypurple.json"
+
+
+def shipped_looks():
+	"""The three looks as the shipped document writes them (one source)."""
+	return json.loads(SHIPPED.read_text(encoding="utf-8"))["looks"]
 
 # soft's truecolor codes, byte for byte: border #A392C0, fg #D4C8EB,
 # bg #1B1726, surface #292238.
@@ -87,20 +95,16 @@ class SoftByteTests(unittest.TestCase):
 		expected = FG + SURFACE + BOLD + "x" + RESET
 		self.assertEqual(self.style(fg="fg", bg="surface", bold=True), expected)
 
-	def test_soft_palette_values_match_the_pinned_bytes(self):
-		self.assertEqual(rgb_of(BORDER), (163, 146, 192))
-		self.assertEqual(palette.SOFT["border"], "#A392C0")
-		self.assertEqual(palette.SOFT["muted"], "#A392C0")
-		self.assertEqual(rgb_of(ACCENT), (245, 205, 104))
-		self.assertEqual(palette.SOFT["header"], "#F5CD68")
-		self.assertEqual(palette.SOFT["accent"], "#F5CD68")
-		self.assertEqual(rgb_of(FG), (212, 200, 235))
-		self.assertEqual(palette.SOFT["fg"], "#D4C8EB")
-		self.assertEqual(rgb_of(BG), (27, 23, 38))
-		self.assertEqual(palette.SOFT["bg"], "#1B1726")
-		self.assertEqual(rgb_of(SURFACE), (41, 34, 56))
-		self.assertEqual(palette.SOFT["surface"], "#292238")
-		self.assertEqual(palette.SOFT["zebra_bg"], "#352B49")
+	def test_soft_palette_values_come_from_the_shipped_document(self):
+		soft = shipped_looks()["default"]
+		self.assertEqual(dict(palette.SOFT), soft)
+		# The pinned escapes spell the same colours the shipped file carries.
+		for escape, key in ((BORDER, "border"), (ACCENT, "accent"),
+							(FG, "fg"), (BG, "bg"), (SURFACE, "surface")):
+			with self.subTest(key=key):
+				self.assertEqual(rgb_of(escape), palette.rgb(soft[key]))
+		self.assertEqual(soft["muted"], soft["border"])
+		self.assertEqual(soft["header"], soft["accent"])
 
 
 class PrefixSeamTests(unittest.TestCase):
@@ -177,10 +181,11 @@ class ThemeTests(unittest.TestCase):
 			self.assertEqual(palette.theme(), "soft")
 
 	def test_palette_returns_a_copy(self):
+		expected = shipped_looks()["default"]["bg"]
 		first = palette.palette("soft")
 		first["bg"] = "#123456"
-		self.assertEqual(palette.palette("soft")["bg"], "#1B1726")
-		self.assertEqual(palette.palette("nope")["bg"], "#1B1726")
+		self.assertEqual(palette.palette("soft")["bg"], expected)
+		self.assertEqual(palette.palette("nope")["bg"], expected)
 
 
 class CheckoutConfigIsolationTests(unittest.TestCase):
@@ -213,40 +218,24 @@ class CheckoutConfigIsolationTests(unittest.TestCase):
 
 
 class ThreeThemeTests(unittest.TestCase):
-	"""The three contract tables, verbatim."""
+	"""The three contract tables, derived from the shipped document."""
 
-	EXPECTED = {
-		"soft": {
-			"bg": "#1B1726", "surface": "#292238", "fg": "#D4C8EB",
-			"muted": "#A392C0", "accent": "#F5CD68", "success": "#7FD1A0",
-			"warn": "#E09F67", "error": "#FF6B6B", "border": "#A392C0",
-			"header": "#F5CD68", "zebra_bg": "#352B49",
-		},
-		"contrast-light": {
-			"bg": "#FFFFFF", "surface": "#E8F4F8", "fg": "#000000",
-			"muted": "#4A4A4A", "accent": "#0000B3", "success": "#0A7A2F",
-			"warn": "#8A5A00", "error": "#B3261E", "border": "#000000",
-			"header": "#A0007A", "zebra_bg": "#E8F4F8",
-		},
-		"contrast-dark": {
-			"bg": "#000000", "surface": "#0A0A0A", "fg": "#FFFFFF",
-			"muted": "#D0D0D0", "accent": "#00FFFF", "success": "#00FF66",
-			"warn": "#FFFF00", "error": "#FF4040", "border": "#00FFFF",
-			"header": "#FFFF00", "zebra_bg": "#1A1A1A",
-		},
-	}
+	def shipped(self):
+		return {"soft": shipped_looks()["default"],
+				"contrast-light": shipped_looks()["contrast-light"],
+				"contrast-dark": shipped_looks()["contrast-dark"]}
 
 	def test_theme_set_is_exactly_three(self):
-		self.assertEqual(set(palette.THEMES), set(self.EXPECTED))
+		self.assertEqual(set(palette.THEMES), set(self.shipped()))
 
 	def test_every_theme_has_the_same_eleven_keys(self):
-		keys = set(self.EXPECTED["soft"])
+		keys = set(self.shipped()["soft"])
 		self.assertEqual(len(keys), 11)
 		for name, table in palette.THEMES.items():
 			self.assertEqual(set(table), keys, name)
 
-	def test_tables_are_the_contract_values(self):
-		for name, expected in self.EXPECTED.items():
+	def test_tables_are_the_shipped_values(self):
+		for name, expected in self.shipped().items():
 			with self.subTest(theme=name):
 				self.assertEqual(palette.THEMES[name], expected)
 
@@ -274,12 +263,14 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 		theme_engine.THEMES_DIR = None
 
 	def test_shipped_document_matches_the_published_tables(self):
+		# The adapter publishes exactly the shipped document, look for look.
 		document = theme_engine.load_theme("cozypurple")
 		self.assertEqual(document["looks"]["default"], palette.SOFT)
 		self.assertEqual(document["looks"]["contrast-light"], palette.CONTRAST_LIGHT)
 		self.assertEqual(document["looks"]["contrast-dark"], palette.CONTRAST_DARK)
 		self.assertEqual(document["properties"],
-						 theme_engine.BUILTIN_PROPERTIES)
+						 theme_engine.builtin_properties())
+		self.assertEqual(document["looks"], shipped_looks())
 
 	def test_document_and_properties_are_delegated(self):
 		self.assertEqual(palette.document()["name"], "cozypurple")
@@ -298,12 +289,20 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 			self.assertEqual(palette.theme(), "contrast-light")
 			self.assertEqual(palette.palette(), palette.CONTRAST_LIGHT)
 
-	def test_broken_theme_file_falls_back_without_raising(self):
+	def test_broken_selected_theme_falls_back_without_raising(self):
 		with tempfile.TemporaryDirectory() as td:
 			themes = Path(td) / "themes"
 			themes.mkdir()
-			(themes / "cozypurple.json").write_text("{not json", encoding="utf-8")
+			# A real checkout ships the default document; only the selected
+			# custom theme is broken.
+			(themes / "cozypurple.json").write_bytes(SHIPPED.read_bytes())
+			(themes / "mint.json").write_text("{not json", encoding="utf-8")
 			theme_engine.THEMES_DIR = themes
+			theme_engine.THEME_FILE = Path(td) / "theme.ini"
+			theme_engine.theme_file().write_text(
+				"[theme]\nname = mint\nlook = dark\n", encoding="utf-8")
+			theme_engine._CACHE.clear()
+			self.assertEqual(palette.theme_name(), "mint")
 			self.assertEqual(palette.palette()["bg"], palette.SOFT["bg"])
 			self.assertEqual(palette.document()["name"], "cozypurple")
 
@@ -322,7 +321,7 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 				"[theme]\nname = mint\nlook = dark\n", encoding="utf-8")
 			self.assertEqual(palette.theme_name(), "mint")
 			self.assertEqual(palette.document()["name"], "mint")
-			self.assertEqual(palette.palette()["bg"], "#0b1e14")
+			self.assertEqual(palette.palette()["bg"], "#0B1E14")
 			self.assertEqual(palette.properties()["border_style"], "rounded")
 
 
@@ -415,7 +414,9 @@ class ThemeAliasTests(unittest.TestCase):
 
 class DowngradeTests(unittest.TestCase):
 	def test_256_mapping_is_deterministic_and_total(self):
-		samples = ("#F5CD68", "#1B1726", "#292238", "#D4C8EB", "#FFFFFF", "#123456")
+		soft = shipped_looks()["default"]
+		samples = (soft["accent"], soft["bg"], soft["surface"], soft["fg"],
+				   shipped_looks()["contrast-light"]["bg"], "#123456")
 		for value in samples:
 			with self.subTest(colour=value):
 				first = palette.style("x", fg=value, cap=LEVEL256)
@@ -426,7 +427,9 @@ class DowngradeTests(unittest.TestCase):
 				self.assertTrue(0 <= int(match.group(1)) <= 255)
 
 	def test_16_mapping_stays_in_the_basic_range(self):
-		for value in ("#F5CD68", "#1B1726", "#D4C8EB", "#FFFFFF"):
+		soft = shipped_looks()["default"]
+		for value in (soft["accent"], soft["bg"], soft["fg"],
+					  shipped_looks()["contrast-light"]["bg"]):
 			with self.subTest(colour=value):
 				fore = palette.style("x", fg=value, cap=LEVEL16)
 				back = palette.style("x", bg=value, cap=LEVEL16)
@@ -486,8 +489,9 @@ class IndexSeamTests(unittest.TestCase):
 				self.assertTrue(0 <= index <= 15)
 
 	def test_index_accepts_rgb_tuples_and_other_themes(self):
-		self.assertEqual(palette.index((245, 205, 104)),
-						 palette.index("#F5CD68"))
+		accent = shipped_looks()["default"]["accent"]
+		self.assertEqual(palette.index(palette.rgb(accent)),
+						 palette.index(accent))
 		for name in palette.THEMES:
 			with self.subTest(theme=name):
 				value = palette.index("accent", theme=name)

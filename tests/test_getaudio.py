@@ -71,6 +71,8 @@ class MissingBinaryTests(unittest.TestCase):
             # checkout's.
             shutil.copytree(REPO / "tui", Path(tmp) / "tui",
                             ignore=shutil.ignore_patterns("__pycache__"))
+            # The shipped theme document is part of that library too.
+            shutil.copytree(REPO / "themes", Path(tmp) / "themes")
             proc = run(["clip.mp4", "-c"], tmp, child_env(), script=script)
 
         combined = proc.stdout + proc.stderr

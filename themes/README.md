@@ -60,7 +60,10 @@ exits 2 without one.
   (`themes/<name>.json`); `display` is free text for page titles.
 - `looks` holds exactly `default`, `contrast-dark` and `contrast-light`, each
   with exactly `bg surface fg muted accent success warn error border header
-  zebra_bg`, each a `#rrggbb` string (`#` optional on read; lowercase written).
+  zebra_bg`, each a `#rrggbb` string. A save keeps the case the document
+  already carries but canonicalises structure once (a missing `#` is added,
+  keys re-ordered, 2-space indent, one trailing LF), so an already-canonical
+  file round-trips byte for byte and a hand-written one is tidied once.
 - `properties` holds all nine keys; `table_zebra` is a boolean. Allowed values
   live in `tui/theme_schema.py` (`PROPERTY_VALUES`, re-exported by
   `tui/theme_engine.py`).
@@ -82,9 +85,12 @@ exits 2 without one.
 terminal degrades every family except `none` to ASCII. The shipped values
 reproduce the default look byte for byte.
 
-Validation is all-or-nothing: one missing key or unknown value rejects the file,
-so a typo cannot ship a half-theme. A missing or invalid file never breaks
-rendering - the scripts fall back to the built-in `cozypurple` default look.
+Validation is all-or-nothing: one missing key, unknown top-level key or unknown
+value rejects the file, so a typo cannot ship a half-theme. A missing or invalid
+theme file never breaks rendering - the scripts fall back to the shipped
+`cozypurple` document, which is also the only copy of the built-in palette (no
+embedded hex table). If `themes/cozypurple.json` itself is missing or
+unreadable, reads raise one clear `ThemeError` instead of inventing colours.
 
 Look selectors: `soft`/`default` = `default`, `light`/`contrast-light` =
 `contrast-light`, `dark`/`contrast-dark` = `contrast-dark`. `theme toggle`

@@ -17,6 +17,9 @@ Features:
 	  writability.
 	- `theme <name>` selects `themes/<name>.json`; a missing or invalid file
 	  prints one line and exits 2.
+	- A broken install - the shipped `themes/cozypurple.json` missing or
+	  unreadable - is the only palette that cannot fall back; every command
+	  here reports it as one line and exits 2 instead of a traceback.
 	- `theme soft|contrast-light|contrast-dark|toggle` switches the look
 	  (`dark`/`light` are accepted spellings of the contrast looks).
 	- `theme list` lists the available themes, `theme palette` the active look.

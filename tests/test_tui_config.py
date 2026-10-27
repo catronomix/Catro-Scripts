@@ -30,6 +30,8 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 
 setUpModule, tearDownModule = module_isolation()
 
+SHIPPED = REPO / "themes" / "cozypurple.json"
+
 
 def _checkout_state(path):
 	"""Fingerprint of a checkout file: (exists, bytes, mtime_ns)."""
@@ -155,6 +157,9 @@ class ThemeCommandTests(unittest.TestCase):
 		theme_engine.THEME_FILE = Path(self._td.name) / "theme.ini"
 		theme_engine.THEMES_DIR = Path(self._td.name) / "themes"
 		theme_engine.THEMES_DIR.mkdir()
+		# The built-in fallback is the shipped document (issue #33); a temp
+		# checkout needs its own copy of it.
+		shutil.copyfile(SHIPPED, theme_engine.THEMES_DIR / "cozypurple.json")
 		theme_engine._CACHE.clear()
 
 	def tearDown(self):
@@ -225,6 +230,9 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertIn("plain\tPlain", out)
 
 	def test_list_handles_an_empty_and_an_invalid_themes_directory(self):
+		for entry in theme_engine.themes_dir().glob("*.json"):
+			entry.unlink()
+		theme_engine._CACHE.clear()
 		code, out = self.run_main(["list"])
 		self.assertEqual(code, 0)
 		self.assertNotIn(".json", out)
@@ -325,6 +333,29 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertEqual(out, "theme.ini is not writable here: {}\n".format(
 			theme_engine.theme_file()))
 
+	def test_a_missing_shipped_theme_is_one_error_line_not_a_traceback(self):
+		# Issue #33: the shipped document is the only built-in palette, so a
+		# broken install turns every themed page into one ThemeError. `main()`
+		# is the last seam and must print it once with the usual exit code.
+		(theme_engine.themes_dir() / "cozypurple.json").unlink()
+		theme_engine._CACHE.clear()
+		cap = caps.Capabilities(level="true", unicode=True, width=None,
+								isatty=False, plain=False, reason="test")
+		for argv in (["palette"], [], ["list"]):
+			with self.subTest(argv=argv):
+				stream = io.StringIO()
+				with mock.patch.object(caps, "detect", return_value=cap), \
+						redirect_stdout(stream):
+					code = main(argv)
+				out = stream.getvalue()
+				self.assertEqual(code, 2)
+				self.assertEqual(out.count("\n"), 1)
+				self.assertIn("shipped default theme is unavailable", out)
+				self.assertIn("cozypurple.json", out)
+				self.assertNotIn("Traceback", out)
+		# Uncoloured output reads no palette, so the overview still answers.
+		self.assertEqual(self.run_main([])[0], 0)
+
 	def test_help_lists_every_theme_selector(self):
 		code, out = self.run_main(["--help"])
 		self.assertEqual(code, 0)
@@ -417,6 +448,9 @@ class ThemeScriptTests(unittest.TestCase):
 		self.root = Path(self._td.name)
 		shutil.copytree(REPO / "tui", self.root / "tui",
 						ignore=shutil.ignore_patterns("__pycache__"))
+		# A real checkout carries the shipped document next to `tui/`; the
+		# built-in fallback reads it (issue #33).
+		shutil.copytree(REPO / "themes", self.root / "themes")
 		shutil.copy2(REPO / "theme.py", self.root / "theme.py")
 		self.env = dict(os.environ)
 		for name in ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CATRO_COLOR",
