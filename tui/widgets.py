@@ -5,8 +5,7 @@
 Canvas-based widgets for the full-screen theme editor: each owns a rectangle on a
 `Canvas`, draws through `Canvas.draw_*`, styles with `palette.prefix()` and exposes
 `hit_test(x, y)`, so keys and mouse drive one model. `Button` renders through
-`chrome.button()`, `ScrollBar` reads `chrome.scrollbar()` back for its geometry,
-`FocusRing` routes tab/shift-tab, key and mouse events.
+`chrome.button()`, `ScrollBar` reads `chrome.scrollbar()` back for its geometry.
 
 The mechanical half (`Widget`, `Panel`, `Clip`, `cells`, `focus_prefix`,
 `small_terminal`, `resize_notice`) lives in `tui.widgetkit` and is re-exported
@@ -287,34 +286,3 @@ class ScrollBar(Widget):
 			colour, char = cells(cell)
 			canvas.draw_char(self.x, self.y + row, char, highlight or colour)
 
-class FocusRing:
-	"""Tab/Shift-Tab cycling over widgets, with key and mouse routing."""
-	def __init__(self, widgets=()):
-		self.widgets = list(widgets)
-		self.index = 0 if self.widgets else None
-	def current(self):
-		"""The focused widget, or None when the ring is empty."""
-		return self.widgets[self.index] if self.index is not None else None
-	def focus(self, index):
-		"""Focus by position, wrapping; returns the widget."""
-		if self.widgets:
-			self.index = int(index) % len(self.widgets)
-		return self.current()
-	def key(self, token):
-		"""Tab/Shift-Tab cycle; every other token goes to the focused widget."""
-		if token in ("tab", "shift-tab", "backtab"):
-			return bool(self.focus((self.index or 0)
-								   + (1 if token == "tab" else -1)))
-		widget = self.current()
-		return bool(widget and widget.key(token))
-	def click(self, x, y):
-		"""Focus and click the topmost widget under the point."""
-		for widget in reversed(self.widgets):
-			if widget.hit_test(x, y):
-				self.focus(self.widgets.index(widget))
-				return bool(widget.click(x, y))
-		return False
-	def draw(self, canvas):
-		"""Draw every widget, the focused one with its focus-visible style."""
-		for widget in self.widgets:
-			widget.draw(canvas, focused=widget is self.current())

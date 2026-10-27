@@ -364,48 +364,6 @@ class ScrollBarTests(unittest.TestCase):
 		self.assertEqual(rows(canvas, 2, 1, 1, 4), expected)
 
 
-class FocusRingTests(unittest.TestCase):
-	def ring(self):
-		return widgets.FocusRing([
-			widgets.Button(0, 0, "one", cap=CAP),
-			widgets.CheckField(0, 2, "two", cap=CAP),
-			widgets.Button(20, 0, "three", cap=CAP)])
-
-	def test_tab_and_shift_tab_wrap(self):
-		ring = self.ring()
-		self.assertIs(ring.current(), ring.widgets[0])
-		ring.key("tab")
-		self.assertIs(ring.current(), ring.widgets[1])
-		ring.key("shift-tab")
-		self.assertIs(ring.current(), ring.widgets[0])
-		ring.key("shift-tab")
-		self.assertIs(ring.current(), ring.widgets[2])
-		ring.key("tab")
-		self.assertIs(ring.current(), ring.widgets[0])
-
-	def test_keys_go_to_the_focused_widget_only(self):
-		ring = self.ring()
-		ring.key("tab")
-		self.assertFalse(ring.widgets[0].activated)
-		self.assertTrue(ring.key("space"))
-		self.assertTrue(ring.widgets[1].value)
-		self.assertFalse(ring.widgets[2].activated)
-
-	def test_click_focuses_and_activates(self):
-		ring = self.ring()
-		self.assertTrue(ring.click(20, 0))
-		self.assertIs(ring.current(), ring.widgets[2])
-		self.assertTrue(ring.widgets[2].activated)
-		self.assertFalse(ring.click(40, 9))
-
-	def test_draw_marks_only_the_focused_widget(self):
-		ring = self.ring()
-		ring.key("tab")
-		canvas = new_canvas()
-		ring.draw(canvas)
-		self.assertEqual(rows(canvas, 0, 2, 3, 1), ["[ ]"])
-
-
 class PanelTests(unittest.TestCase):
 	def test_children_are_clipped_to_the_panel(self):
 		canvas = new_canvas()

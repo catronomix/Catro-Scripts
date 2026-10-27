@@ -190,7 +190,7 @@ class CanvasTests(unittest.TestCase):
 		self.assertEqual(frame.count("abcd"), 1)
 		self.assertNotIn("\033[1;1H", frame)
 
-
+	def test_colors_are_raw_ansi_strings(self):
 		canvas = self.make()
 		canvas.draw_char(0, 0, "q", "\033[7m")
 		self.assertEqual(canvas._colors[0][0], "\033[7m")

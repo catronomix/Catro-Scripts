@@ -350,6 +350,15 @@ class DrawTests(unittest.TestCase):
 		self.assertIn("+", text)
 		self.assertIn("#3366cc", text)
 
+	def test_the_bottom_hint_fits_inside_the_popup(self):
+		popup = picker()
+		popup.draw()
+		x, y, width, height = popup.rect()
+		hint = "".join(popup.canvas._buffer[y + height - 2])
+		self.assertIn("arrows move", hint)
+		self.assertIn("Esc cancel", hint)
+		self.assertNotIn("..", hint)
+
 	def test_low_contrast_warns_but_never_blocks(self):
 		popup = picker("#777777", colours={"bg": "#666666", "zebra_bg": "#666666"})
 		popup.draw()

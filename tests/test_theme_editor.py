@@ -210,6 +210,39 @@ class RedrawBudgetTests(EditorTestCase):
 			self.ed.draw(full=True)
 			layout.assert_called_once()
 
+	def assert_incremental_matches_a_full_repaint(self):
+		"""The incremental canvas must equal a full repaint of the same state."""
+		self.ed.draw(full=False)
+		incremental = ["".join(row) for row in self.ed.canvas._buffer]
+		fresh = editor.ThemeEditor(canvas=screen.Canvas(90, 24),
+								  cap=self.cap).open()
+		fresh.message = self.ed.message
+		fresh.dirty = self.ed.dirty
+		fresh.draw(full=True)
+		full = ["".join(row) for row in fresh.canvas._buffer]
+		self.assertEqual(incremental, full)
+
+	def test_shorter_status_message_clears_the_previous_tail(self):
+		self.ed.message = ("info", "saved " * 12)
+		self.ed.dirty = True
+		self.ed.draw(full=True)
+		self.ed.canvas.render()
+		self.frame()
+		self.ed.message = ("info", "ok")
+		self.assert_incremental_matches_a_full_repaint()
+		self.assertNotIn("saved", "".join(self.ed.canvas._buffer[-2]))
+		self.assertIn("* unsaved", "".join(self.ed.canvas._buffer[-1]))
+
+	def test_clearing_dirty_removes_the_unsaved_prefix(self):
+		self.ed.message = ("info", "ok")
+		self.ed.dirty = True
+		self.ed.draw(full=True)
+		self.ed.canvas.render()
+		self.frame()
+		self.ed.dirty = False
+		self.assert_incremental_matches_a_full_repaint()
+		self.assertNotIn("* unsaved", "".join(self.ed.canvas._buffer[-1]))
+
 
 class HeadlessOpenTests(EditorTestCase):
 	def test_open_paints_a_frame_and_three_preview_titles(self):
@@ -481,7 +514,7 @@ class EditingTests(EditorTestCase):
 		self.assertIsNotNone(ed.picker)
 		key = theme_engine.PALETTE_KEYS[ed.colour_index]
 		other = dict(ed.document["looks"]["contrast-dark"])
-		# Tab moves off the hex box; Right steps the hue slider; Enter commits.
+		# Tab moves to the saturation row; Right steps saturation; Enter commits.
 		ed.pump(["tab", "right", "right", "enter"])
 		self.assertIsNone(ed.picker)
 		self.assertNotEqual(ed.document["looks"][ed._current_look()][key],

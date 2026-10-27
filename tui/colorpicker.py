@@ -254,7 +254,7 @@ class ColorPicker:
 				("h {:3.0f}  s {:3.0f}%  v {:3.0f}%".format(
 					self.hue, self.saturation * 100, self.brightness * 100),
 				 "muted"),
-				("arrows move  Enter apply  Esc cancel", "muted"))
+				("arrows move  Enter  Esc cancel", "muted"))
 		for offset, (text, role) in enumerate(rows):
 			canvas.draw_text(self.x + 2, self.grid_y + len(ROWS) + offset,
 							 truncate(text, max(1, inner - 2)),

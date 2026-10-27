@@ -144,6 +144,10 @@ def _draw_actions(editor, canvas, cap):
 
 def _draw_status(editor, canvas, cap):
 	kind, text = editor.message
+	# Both status rows are cleared first: on the incremental path a shorter
+	# message (or losing the `* unsaved` prefix) would otherwise leave the tail
+	# of the previous text behind, because nothing else paints these rows.
+	editorviews.blank_rect(canvas, 1, canvas.height - 2, canvas.width - 2, 2)
 	_blit(canvas, 1, canvas.height - 2,
 		  chrome.status(kind, text, cap=cap), canvas.width - 2)
 	hint = editorviews.HELP_LINE
