@@ -13,10 +13,14 @@ all-or-nothing, so a typo can never ship a half-theme. The tables and their
 checker live in `tui.theme_schema` and are re-exported here, so this module
 stays the public surface while `theme_schema` owns what "valid" means.
 
-Reads never raise: a missing, unreadable or invalid theme file, and a malformed
-`theme.ini`, fall back to the built-in `cozypurple` default look. Only the paths
-a user asks for - `load_theme()`, `set_selection()`, `save_theme()` - raise
-`ThemeError`, so the CLI can print one line and exit 2.
+Reads never raise for a bad theme *name*: a missing, unreadable or invalid
+theme file, and a malformed `theme.ini`, fall back to the shipped
+`themes/cozypurple.json` default look. That file is the only copy of the shipped
+palette, so it is loaded on first fallback use (never at import) and a missing
+or unreadable one raises `ThemeError` at that point - a broken install must not
+be masked by an embedded table. Only the paths a user asks for - `load_theme()`,
+`set_selection()`, `save_theme()` - otherwise raise `ThemeError`, so the CLI can
+print one line and exit 2.
 
 Precedence is override, then `CATRO_THEME` (both in `tui.palette`), then
 `theme.ini`, then the migrated legacy `config.ini [theme] mode`, then the
@@ -45,8 +49,7 @@ from . import config
 
 # The schema tables and validation live in their own module; re-exported here so
 # callers and tests keep using the engine namespace.
-from .theme_schema import (BUILTIN_DOCUMENT, BUILTIN_LOOKS,  # noqa: F401
-						   BUILTIN_PROPERTIES, DEFAULT_LOOK, DEFAULT_THEME,
+from .theme_schema import (DEFAULT_LOOK, DEFAULT_THEME, DOCUMENT_KEYS,  # noqa: F401
 						   LEGACY_LOOKS, LOOKS, PALETTE_KEYS, PROPERTY_VALUES,
 						   SELECTOR_OF, SELECTORS, SLUG,
 						   canonical_hex, validate)
@@ -179,6 +182,33 @@ def _document_for(name):
 	return normalized
 
 
+def builtin_document():
+	"""Fresh copy of the shipped default document; raises `ThemeError`.
+
+	`themes/cozypurple.json` is the only copy of the shipped palette: the
+	built-in fallback *is* that file, read on first use (lazily, once per file
+	version, cached like any other document). No hex table is embedded here, so
+	a deliberate theme change is a one-file commit and a missing or unreadable
+	shipped file surfaces as one `ThemeError` instead of a second source that
+	could silently drift.
+	"""
+	try:
+		return _copy(_cached_document(DEFAULT_THEME))
+	except ThemeError as exc:
+		raise ThemeError(
+			"shipped default theme is unavailable: {}".format(exc))
+
+
+def builtin_looks():
+	"""Copy of the shipped document's looks (look id -> eleven hexes)."""
+	return builtin_document()["looks"]
+
+
+def builtin_properties():
+	"""Copy of the shipped document's rendering properties."""
+	return builtin_document()["properties"]
+
+
 def selection():
 	"""(theme name, look selector) this checkout selects, legacy value migrated.
 
@@ -254,28 +284,32 @@ def resolve(name=None, look=None):
 
 
 def look_palette(name=None, look=None):
-	"""Copy of one look's eleven hexes; never raises."""
+	"""Copy of one look's eleven hexes; never raises for a bad theme name.
+
+	The fallback is the shipped `cozypurple` look, so it raises `ThemeError`
+	only when the shipped file itself is missing or unreadable.
+	"""
 	theme_name, look_id = resolve(name, look)
 	try:
 		return dict(_cached_document(theme_name)["looks"][look_id])
 	except (ThemeError, KeyError, OSError):
-		return dict(BUILTIN_LOOKS[look_id])
+		return builtin_looks()[look_id]
 
 
 def document(name=None):
-	"""The active (or named) validated document, or the built-in equivalent."""
+	"""The active (or named) validated document, or the shipped equivalent."""
 	try:
 		return _copy(_cached_document(resolve(name)[0]))
 	except (ThemeError, OSError):
-		return _copy(BUILTIN_DOCUMENT)
+		return builtin_document()
 
 
 def properties(name=None):
-	"""Copy of the document's rendering properties; never raises."""
+	"""Copy of the document's rendering properties; never raises for a bad name."""
 	try:
 		return dict(_cached_document(resolve(name)[0])["properties"])
 	except (ThemeError, KeyError, OSError):
-		return dict(BUILTIN_PROPERTIES)
+		return builtin_properties()
 
 
 def set_selection(name=None, look=None):
@@ -320,11 +354,17 @@ def _write_selection(name, selector):
 
 
 def save_theme(document, overwrite=False):
-	"""Validate and atomically write `themes/<name>.json`; returns the path."""
+	"""Validate and atomically write `themes/<name>.json`; returns the path.
+
+	The write is canonical in structure (key order, 2-space indent, one
+	trailing LF) but keeps the document's own hex spelling: an unedited
+	load+save is byte-identical to the file it came from, so `theme edit` only
+	ever shows the lines the user actually changed.
+	"""
 	errors = validate(document)
 	if errors:
 		raise ThemeError("invalid theme: {}".format("; ".join(errors)))
-	canonical = _ordered(document)
+	canonical = _ordered(document, lower=False)
 	target = _path_for(canonical["name"])
 	if target.exists() and not overwrite:
 		raise ThemeError("theme file exists: {}".format(target))
