@@ -49,14 +49,22 @@ This document provides instructions for AI agents working on the `catro-scripts`
       colour (`FORCE_COLOR`/`CLICOLOR_FORCE`/`CATRO_COLOR`), which gets the full
       styled table; `NO_COLOR` still wins. Do not special-case `isatty()` in a
       script: `cap.plain` already encodes this.
-    - **Themes**: `soft` (default, cozy purple), `contrast-light` and
-      `contrast-dark` are all first class
-      (`theme soft|contrast-light|contrast-dark|toggle`); colors come from the
-      palette so every colour level (`16`/`256`/`true`) downgrades
-      automatically.
+    - **Themes**: a theme is one JSON file under `themes/` (`cozypurple.json`
+      ships) holding three looks - `default` (shown as `soft`, the cozy purple
+      default), `contrast-light` and `contrast-dark` - plus rendering
+      properties (header align, border/table/button/scrollbar style, focus,
+      zebra). Selection lives in the gitignored `theme.ini` (name + look);
+      `config.ini` keeps only `color.level` and `table.style`. Change them with
+      `theme <name>`, `theme soft|light|dark|toggle`, `theme set <key> <value>`,
+      or the full-screen `theme edit` editor. Colours come from the palette so
+      every colour level (`16`/`256`/`true`) downgrades automatically.
   - **Automation**: When a script needs styled output and the helpers do not
     cover it, add the seam to `tui/` (with a test in `tests/test_tui_*.py`)
-    rather than growing a private renderer.
+    rather than growing a private renderer. The same rule covers full-screen
+    layout: `tui/editor*.py` (editor, views, painter, actions),
+    `tui/widgets.py`/`tui/widgetkit.py`, `tui/mouse.py` and
+    `tui/colorpicker.py` own their frames, widgets and input; scripts do not
+    lay out their own screens.
 - **Documentation**: 
   - Every script must have a clear title and a docstring using specific tab spacing for readability.
   - **Headers**: Every script must start with a descriptive comment title, followed by a Python docstring.

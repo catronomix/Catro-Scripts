@@ -44,6 +44,9 @@ def draw(editor):
 	if editor.prompt == "load":
 		_draw_load(editor, canvas, cap)
 	if editor.picker is not None:
+		# A resize swaps the editor's canvas; retarget the popup so it is
+		# painted again on the new grid instead of the discarded one.
+		editor.picker.canvas = canvas
 		editor.picker.cap = editor.cap
 		editor.picker.draw()
 	return editor

@@ -58,7 +58,7 @@
 
 - **`shutdown`**: Cross-platform interactive shutdown timer for Windows, macOS, and Linux. Accepts flexible time formats (e.g., 2h30m, 1d5h, 45m) and requires confirmation before scheduling. On Linux/macOS it uses `sudo` unless already root, finds `shutdown` on PATH or in `/sbin`/`/usr/sbin`, and exits 1 with one error line when the command is missing or fails.
 
-- **`theme`**: Shows and changes the checkout-local terminal preferences in `config.ini`: `theme` (overview), `theme soft|contrast-light|contrast-dark|toggle`, `theme set <key> <value>` (`theme.mode`, `color.level`, `table.style`), and `theme palette`. The same commands are available as `python -m tui`. When the file cannot be written it prints one line naming the path and exits 1.
+- **`theme`**: Shows and changes the checkout-local terminal theme. A theme is one JSON file under `themes/` (three looks plus rendering properties); the gitignored `theme.ini` selects the theme name and the look. Commands: `theme` (overview), `theme <name>`, `theme list`, `theme soft|default|light|contrast-light|dark|contrast-dark|toggle`, `theme palette`, `theme set theme.name|theme.look|color.level|table.style <value>`, and `theme edit [name]` - the full-screen editor with Save/Load and a colour picker. Selecting a missing or invalid theme prints one line and exits 2; rendering itself never breaks (built-in fallback). `python -m tui` runs the same commands.
 
 - **`timecopy`**: Copies file system timestamps (creation, modification, and access dates) from a source file to a target file. Windows supports creation time spoofing via kernel calls; Unix systems use conventional timestamp modification.
 
@@ -104,14 +104,17 @@ pipe behaviour stay consistent.
 Styling is resolved once per run, in this order: `NO_COLOR`,
 `FORCE_COLOR`/`CLICOLOR_FORCE`, `CATRO_COLOR` (`none|16|256|true`), then
 `config.ini`, then autodetection (terminal type, Windows console age, SSH, tty).
-Three themes are available - `soft` (default, mdreader's cozy purple),
-`contrast-light` and `contrast-dark` - and every script shares them: the same
-palette keys drive tables, page chrome and the full-screen reader, so switching
-`theme` switches the whole collection, never one script. `list`'s default
-appearance therefore changed from the old purple-on-black to cozy purple; the
-checked-in golden fixture pins the new default. Each colour is defined once and
-downgraded to the running colour level, so a 16-colour terminal and a truecolor
-one show the same layout.
+Colour and layout come from a named JSON theme under `themes/`
+(`cozypurple.json` ships; `themes/README.md` documents the schema). Every theme
+carries three hand-authored looks - `default` (shown as `soft`),
+`contrast-light` and `contrast-dark` - plus rendering properties: header
+alignment, border/table/button/scrollbar styles, focus style and zebra rows.
+The gitignored `theme.ini` next to the wrappers selects the theme name and the
+look, and every script shares both, so switching `theme` switches the whole
+collection, never one script. `list`'s default appearance therefore changed
+from the old purple-on-black to cozy purple; the checked-in golden fixture pins
+the new default. Each colour is defined once and downgraded to the running
+colour level, so a 16-colour terminal and a truecolor one show the same layout.
 
 A page is composed from the shared chrome helpers rather than hand-printed
 banners: `tui.header()` (title band plus rule), `tui.panel()` (framed block),
@@ -136,16 +139,39 @@ escapes - so `FORCE_COLOR=3 list.py | cat` is both coloured and readable.
 (`NO_COLOR`, `TERM=dumb`, `theme set color.level none`) only removes the escapes:
 the table keeps its borders, alignment and truncation.
 
-Settings live in `config.ini` next to the wrappers (gitignored), managed with the
-`theme` command:
+Theme selection lives in `theme.ini` next to the wrappers (gitignored, one per
+checkout); the colour level and table style stay in `config.ini`. Both are
+managed with the `theme` command, which `python -m tui` also runs:
 
-```bash
-catro-scripts theme                      # show mode, level, table style, path
-catro-scripts theme contrast-light       # or soft / contrast-dark / toggle
-catro-scripts theme set color.level 256  # auto | none | 16 | 256 | true
-catro-scripts theme set table.style ascii
-catro-scripts theme palette              # list the active palette
-```
+| command | effect |
+|---|---|
+| `theme` | overview: theme name, look, level, table style, paths, writability |
+| `theme cozypurple` | select `themes/cozypurple.json`; exit 2 when missing or invalid |
+| `theme list` | list the available themes |
+| `theme soft` / `theme default` | the default look |
+| `theme light` / `theme contrast-light` | the contrast-light look |
+| `theme dark` / `theme contrast-dark` | the contrast-dark look |
+| `theme toggle` | cycle soft -> light -> dark -> soft |
+| `theme palette` | the active look's swatches |
+| `theme set theme.name <name>` | select a theme by name |
+| `theme set theme.look <look>` | select a look (short or long spelling) |
+| `theme set color.level <level>` | `auto`, `none`, `16`, `256` or `true` |
+| `theme set table.style <style>` | `auto`, `unicode` or `ascii` |
+| `theme edit [name]` | full-screen editor (needs an interactive terminal) |
+
+Piped, every page degrades to TAB-joined `key<TAB>value` rows with no escapes.
+An unwritable `theme.ini`/`config.ini` prints one line naming the path and exits
+1; `theme edit` off a terminal prints one line on stderr and exits 2.
+
+`theme edit` opens the editor on the active theme, or on `<name>` when given. Its
+three previews show the three looks live: Properties edits the nine rendering
+properties, Colours opens a hex/HSV colour picker per palette key, and the
+picker warns below WCAG AA (4.5:1 against `bg`/`zebra_bg`) but never blocks.
+`Ctrl-S` saves atomically to `themes/<name>.json` (the filename is preseeded,
+`.json` is implied, and an existing different file asks before it is
+overwritten); Load lists every theme, marks the active one `*` and keeps an
+invalid file as an `!` row. To share a theme, copy its JSON into `themes/`,
+keeping `name` equal to the filename.
 
 `CATRO_ASCII=1` forces ASCII box fallbacks, and
 `CATRO_THEME=soft|contrast-light|contrast-dark` overrides the file for one run.
