@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import keys, mouse  # noqa: E402  (import after sys.path setup)
+from tui import keys, mouse, mouse_clicks  # noqa: E402  (import after sys.path)
 
 
 class FakeStream:
@@ -110,6 +110,79 @@ class DecodeTests(unittest.TestCase):
 		for token in ("enter", "mouse:", "mouse:press:x:1", "mouse:press:1:2:3"):
 			with self.subTest(token=token):
 				self.assertIsNone(mouse.parse_token(token))
+
+	def test_double_round_trips_like_every_other_kind(self):
+		event = ("double", 2, 6, ())
+		self.assertEqual(mouse.DOUBLE, "double")
+		self.assertEqual(mouse.token(event), "mouse:double:2:6")
+		self.assertEqual(mouse.parse_token("mouse:double:2:6"), event)
+		self.assertEqual(mouse.parse_token("mouse:double:2:6:ctrl"),
+						 ("double", 2, 6, ("ctrl",)))
+		self.assertIsNone(mouse.parse_token("mouse:dbl:2:6"))
+
+
+class ClickTrackerTests(unittest.TestCase):
+	"""The click-count model on an injected clock: no test ever sleeps."""
+
+	def setUp(self):
+		self.clock = [100.0]
+		self.tracker = mouse_clicks.ClickTracker(now=lambda: self.clock[0])
+
+	def test_first_press_is_a_press_and_the_second_in_window_is_a_double(self):
+		self.assertEqual(self.tracker.push("press", 3, 4), "press")
+		self.clock[0] += 0.1
+		self.assertEqual(self.tracker.push("press", 3, 4), "double")
+
+	def test_a_double_disarms_so_the_third_press_is_fresh(self):
+		self.tracker.push("press", 3, 4)
+		self.clock[0] += 0.1
+		self.assertEqual(self.tracker.push("press", 3, 4), "double")
+		self.clock[0] += 0.1
+		self.assertEqual(self.tracker.push("press", 3, 4), "press")
+
+	def test_presses_outside_the_window_are_two_presses(self):
+		self.tracker.push("press", 3, 4)
+		self.clock[0] += mouse_clicks.CLICK_WINDOW + 0.01
+		self.assertEqual(self.tracker.push("press", 3, 4), "press")
+		self.assertEqual(self.tracker.push("press", 3, 4), "double")
+
+	def test_presses_outside_the_radius_are_two_presses(self):
+		self.tracker.push("press", 3, 4)
+		far = mouse_clicks.CLICK_RADIUS + 1
+		self.assertEqual(self.tracker.push("press", 3 + far, 4), "press")
+		self.assertEqual(self.tracker.push("press", 3 + far, 4), "double")
+
+	def test_release_drag_and_move_cancel_the_count(self):
+		for kind in ("release", "drag", "move"):
+			with self.subTest(kind=kind):
+				tracker = mouse_clicks.ClickTracker(now=lambda: self.clock[0])
+				tracker.push("press", 3, 4)
+				self.assertEqual(tracker.push(kind, 3, 4), kind)
+				self.assertEqual(tracker.push("press", 3, 4), "press")
+
+	def test_a_wheel_notch_passes_through_without_breaking_the_pair(self):
+		self.tracker.push("press", 3, 4)
+		self.assertEqual(self.tracker.push("wheel-down", 3, 4), "wheel-down")
+		self.clock[0] += 0.1
+		self.assertEqual(self.tracker.push("press", 3, 4), "double")
+
+	def test_another_button_or_modifier_starts_a_fresh_press(self):
+		self.tracker.push("press", 3, 4)
+		self.assertEqual(self.tracker.push("press", 3, 4, ("shift",)), "press")
+		self.assertEqual(self.tracker.push("press", 3, 4, ("shift",), button=1),
+						 "press")
+
+	def test_reset_forgets_the_armed_press(self):
+		self.tracker.push("press", 3, 4)
+		self.assertIs(self.tracker.reset(), self.tracker)
+		self.assertEqual(self.tracker.push("press", 3, 4), "press")
+
+	def test_the_default_clock_and_window_are_the_documented_ones(self):
+		self.assertEqual(mouse_clicks.CLICK_WINDOW, 0.4)
+		self.assertEqual(mouse_clicks.CLICK_RADIUS, 1)
+		tracker = mouse_clicks.ClickTracker()
+		self.assertEqual(tracker.push("press", 0, 0), "press")
+		self.assertEqual(tracker.push("press", 0, 0), "double")
 
 
 class ReportingTests(unittest.TestCase):

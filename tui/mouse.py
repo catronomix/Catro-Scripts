@@ -10,11 +10,10 @@ safe twice and never raises. Import is inert.
 
 `decode()` is pure and total: one SGR sequence in, one
 `(kind, x, y, modifiers)` out, or `None` for anything else. Kinds are `press`,
-`release`, `drag`, `move` and the four `wheel-*` names; `x`/`y` are 0-based
-cells and `modifiers` names the held `shift`/`alt`/`ctrl`. `token()` /
+`double`, `release`, `drag`, `move` and the four `wheel-*` names; `x`/`y` are
+0-based cells and `modifiers` names the held `shift`/`alt`/`ctrl`. `token()` /
 `parse_token()` carry that event in the `mouse:...` form `tui.keys` emits, and
-both are total: a malformed value yields the empty string / `None`, never an
-exception.
+are total: a malformed value is the empty string / `None`, never an exception.
 
 Windows: `enable()` tries to turn on VT input through `ctypes` (imported inside
 the function, so no platform module at import time); a console that refuses it
@@ -30,6 +29,7 @@ from contextlib import contextmanager
 DISABLE = "\033[?1006l\033[?1002l\033[?1000l"
 
 PRESS = "press"
+DOUBLE = "double"
 RELEASE = "release"
 DRAG = "drag"
 MOVE = "move"
@@ -140,7 +140,7 @@ def parse_token(value):
 	except ValueError:
 		return None
 	modifiers = tuple(filter(None, parts[3].split(","))) if len(parts) == 4 else ()
-	if (parts[0] not in (PRESS, RELEASE, DRAG, MOVE) + _WHEELS
+	if (parts[0] not in (PRESS, DOUBLE, RELEASE, DRAG, MOVE) + _WHEELS
 			or not set(modifiers) <= {"shift", "alt", "ctrl"}):
 		return None
 	return (parts[0], x, y, modifiers)
