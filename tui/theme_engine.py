@@ -357,9 +357,10 @@ def save_theme(document, overwrite=False):
 	"""Validate and atomically write `themes/<name>.json`; returns the path.
 
 	The write is canonical in structure (key order, 2-space indent, one
-	trailing LF) but keeps the document's own hex spelling: an unedited
-	load+save is byte-identical to the file it came from, so `theme edit` only
-	ever shows the lines the user actually changed.
+	trailing LF, a `#` on every hex) but keeps the document's own hex case, so
+	an already-canonical document round-trips byte-identically and a
+	non-canonical one is canonicalised exactly once. `theme edit` therefore
+	only ever shows the lines the user actually changed.
 	"""
 	errors = validate(document)
 	if errors:

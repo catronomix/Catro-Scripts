@@ -60,9 +60,10 @@ exits 2 without one.
   (`themes/<name>.json`); `display` is free text for page titles.
 - `looks` holds exactly `default`, `contrast-dark` and `contrast-light`, each
   with exactly `bg surface fg muted accent success warn error border header
-  zebra_bg`, each a `#rrggbb` string (`#` optional on read; the spelling a
-  document carries is preserved on save, so an untouched file round-trips
-  byte for byte).
+  zebra_bg`, each a `#rrggbb` string. A save keeps the case the document
+  already carries but canonicalises structure once (a missing `#` is added,
+  keys re-ordered, 2-space indent, one trailing LF), so an already-canonical
+  file round-trips byte for byte and a hand-written one is tidied once.
 - `properties` holds all nine keys; `table_zebra` is a boolean. Allowed values
   live in `tui/theme_schema.py` (`PROPERTY_VALUES`, re-exported by
   `tui/theme_engine.py`).
