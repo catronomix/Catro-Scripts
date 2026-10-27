@@ -4,9 +4,13 @@
 			============
 String-returning building blocks for a page of terminal output: a masthead, a
 framed panel, a horizontal rule, a key/value field, a status line, a filled
-background line, a menu, a button label and a scrollbar column. Nothing here
-prints and nothing returns a trailing newline, so the caller decides how the
-lines land.
+background line and a menu. Nothing here prints and nothing returns a trailing
+newline, so the caller decides how the lines land.
+
+The two interactive seams - the styled button label and the scrollbar column,
+with their decoration/style/glyph tables - live in `tui.chrome_controls` and are
+re-exported here, so `chrome.button()`/`chrome.scrollbar()` keep resolving for
+`tui.widgets`, `editorviews` and the properties tests.
 
 The module is `tui.chrome`, not `tui.page`, because `tui.page` is the pager
 helper (`pager.page`) and keeping that callable is part of the public surface.
@@ -14,25 +18,19 @@ helper (`pager.page`) and keeping that callable is part of the public surface.
 `tui.header(...)` or `from tui import chrome`.
 
 Every colour goes through `palette.prefix()`/`palette.style()`, which is what
-makes the four levels and the three themes work here for free: `true` emits
-`38;2`, `256` the nearest index, `16` the basic stop, and `none` keeps the
-layout while dropping every escape. The frame comes from `table.glyphs_for`:
-`cap.unicode` false (or `table.style = ascii`) switches it to `+ - |`.
-
-Two degradations are deliberate and pinned by the tests:
-
-	- `cap.plain` (a pipe) is the machine-readable mode: no frame, no escapes,
-		no background fill, one plain line per row and TAB-joined fields. A rule
-		becomes an empty string and a masthead drops it; a menu keeps its numbers
-		and marks the selected row with `>`.
-	- Level `none` on a terminal is the mirror image: the frame and the padding
-		stay, only the escapes go.
-
-`width` arguments resolve as: explicit width > `cap.width` > the content's own
-width. A framed panel or a filled bar never exceeds a width it was given.
+makes the four levels and the three themes work here for free; the frame comes
+from `table.glyphs_for`. Two degradations are deliberate and pinned: `cap.plain`
+(a pipe) is the machine-readable mode (no frame, no escapes, no background
+fill, one line per row, TAB-joined fields, a menu keeps its numbers and marks
+the selected row with `>`), and level `none` on a terminal is its mirror image
+(the frame and padding stay, only the escapes go). `width` resolves as explicit
+width > `cap.width` > the content's own width.
 """
 
 from . import caps, palette, table
+from .chrome_controls import (ASCII_DECORATIONS, BUTTON_DECORATIONS,  # noqa: F401
+							  BUTTON_STYLES, SCROLLBAR_GLYPHS, button,
+							  scrollbar)
 from .text import display_width, pad, truncate as _truncate
 
 # A standalone rule with no width anywhere has to pick something; this is the
@@ -41,54 +39,20 @@ DEFAULT_RULE_WIDTH = 40
 
 # kind -> palette key. Unknown kinds are treated as "info" so a typo can never
 # raise inside a renderer.
-STATUS_COLOURS = {
-	"ok": "success",
-	"warn": "warn",
-	"error": "error",
-	"info": "accent",
-}
+STATUS_COLOURS = {"ok": "success", "warn": "warn",
+				  "error": "error", "info": "accent"}
 # ASCII markers, valid under every glyph set and encoding.
-STATUS_MARKERS = {
-	"ok": "[ok]",
-	"warn": "[warn]",
-	"error": "[error]",
-	"info": "[info]",
-}
+STATUS_MARKERS = {"ok": "[ok]", "warn": "[warn]",
+				  "error": "[error]", "info": "[info]"}
 MENU_POINTER = ">"
-
-# button_decoration -> (prefix, suffix) wrapped around the label. `chevron`
-# uses the guillemets so it reads as a chevron without doubling `angles`.
-BUTTON_DECORATIONS = {
-	"none": ("", ""), "brackets": ("[ ", " ]"), "angles": ("< ", " >"),
-	"braces": ("{ ", " }"), "colons": (": ", " :"), "pipes": ("| ", " |"),
-	"chevron": ("\u00ab ", " \u00bb"), "ellipsis": ("\u2026 ", " \u2026"),
-}
-
-# The ASCII spelling of the two decorations a cp1252 console cannot take.
-ASCII_DECORATIONS = dict(BUTTON_DECORATIONS, chevron=("<< ", " >>"),
-						 ellipsis=("... ", " ..."))
-
-# button_style -> the palette roles and attributes the label is painted with.
-BUTTON_STYLES = {
-	"filled": {"fg": "bg", "bg": "accent"}, "outline": {"fg": "border"},
-	"plain": {"fg": "fg"}, "underline": {"fg": "fg", "underline": True},
-}
-
-# scrollbar_style -> (thumb, track, ascii thumb, ascii track).
-SCROLLBAR_GLYPHS = {
-	"block": ("\u2588", "\u2591", "#", "."),
-	"line": ("\u2503", "\u2502", "#", "."),
-	"ascii": ("#", "|", "#", "|"),
-}
 
 
 def header(title, subtitle=None, *, width=None, cap=None, theme=None):
 	"""Masthead: title, optional subtitle, then a border rule.
 
 	Title is `header` + bold on `surface`, subtitle `muted` on `surface`; both
-	are bands padded to the page width. The theme's `header_align` left/center/
-	right places the label inside the band; `left` is the shipped default and
-	keeps the leading-space shape byte for byte. Piped, it is just the lines.
+	are bands padded to the page width. `header_align` left/center/right places
+	the label inside the band; `left` is the shipped, byte-pinned default.
 	"""
 	cap = cap or caps.detect()
 	title = _flat(title)
@@ -129,9 +93,8 @@ def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
 	"""Framed box with `surface` interior and the title in the top rule.
 
 	`body` is a string (one line per `\\n`) or an iterable of lines; lines are
-	truncated to the interior, never wrapped, and never raise on odd input.
-	`padding` is the number of spaces between the frame and the text on each
-	side. A caller-supplied `width` wins, so a panel can be pinned to a column.
+	truncated to the interior, never wrapped, never raise. `padding` is the
+	spaces between frame and text on each side; a caller `width` wins.
 	"""
 	cap = cap or caps.detect()
 	padding = max(0, int(padding))
@@ -187,9 +150,9 @@ def field(key, value, *, width=None, cap=None, theme=None):
 def status(kind, text, *, width=None, cap=None, theme=None):
 	"""`[ok]`/`[warn]`/`[error]`/`[info]` marker plus text.
 
-	The marker carries the colour (success/warn/error/accent) and the text stays
+	The marker carries the colour (success/warn/error/accent), the text stays
 	`fg`, so a long message is not painted in an alarm colour. `width` is the
-	total line width; the text truncates to fit. Unknown kinds render as info.
+	total line width; the text truncates. Unknown kinds render as info.
 	"""
 	cap = cap or caps.detect()
 	kind = str(kind).strip().lower()
@@ -210,8 +173,7 @@ def fill(text, width=None, *, bg="bg", fg="fg", cap=None, theme=None):
 
 	This is the single-line `bg` band a full-screen page uses for footers and
 	headers; it truncates rather than wrapping, because a band that spills over
-	the edge paints the next row. With no width anywhere the text is styled but
-	not padded. Piped, the text comes back plain.
+	the edge paints the next row. No width anywhere styles without padding.
 	"""
 	cap = cap or caps.detect()
 	text = _flat(text)
@@ -228,11 +190,10 @@ def fill(text, width=None, *, bg="bg", fg="fg", cap=None, theme=None):
 def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	"""Numbered rows, one per item, with a selected-row bar.
 
-	The selected row is `accent` on `surface` behind an ASCII `>` pointer; the
-	other rows are `fg`. `selected=None` means "nothing is selected yet", which
-	is what the numbered `ask_choice` prompt wants. Rows are numbered from 1 so
-	a prompt can ask for the number it prints. A caller `width` pins the bar;
-	otherwise it spans the widest row.
+	The selected row is `accent` on `surface` behind an ASCII `>` pointer, the
+	others `fg`. `selected=None` means "nothing selected yet" (`ask_choice`).
+	Rows number from 1 so a prompt can ask for the number it prints; a caller
+	`width` pins the bar, otherwise it spans the widest row.
 	"""
 	cap = cap or caps.detect()
 	items = [_flat(item) for item in items]
@@ -268,70 +229,6 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	return "\n".join(lines)
 
 
-def button(label, *, focused=False, disabled=False, cap=None, theme=None):
-	"""One button label, shaped by `button_style`/`button_decoration`.
-
-	The stage-3 widgets wrap this seam, they never re-implement it. The
-	decoration always wraps the label, so the whole button carries the style;
-	`focused` re-styles per `focus_style` and `disabled` forces `muted` (it
-	wins over both). Piped, the decorated label comes back with no escapes.
-	"""
-	cap = cap or caps.detect()
-	properties = palette.properties()
-	decorations = BUTTON_DECORATIONS if cap.unicode else ASCII_DECORATIONS
-	decoration = str(properties.get("button_decoration", "brackets"))
-	left, right = decorations.get(decoration, BUTTON_DECORATIONS["brackets"])
-	text = left + _flat(label) + right
-	if cap.plain:
-		return text
-	style = str(properties.get("button_style", "filled"))
-	attributes = dict(BUTTON_STYLES.get(style, BUTTON_STYLES["filled"]))
-	if focused:
-		focus = str(properties.get("focus_style", "reverse"))
-		if focus == "accent":
-			# Replacing the ground keeps the label legible on the accent.
-			attributes.pop("bg", None)
-			attributes["fg"] = "accent"
-		elif focus == "underline":
-			attributes["underline"] = True
-		else:
-			attributes["reverse"] = True
-	if disabled:
-		attributes = {"fg": "muted"}
-	return palette.style(text, cap=cap, theme=theme, **attributes)
-
-
-def scrollbar(height, *, offset=0, total=None, cap=None, theme=None):
-	"""One single-column cell per row: `accent` thumb over a `muted` track.
-
-	`scrollbar_style` picks the glyph pair (`block` blocks, `line` lines,
-	`ascii` `#`/`|`). `total` is the content height (`None` means everything
-	fits) and `offset` is clamped to the scrollable span; a zero `height` gives
-	an empty column and a zero `total` (or a sub-cell thumb) all track, never
-	an error. `cap.unicode` false and `cap.plain` use the ASCII pair.
-	"""
-	cap = cap or caps.detect()
-	height = max(0, int(height))
-	if height == 0:
-		return []
-	name = str(palette.properties().get("scrollbar_style", "block"))
-	thumb, track, ascii_thumb, ascii_track = SCROLLBAR_GLYPHS.get(
-		name, SCROLLBAR_GLYPHS["block"])
-	if not cap.unicode or cap.plain:
-		thumb, track = ascii_thumb, ascii_track
-	content = height if total is None else max(0, int(total))
-	length = start = 0
-	if content > 0:
-		length = min(height, max(1, int(round(height * height / content))))
-		span = max(0, content - height)
-		offset = min(max(0, int(offset)), span)
-		start = int(round(offset * (height - length) / span)) if span else 0
-	last = start + length
-	return [palette.style(thumb if start <= row < last else track,
-						  fg="accent" if start <= row < last else "muted",
-						  cap=cap, theme=theme) for row in range(height)]
-
-
 def _top_frame(glyphs, inner, title, cap, theme):
 	"""Top border with the title cut into it, or a plain rule when untitled."""
 	if not title:
@@ -355,9 +252,9 @@ def _top_frame(glyphs, inner, title, cap, theme):
 def _band(text, width, *, fg, bold=False, align="left", cap, theme):
 	"""One full-width `surface` band with the label placed by `align`.
 
-	`left` is the shipped shape: one space, the label, then the padding (and
-	one trailing space), so the default masthead bytes do not move. `center`
-	and `right` only move the padding inside the same two end spaces.
+	`left` is the shipped shape: one space, the label, the padding (and one
+	trailing space), so the masthead bytes do not move; `center`/`right` only
+	move the padding inside those two end spaces.
 	"""
 	inner = max(0, width - 2)
 	label = _truncate(text, inner)

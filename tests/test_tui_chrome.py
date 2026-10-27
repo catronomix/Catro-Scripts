@@ -27,7 +27,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, chrome, table  # noqa: E402  (import after sys.path setup)
+from tui import caps, chrome, chrome_controls, table  # noqa: E402  (import after sys.path setup)
 from tui.text import display_width, strip_ansi  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
@@ -330,6 +330,21 @@ class GlyphSourceTests(unittest.TestCase):
 		cap = capabilities(unicode=False)
 		self.assertIs(table.glyphs_for(cap), table.ASCII_GLYPHS)
 		self.assertIn("+", chrome.panel("T", "x", cap=cap))
+
+
+class ControlShimTests(unittest.TestCase):
+	"""The button/scrollbar seams moved to `tui.chrome_controls`; old paths win."""
+
+	def test_the_moved_names_still_resolve_through_the_chrome_module(self):
+		for name in ("button", "scrollbar", "BUTTON_DECORATIONS",
+					 "ASCII_DECORATIONS", "BUTTON_STYLES", "SCROLLBAR_GLYPHS"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(chrome, name), getattr(chrome_controls, name))
+
+	def test_the_ascii_table_derives_from_the_unicode_one(self):
+		self.assertEqual(chrome_controls.ASCII_DECORATIONS["chevron"], ("<< ", " >>"))
+		self.assertEqual(chrome_controls.BUTTON_DECORATIONS["chevron"],
+						 ("\u00ab ", " \u00bb"))
 
 
 if __name__ == "__main__":

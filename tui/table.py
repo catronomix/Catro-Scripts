@@ -24,9 +24,6 @@ from .text import display_width, pad, truncate as _truncate
 MIN_COLUMN = 4
 
 
-# A borderless/plain cell join and the pinned span shape live below; see the
-# contract for why the borders are prefixed inside the row instead of resetting.
-
 def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 				 widths=None, cap=None, theme=None):
 	"""Render a table; returns text without a trailing newline.
