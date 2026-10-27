@@ -8,6 +8,12 @@ validation - the tables above are the only place that knows what a valid
 document looks like, so the checks live next to them and the engine only calls
 `validate()`.
 
+`validate()` knows one schema: the current one (schema 2). A schema-1 document
+is read through `tui.theme_migrate` first, so `validate_any()` renames before it
+checks and an old file keeps loading; the strict `validate()` stays the writer's
+gate. A schema-2 document that still carries the retired `selection_style`
+property is rejected as an unknown key, never silently dropped.
+
 `theme_engine` re-exports `canonical_hex` and `validate`, so callers keep using
 the engine namespace. Pure data plus pure functions: no I/O, no terminal, no
 third-party import, which keeps the engine well inside the `tui/` file budget
@@ -19,7 +25,8 @@ truth, and `tui.theme_engine` loads it lazily for the built-in fallback.
 
 import re
 
-from .picker_keys import CORNER_CHARS, PALETTE_KEYS, V1_PALETTE_KEYS
+from .picker_keys import CORNER_CHARS, PALETTE_KEYS
+from .theme_migrate import migrate_doc
 
 DEFAULT_THEME = "cozypurple"
 DEFAULT_LOOK = "soft"
@@ -39,15 +46,6 @@ PROPERTY_VALUES = {
 	"scrollbar_style": ("block", "line", "ascii"),
 	"corner-char": CORNER_CHARS,
 }
-
-# Schema 1 is still accepted and read; its own key/property set is the only
-# thing that validates it, so a v1 file is never refused or silently rewritten.
-V1_PROPERTY_VALUES = dict(PROPERTY_VALUES, selection_style=("accent",))
-del V1_PROPERTY_VALUES["corner-char"]
-
-# schema -> (palette keys, property table) the checker validates against.
-SCHEMAS = {1: (V1_PALETTE_KEYS, V1_PROPERTY_VALUES),
-		   2: (PALETTE_KEYS, PROPERTY_VALUES)}
 
 # The document's top-level keys, in the order `_ordered()` writes them. Anything
 # else is rejected rather than dropped by a save.
@@ -93,7 +91,7 @@ def canonical_hex(value, lower=True):
 
 
 def validate(document):
-	"""Every reason `document` is not a valid theme; [] when it is valid."""
+	"""Every reason `document` is not a valid schema-2 theme; [] when it is."""
 	if not isinstance(document, dict):
 		return ["theme document must be a JSON object"]
 	errors = []
@@ -104,40 +102,51 @@ def validate(document):
 		errors.append("unknown top-level keys: {}".format(
 			", ".join(str(key) for key in unknown)))
 	schema = document.get("schema")
-	if isinstance(schema, bool) or schema not in SCHEMAS:
-		errors.append("schema must be 1 or 2")
-		keys, properties = PALETTE_KEYS, PROPERTY_VALUES
-	else:
-		keys, properties = SCHEMAS[schema]
+	if isinstance(schema, bool) or schema != 2:
+		errors.append("schema must be 2")
 	name = document.get("name")
 	if not isinstance(name, str) or not SLUG.match(name):
 		errors.append("name must be a slug matching [a-z0-9][a-z0-9-]*")
 	display = document.get("display")
 	if not isinstance(display, str) or not display.strip():
 		errors.append("display must be non-empty text")
-	errors.extend(_property_errors(document.get("properties"), properties))
-	errors.extend(_look_errors(document.get("looks"), keys))
+	errors.extend(_property_errors(document.get("properties")))
+	errors.extend(_look_errors(document.get("looks")))
 	return errors
 
 
-def _property_errors(properties, allowed_values):
+def validate_any(document):
+	"""`validate()` after the v1->v2 migrate step: an old file still reads.
+
+	Migration is in memory and only renames; the document then meets the same
+	strict schema-2 checker the writer uses. A malformed v1 document that
+	migration cannot walk is reported, never raised.
+	"""
+	try:
+		document = migrate_doc(document)
+	except (AttributeError, KeyError, TypeError):
+		return ["theme document must be a JSON object"]
+	return validate(document)
+
+
+def _property_errors(properties):
 	if not isinstance(properties, dict):
 		return ["properties must be an object"]
 	errors = []
-	for key, allowed in allowed_values.items():
+	for key, allowed in PROPERTY_VALUES.items():
 		if key not in properties:
 			errors.append("properties is missing {}".format(key))
 		elif not any(properties[key] == value and
 					 type(properties[key]) is type(value) for value in allowed):
 			errors.append("invalid property {}: {!r}".format(
 				key, properties[key]))
-	unknown = sorted(set(properties) - set(allowed_values))
+	unknown = sorted(set(properties) - set(PROPERTY_VALUES))
 	if unknown:
 		errors.append("unknown properties: {}".format(", ".join(unknown)))
 	return errors
 
 
-def _look_errors(looks, keys):
+def _look_errors(looks):
 	if not isinstance(looks, dict):
 		return ["looks must be an object"]
 	errors = []
@@ -147,9 +156,9 @@ def _look_errors(looks, keys):
 			errors.append("looks is missing {}".format(look))
 			continue
 		errors.extend("looks.{} has no valid {} colour".format(look, key)
-					  for key in keys
+					  for key in PALETTE_KEYS
 					  if canonical_hex(entry.get(key)) is None)
-		unknown = sorted(set(entry) - set(keys))
+		unknown = sorted(set(entry) - set(PALETTE_KEYS))
 		if unknown:
 			errors.append("looks.{} has unknown keys: {}".format(
 				look, ", ".join(unknown)))

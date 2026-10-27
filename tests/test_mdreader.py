@@ -246,19 +246,19 @@ class MdreaderPreflightTests(unittest.TestCase):
         for mode, theme in enumerate(mdreader.THEME_MODES):
             colours = mdreader.tui.palette.palette(theme)
             cases = (
-                ("heading", Style(color=colours["header"], bold=True), 2),
-                ("link", Style(color=colours["warn"], underline=True), 3),
+                ("heading", Style(color=colours["header-fg"], bold=True), 2),
+                ("link", Style(color=colours["fg-warn"], underline=True), 3),
                 ("code", Style(color=colours["fg"],
-                               bgcolor=colours["surface"]), 4),
-                ("quote", Style(color=colours["muted"], italic=True), 5),
+                               bgcolor=colours["bg-inside"]), 4),
+                ("quote", Style(color=colours["fg-muted"], italic=True), 5),
                 # contrast-light uses the same fill for surface and zebra, so a
                 # zebra row is indistinguishable from a normal cell there.
                 ("zebra", Style(color=colours["fg"],
-                                bgcolor=colours["zebra_bg"]),
-                 7 if colours["zebra_bg"].lower() != colours["surface"].lower()
+                                bgcolor=colours["bg-stripe"]),
+                 7 if colours["bg-stripe"].lower() != colours["bg-inside"].lower()
                  else 4),
-                ("table header", Style(color=colours["header"],
-                                       bgcolor=colours["surface"]), 9),
+                ("table header", Style(color=colours["header-fg"],
+                                       bgcolor=colours["bg-inside"]), 9),
             )
             for role, style, expected in cases:
                 with self.subTest(mode=mode, role=role):
@@ -288,14 +288,14 @@ class MdreaderPreflightTests(unittest.TestCase):
         for mode, theme_id in enumerate(mdreader.THEME_MODES):
             colours = mdreader.tui.palette.palette(theme_id)
             styles = mdreader.get_rich_theme(mode).styles
-            for spec, key in (("markdown.h1", "header"),
-                              ("markdown.table.border", "border"),
-                              ("markdown.block_quote", "muted")):
+            for spec, key in (("markdown.h1", "header-fg"),
+                              ("markdown.table.border", "border-fg"),
+                              ("markdown.block_quote", "fg-muted")):
                 with self.subTest(mode=mode, style=spec):
                     self.assertIn(colours[key].lower(), str(styles[spec].color))
             with self.subTest(mode=mode, style="markdown.code"):
                 self.assertIn(colours["fg"].lower(), str(styles["markdown.code"].color))
-                self.assertIn(colours["surface"].lower(),
+                self.assertIn(colours["bg-inside"].lower(),
                               str(styles["markdown.code"].bgcolor))
             headers.append(str(styles["markdown.h1"].color))
         self.assertEqual(len(set(headers)), 3, "the three modes must differ")

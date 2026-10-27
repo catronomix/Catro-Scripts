@@ -3,11 +3,11 @@
 		SCHEMA-2 MIGRATION AND CORNERS
 		==============================
 Pins the additive half of the palette restructure: a schema-1 document is
-validated against its own key set and migrated in memory (nine renames, five
-byte-preserving derivations, the retired `selection_style` and the default
-`corner-char`), a save writes schema 2, and a read never rewrites a v1 file.
-The corner seam is pinned separately: only an explicit character moves a byte,
-and the override lands after the console's ASCII degradation.
+migrated in memory and then validated as schema 2 (nine renames, five
+byte-preserving derivations, the retired `selection_style` property and the
+default `corner-char`), a save writes schema 2, and a read never rewrites a v1
+file. The corner seam is pinned separately: only an explicit character moves a
+byte, and the override lands after the console's ASCII degradation.
 
 Every engine test points `THEMES_DIR`/`THEME_FILE` at a temporary folder, so
 the checkout never gains a theme or a `theme.ini`.
@@ -147,18 +147,22 @@ class EngineMigrationTests(Seam):
 		self.assertEqual(self.shipped.read_bytes(), before,
 						 "a read must not rewrite the file")
 
-	def test_a_v1_file_is_still_valid_on_its_own_terms(self):
-		self.assertEqual(theme_engine.validate(v1_document()), [])
+	def test_a_v1_document_is_read_but_only_v2_validates(self):
+		errors = theme_engine.validate(v1_document())
+		self.assertIn("schema must be 2", errors)
+		self.assertEqual(theme_engine.validate_any(v1_document()), [])
 		document = v1_document()
 		document["looks"]["default"]["fg-muted"] = "#112233"
 		self.assertTrue(any("unknown keys" in error
 							for error in theme_engine.validate(document)))
 
-	def test_a_v2_document_rejects_the_retired_spelling(self):
+	def test_a_v2_document_rejects_the_retired_properties(self):
 		document = theme_engine.builtin_document()
 		document["looks"]["default"]["surface"] = "#112233"
-		self.assertTrue(any("unknown keys" in error
-							for error in theme_engine.validate(document)))
+		document["properties"]["selection_style"] = "accent"
+		errors = theme_engine.validate(document)
+		self.assertTrue(any("unknown keys" in error for error in errors))
+		self.assertIn("unknown properties: selection_style", errors)
 
 	def test_save_writes_schema_two_and_canonicalises_once(self):
 		path = theme_engine.save_theme(

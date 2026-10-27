@@ -217,7 +217,7 @@ class FillTests(unittest.TestCase):
 		self.assertEqual(self.run_fill(), screen.CLEAR_HOME + "\n".join([row] * 3))
 
 	def test_role_is_a_palette_key(self):
-		self.assertIn("\033[48;2;41;34;56m", self.run_fill(role="surface"))
+		self.assertIn("\033[48;2;41;34;56m", self.run_fill(role="bg-inside"))
 
 	def test_nothing_is_written_off_a_tty(self):
 		self.assertEqual(self.run_fill(tty=False), "")

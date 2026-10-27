@@ -273,7 +273,7 @@ class FillTests(unittest.TestCase):
 						 FG + BG + "hi    " + RESET)
 
 	def test_custom_roles(self):
-		self.assertEqual(chrome.fill("hi", width=4, bg="surface", fg="muted", cap=TRUE),
+		self.assertEqual(chrome.fill("hi", width=4, bg="bg-inside", fg="fg-muted", cap=TRUE),
 						 BORDER + SURFACE + "hi  " + RESET)
 
 	def test_truncates_rather_than_overflowing(self):

@@ -9,11 +9,11 @@ theme needs, drops the retired `selection_style` property and adds
 `corner-char: none`; hex case is copied, never rewritten, so a migrated look
 renders exactly the bytes the file spelled.
 
-The map lives here (not in `tui.theme_engine`, which is at its budget) and
-`tui.palette` imports it as its role aliases, so a v1 spelling and its v2 key
-can never disagree. Validation stays in `tui.theme_schema`: a document is
-checked against its own schema before it is migrated, and a v1 file is never
-refused or rewritten by a read.
+The map lives here (not in `tui.theme_engine`, which is at its budget) and is
+the only reader of a v1 spelling: `tui.palette` publishes schema-2 roles only,
+so an old name is just an unknown role there. Validation stays in
+`tui.theme_schema`: `validate_any()` migrates first, then the schema-2 checker
+runs, and a v1 file is never refused or rewritten by a read.
 """
 
 from .picker_keys import PALETTE_KEYS, V1_PALETTE_KEYS

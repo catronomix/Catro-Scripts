@@ -89,7 +89,7 @@ def draw_menu(stream, names, selected_idx, cap):
 	"""Paint one menu frame; every write goes to `stream` (test seam)."""
 	def border(text):
 		# The border used to be the old menu's hardcoded magenta SGR (ESC[35m).
-		# It is now the shared palette's "border" key, because the rest of the
+		# It is now the shared palette's "border-fg" key, because the rest of the
 		# house style moved with it: a truecolor accent normally, and ESC[95m
 		# (bright magenta) of the standard 16, so the identity still reads as
 		# magenta without hardcoding a code that 256/truecolor themes cannot

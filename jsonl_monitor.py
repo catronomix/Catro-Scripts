@@ -377,7 +377,7 @@ def get_recency_color(delta_s, colours):
     the gap between them fades linearly. The endpoints come from the active
     palette so every theme keeps its own green-to-cold ramp.
     """
-    fresh = _hex(colours["success"])
+    fresh = _hex(colours["fg-success"])
     cold = _hex(colours["bg"])
     if delta_s < 5:
         return fresh
@@ -623,14 +623,14 @@ def legend_fits(cols):
 
 def _legend_rule(glyphs, left, right, cap):
     """A horizontal legend rule, exactly LEGEND_WIDTH cells wide."""
-    border = tui.prefix(fg="border", cap=cap)
+    border = tui.prefix(fg="border-fg", cap=cap)
     return (border + glyphs[left] + glyphs["h"] * LEGEND_INNER
             + glyphs[right] + _reset(cap))
 
 
 def _legend_row(content, glyphs, cap):
     """One framed row: side borders around exactly LEGEND_INNER cells."""
-    border = tui.prefix(fg="border", cap=cap)
+    border = tui.prefix(fg="border-fg", cap=cap)
     return (border + glyphs["v"] + content + border + glyphs["v"]
             + _reset(cap))
 
@@ -642,7 +642,7 @@ def _legend_body(segments, cap):
     after a coloured sample stays on the surface colour and the row keeps its
     width whatever the sample lengths are.
     """
-    base = tui.prefix(fg="fg", bg="surface", cap=cap)
+    base = tui.prefix(fg="fg", bg="bg-inside", cap=cap)
     body = " "  # one cell of gutter, as the old box had
     used = 1
     for label, fg, bg in segments:
@@ -650,7 +650,7 @@ def _legend_body(segments, cap):
         if room <= 0:
             break
         label = tui.truncate(label, room)
-        span_bg = "surface" if bg is None else bg
+        span_bg = "bg-inside" if bg is None else bg
         body += (tui.prefix(fg=fg, bg=span_bg, cap=cap) + label
                  + _reset(cap) + base)
         used += tui.display_width(label)
@@ -659,8 +659,8 @@ def _legend_body(segments, cap):
 
 def _legend_title(title, cap):
     """The centred, bold title row content."""
-    base = tui.prefix(fg="fg", bg="surface", cap=cap)
-    lead = tui.prefix(fg="header", bg="surface", bold=True, cap=cap)
+    base = tui.prefix(fg="fg", bg="bg-inside", cap=cap)
+    lead = tui.prefix(fg="header-fg", bg="bg-inside", bold=True, cap=cap)
     title = tui.truncate(title, LEGEND_INNER)
     used = tui.display_width(title)
     left = max(0, (LEGEND_INNER - used) // 2)
@@ -671,8 +671,8 @@ def _legend_title(title, cap):
 
 def _legend_heading(text, cap):
     """A section heading row content."""
-    base = tui.prefix(fg="fg", bg="surface", cap=cap)
-    lead = tui.prefix(fg="header", bg="surface", bold=True, cap=cap)
+    base = tui.prefix(fg="fg", bg="bg-inside", cap=cap)
+    lead = tui.prefix(fg="header-fg", bg="bg-inside", bold=True, cap=cap)
     text = tui.truncate(text, LEGEND_INNER)
     used = tui.display_width(text)
     return (base + lead + text + _reset(cap) + base
@@ -772,7 +772,7 @@ def _centre(text, width):
     return " " * left + text + " " * (space - left)
 
 
-def _bar(text, cols, cap, fg="fg", bg="surface", bold=False, align="center"):
+def _bar(text, cols, cap, fg="fg", bg="bg-inside", bold=False, align="center"):
     """One full-width chrome bar, fitted to `cols` cells and aligned inside it.
 
     The plain case is `chrome.fill()` (same truncate/pad/background rules). The
@@ -827,25 +827,25 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
 
             is_selected = data_index == monitor.selected_index
 
-            base_bg = tui.prefix(bg="surface" if ui_row % 2 == 1 else "bg", cap=cap)
+            base_bg = tui.prefix(bg="bg-inside" if ui_row % 2 == 1 else "bg", cap=cap)
             shade = ZEBRA_SHADE if ui_row % 2 == 1 else 0
 
             fname_disp = tui.truncate(state.filename, left_col_width - 1)
             if state.scroll_offset > 0:
                 prefix_char = ">"
-                prefix_color = tui.prefix(fg="error", cap=cap)
+                prefix_color = tui.prefix(fg="fg-error", cap=cap)
             elif is_selected:
                 prefix_char = ">"
                 prefix_color = tui.prefix(fg="fg", bold=True, cap=cap)
             else:
                 prefix_char = " "
-                prefix_color = tui.prefix(fg="muted", cap=cap)
+                prefix_color = tui.prefix(fg="fg-muted", cap=cap)
 
             if is_selected:
                 fname_color = tui.prefix(fg="fg", bold=True, cap=cap)
-                fname_bg = tui.prefix(bg="accent", cap=cap)
+                fname_bg = tui.prefix(bg="fg-accent", cap=cap)
             else:
-                fname_color = tui.prefix(fg="muted", cap=cap)
+                fname_color = tui.prefix(fg="fg-muted", cap=cap)
                 fname_bg = base_bg
 
             left_col_str = (
@@ -893,7 +893,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
             padding = " " * max(0, content_width - chars_rendered)
             content_str += padding
 
-            spacer = tui.prefix(fg="muted", cap=cap) + glyphs["v"] + reset + base_bg
+            spacer = tui.prefix(fg="fg-muted", cap=cap) + glyphs["v"] + reset + base_bg
             recency_block = rec_color + _marker(cap) + reset
             row_str = (
                 f"{left_col_str}{spacer}{content_str}{spacer}{recency_block}{reset}"
@@ -901,7 +901,7 @@ def render_ui(monitor, last_rendered_rows, screen, cap):
 
         else:
             row_str = (
-                tui.prefix(bg="surface" if ui_row % 2 == 1 else "bg", cap=cap)
+                tui.prefix(bg="bg-inside" if ui_row % 2 == 1 else "bg", cap=cap)
                 + (" " * cols) + reset
             )
 
@@ -1007,7 +1007,7 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
         f" FULL VIEW: {state.filename} | Entry {curr_event_idx + 1}/{total_events}"
         f" | Line {scroll_y + 1}/{total_lines} "
     )
-    header_str = _bar(header_text, cols, cap, fg="bg", bg="accent", bold=True,
+    header_str = _bar(header_text, cols, cap, fg="bg", bg="fg-accent", bold=True,
                       align="left")
 
     if last_rendered_rows.get("fs_header") != header_str:
@@ -1025,7 +1025,7 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
 
             shade = FULLSCREEN_SHADE if (line_idx % 2 == 1) else 0
             base_bg = tui.prefix(
-                bg="surface" if (line_idx % 2 == 1) else "bg", cap=cap)
+                bg="bg-inside" if (line_idx % 2 == 1) else "bg", cap=cap)
 
             line_str = ""
             chars_rendered = 0
@@ -1077,7 +1077,7 @@ def render_fullscreen_ui(monitor, last_rendered_rows, screen, cap):
         " [\u2190/\u2192] Prev/Next Entry | [\u2191/\u2193/PgUp/PgDn] Scroll"
         " | [h] Col | [l] Legend | [Esc/Enter/q] Back "
     )
-    footer_str = _bar(footer_text, cols, cap, fg="fg", bg="surface")
+    footer_str = _bar(footer_text, cols, cap, fg="fg", bg="bg-inside")
 
     if last_rendered_rows.get("fs_footer") != footer_str:
         screen.move(0, rows - 1)

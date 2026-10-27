@@ -9,12 +9,11 @@ data; `tui.palette` stays the public styling API and delegates here.
 A document is `{schema, name, display, properties, looks}`: exactly the three
 looks `default`, `contrast-dark`, `contrast-light` with the sixteen schema-2
 palette keys as `#rrggbb` strings, plus the nine rendering properties. A
-schema-1 file is validated against its own key set and migrated in memory on
-read (`tui.theme_migrate`), so an old theme keeps loading and a save writes the
-current schema. Validation is
-all-or-nothing, so a typo can never ship a half-theme. The tables and their
-checker live in `tui.theme_schema` and are re-exported here, so this module
-stays the public surface while `theme_schema` owns what "valid" means.
+schema-1 file is migrated in memory (`tui.theme_migrate`) and validated as the
+current schema, so an old theme keeps loading and a save writes schema 2.
+Validation is all-or-nothing, so a typo can never ship a half-theme. The tables
+and their checker live in `tui.theme_schema` and are re-exported here, so this
+module stays the public surface while `theme_schema` owns what "valid" means.
 
 Reads never raise for a bad theme *name*: a missing, unreadable or invalid
 theme file, and a malformed `theme.ini`, fall back to the shipped
@@ -55,7 +54,7 @@ from . import config
 from .theme_schema import (DEFAULT_LOOK, DEFAULT_THEME, DOCUMENT_KEYS,  # noqa: F401
 						   LEGACY_LOOKS, LOOKS, PALETTE_KEYS, PROPERTY_VALUES,
 						   SELECTOR_OF, SELECTORS, SLUG,
-						   canonical_hex, validate)
+						   canonical_hex, validate, validate_any)
 from .theme_migrate import SCHEMA_CURRENT, migrate_doc
 
 
@@ -172,7 +171,7 @@ def _document_for(name):
 			document = json.load(handle)
 	except (OSError, UnicodeDecodeError, ValueError) as exc:
 		raise ThemeError("cannot read {}: {}".format(target, exc))
-	errors = validate(document)
+	errors = validate_any(document)
 	if errors:
 		raise ThemeError("invalid theme: {}: {}".format(
 			target, "; ".join(errors)))
@@ -366,7 +365,7 @@ def save_theme(document, overwrite=False):
 	non-canonical one is canonicalised exactly once. `theme edit` therefore
 	only ever shows the lines the user actually changed.
 	"""
-	errors = validate(document)
+	errors = validate_any(document)
 	if errors:
 		raise ThemeError("invalid theme: {}".format("; ".join(errors)))
 	canonical = _ordered(migrate_doc(document), lower=False)

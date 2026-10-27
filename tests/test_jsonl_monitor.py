@@ -196,14 +196,14 @@ class RecencyTests(unittest.TestCase):
 	def test_endpoints_come_from_the_palette(self):
 		colours = tui.palette.palette("soft")
 		self.assertEqual(jsonl_monitor.get_recency_color(0, colours),
-						 jsonl_monitor._hex(colours["success"]))
+						 jsonl_monitor._hex(colours["fg-success"]))
 		self.assertEqual(jsonl_monitor.get_recency_color(500, colours),
 						 jsonl_monitor._hex(colours["bg"]))
 
 	def test_ramp_moves_between_the_endpoints(self):
 		colours = tui.palette.palette("soft")
 		mid = jsonl_monitor.get_recency_color(62.5, colours)
-		fresh = jsonl_monitor._hex(colours["success"])
+		fresh = jsonl_monitor._hex(colours["fg-success"])
 		cold = jsonl_monitor._hex(colours["bg"])
 		for channel, low, high in zip(mid, cold, fresh):
 			self.assertGreaterEqual(channel, min(low, high))

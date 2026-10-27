@@ -279,7 +279,7 @@ class BlockTests(unittest.TestCase):
 
 	def test_section_plain_and_styled(self):
 		self.assertEqual(table.section("Part", cap=PIPE), "Part")
-		self.assertIn(palette.style("Part", fg="header", bold=True, cap=TRUE, theme="soft"),
+		self.assertIn(palette.style("Part", fg="header-fg", bold=True, cap=TRUE, theme="soft"),
 					  table.section("Part", cap=TRUE, theme="soft"))
 
 class GlyphShimTests(unittest.TestCase):

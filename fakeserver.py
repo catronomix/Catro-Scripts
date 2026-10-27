@@ -6,8 +6,8 @@ Simulates a terminal screensaver with rapid "hacker" typing.
 Generates infinite scrolling text in various styles.
 
 Colour and keyboard input come from the shared `tui` library: the green body
-text is the palette's "success" colour (nothing at all when colour is off) and
-the quit keys are read through `tui.keys`, which also owns the cbreak
+text is the palette's "fg-success" colour (nothing at all when colour is off)
+and the quit keys are read through `tui.keys`, which also owns the cbreak
 lifecycle. The script is a watcher, so it asks `tui.require_tty()` for a real
 terminal instead of animating into a pipe.
 

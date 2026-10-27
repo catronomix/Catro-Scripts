@@ -4,8 +4,8 @@
 			===========================
 Three hand-authored looks with identical semantic keys, none derived from
 another (no inversion, no hue rotation). SOFT is the default: `mdreader` mode 0,
-"Cozy Purple", with `muted`/`border` nudged from #9381B0 to #A392C0 so every
-foreground clears the WCAG AA gate on both backgrounds. CONTRAST_LIGHT and
+"Cozy Purple", with `fg-muted`/`border-fg` nudged from #9381B0 to #A392C0 so
+every foreground clears the WCAG AA gate on both backgrounds. CONTRAST_LIGHT and
 CONTRAST_DARK are `mdreader` modes 1 and 2, so the reader and the scripts agree.
 
 The hexes themselves belong to `tui.theme_engine` (and `themes/cozypurple.json`);
@@ -16,9 +16,12 @@ keep their names and values but are resolved on access from the shipped
 document, so nothing is read at import and no renderer changed; the golden
 fixture still pins `soft`'s own bytes.
 
-The default is deliberately not the old per-script `Colors` identity (#AA00FF
-on #000000): that palette is gone, and `dark` survives only as an alias input
-for configs written before the theme set changed.
+The old per-script `Colors` identity (#AA00FF on #000000) is gone, and `dark`
+survives only as an alias input for pre-theme-set configs. Only the sixteen
+schema-2 palette keys are roles: a schema-1 spelling (`surface`, `muted`,
+`accent`, ...) is just an unknown name now, so `style()`/`prefix()` fall back to
+`fg`/`bg` exactly like a typo, without raising. Old theme files still read,
+because `tui.theme_migrate` renames their slots on load.
 
 `style()` is the only place that emits SGR codes. Its emission order is pinned:
 foreground, background, attributes, text, reset. Every downgrade (256, 16, none)
@@ -34,12 +37,10 @@ resolution, the xterm-256 table and `_sgr()` - lives in `tui.color_levels`; it
 is re-exported here so `tui.palette.rgb()`/`index()` and the private helpers a
 test may reach keep resolving at their old path.
 
-A full-screen painter resolves the same look hundreds of times per frame, and
-each resolution costs a stat plus a copy. `begin_frame()`/`end_frame()` open a
-one-frame memo for the look palette, the selection and the theme properties;
-`tui.editorpaint` brackets every paint with them. Outside a frame nothing is
-memoized, so a caller that never opens one always reads through the engine and
-keeps the mtime-keyed freshness of `tui.theme_engine`.
+A full-screen painter resolves the same look hundreds of times per frame, so
+`begin_frame()`/`end_frame()` memoize the look palette, the selection and the
+properties for one paint (`tui.editorpaint` brackets each). Outside a frame
+nothing is memoized, keeping the engine's mtime-keyed freshness.
 """
 
 import os
@@ -47,15 +48,9 @@ import os
 from . import caps, theme_engine
 from .color_levels import (_BASE16, _CUBE, _NEAREST, _XTERM256,  # noqa: F401
 						   _hex, _nearest, _rgb, _sgr, index, rgb)
-from .theme_migrate import V1_TO_V2
 
 # The active frame memo (None outside a frame); see the module docstring.
 _FRAME = None
-
-# Schema-1 role spelling -> schema-2 key. Both render identically while the
-# migration is landing: the published tables carry both, and `prefix()` resolves
-# an old name before the colour slot lookup.
-_ROLE_ALIASES = dict(V1_TO_V2)
 
 
 def begin_frame():
@@ -78,8 +73,7 @@ def _memo(key, build):
 		_FRAME[key] = build()
 	return _FRAME[key]
 
-# The published look tables, resolved lazily (see `__getattr__`): name ->
-# (theme id, look id in the shipped document).
+# The published look tables, resolved lazily: name -> (theme id, look id).
 _LOOK_TABLES = {
 	"SOFT": ("soft", "default"),
 	"CONTRAST_LIGHT": ("contrast-light", "contrast-light"),
@@ -90,35 +84,25 @@ _LOOK_TABLES = {
 def __getattr__(name):
 	"""`SOFT`, `CONTRAST_LIGHT`, `CONTRAST_DARK` and `THEMES`, read on demand.
 
-	The tables are the shipped `themes/cozypurple.json` document, resolved by
-	the engine when the name is first used, so importing this module stays I/O
-	free and the published hexes cannot drift from the theme file (issue #33).
-	Each access returns fresh dicts: mutating one changes nothing.
+	The shipped document is resolved by the engine on first use, so import stays
+	I/O free and the published hexes cannot drift (issue #33); each access is a
+	fresh dict.
 	"""
 	if name in _LOOK_TABLES:
 		_theme_id, look_id = _LOOK_TABLES[name]
-		return _with_aliases(theme_engine.builtin_looks()[look_id])
+		return theme_engine.builtin_looks()[look_id]
 	if name == "THEMES":
 		looks = theme_engine.builtin_looks()
-		return {theme_id: _with_aliases(looks[look_id])
+		return {theme_id: looks[look_id]
 				for theme_id, look_id in _LOOK_TABLES.values()}
 	raise AttributeError(
 		"module {!r} has no attribute {!r}".format(__name__, name))
 
 
-def _with_aliases(colours):
-	"""`colours` plus every schema-1 role spelling, pointing at the same hex."""
-	merged = dict(colours)
-	for old, new in _ROLE_ALIASES.items():
-		if new in merged:
-			merged[old] = merged[new]
-	return merged
-
-
 def role(name):
-	"""Canonical schema-2 key for a role spelling; anything else unchanged."""
+	"""Trimmed, lowercase role spelling; non-strings pass through untouched."""
 	if isinstance(name, str):
-		return _ROLE_ALIASES.get(name.strip().lower(), name)
+		return name.strip().lower()
 	return name
 
 
@@ -187,13 +171,12 @@ def palette(theme=None, cap=None):
 
 	`theme` keeps its old meaning: a look spelling (`soft`, `contrast-light`, ...)
 	selects that look of the active theme, so every existing caller and test
-	still names the palette it used to get. Both the schema-2 keys and the
-	schema-1 spellings are present, with the same hex, until the rename lands.
+	still names the palette it used to get. The copy carries only the sixteen
+	schema-2 keys.
 	"""
 	name, look_selector = _active(theme)
 	key = ("palette", name, look_selector)
-	return dict(_memo(key, lambda: _with_aliases(
-		theme_engine.look_palette(name, look_selector))))
+	return dict(_memo(key, lambda: theme_engine.look_palette(name, look_selector)))
 
 
 def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,

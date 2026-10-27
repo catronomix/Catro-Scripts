@@ -121,13 +121,13 @@ banners: `tui.header()` (title band plus rule), `tui.panel()` (framed block),
 `tui.rule()`, `tui.field()` (key/value rows), `tui.status()` (`[ok]`/`[warn]`/
 `[error]`/`[info]` lines), `tui.fill()` (a full-width background band) and
 `tui.menu()`, on top of `tui.render_table()`/`print_table()`/`key_values()`/
-`banner()`/`section()`. The frame is `border`, headers and bars sit on
-`surface`, zebra rows and footer bars on `zebra_bg`, so a script that prints a
+`banner()`/`section()`. The frame is `border-fg`, headers and bars sit on
+`bg-inside`, zebra rows and footer bars on `bg-stripe`, so a script that prints a
 page looks like every other script. `mdreader` keeps its curses/rich renderer
 but maps its three display modes onto the same three palettes (mode 0 `soft`,
 mode 1 `contrast-light`, mode 2 `contrast-dark`) and paints its window
-background, frame, status bar and shortcut bar from `bg`, `border`, `surface`
-and `zebra_bg`.
+background, frame, status bar and shortcut bar from `bg`, `border-fg`,
+`bg-inside` and `bg-stripe`.
 
 A pipe stays plain by default: no ANSI escapes, no box glyphs, no padding - table
 rows become TAB-separated fields, which keeps `list`, `count`, `action list` and
@@ -166,7 +166,7 @@ An unwritable `theme.ini`/`config.ini` prints one line naming the path and exits
 `theme edit` opens the editor on the active theme, or on `<name>` when given. Its
 three previews show the three looks live: Properties edits the nine rendering
 properties, Colours opens a hex/HSV colour picker per palette key, and the
-picker warns below WCAG AA (4.5:1 against `bg`/`zebra_bg`) but never blocks.
+picker warns below WCAG AA (4.5:1 against `bg`/`bg-stripe`) but never blocks.
 `Ctrl-S` saves atomically to `themes/<name>.json` (the filename is preseeded,
 `.json` is implied, and an existing different file asks before it is
 overwritten). A save only rewrites the lines you changed: the document's hex
