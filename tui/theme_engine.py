@@ -9,7 +9,9 @@ data; `tui.palette` stays the public styling API and delegates here.
 A document is `{schema, name, display, properties, looks}`: exactly the three
 looks `default`, `contrast-dark`, `contrast-light` with the eleven palette keys
 as `#rrggbb` strings, plus the nine rendering properties. Validation is
-all-or-nothing, so a typo can never ship a half-theme.
+all-or-nothing, so a typo can never ship a half-theme. The tables and their
+checker live in `tui.theme_schema` and are re-exported here, so this module
+stays the public surface while `theme_schema` owns what "valid" means.
 
 Reads never raise: a missing, unreadable or invalid theme file, and a malformed
 `theme.ini`, fall back to the built-in `cozypurple` default look. Only the paths
@@ -37,17 +39,17 @@ import configparser
 import copy
 import json
 import os
-import re
 from pathlib import Path
 
 from . import config
 
-# The schema tables live in their own module; re-exported here so callers
-# and tests keep using the engine namespace.
+# The schema tables and validation live in their own module; re-exported here so
+# callers and tests keep using the engine namespace.
 from .theme_schema import (BUILTIN_DOCUMENT, BUILTIN_LOOKS,  # noqa: F401
 						   BUILTIN_PROPERTIES, DEFAULT_LOOK, DEFAULT_THEME,
 						   LEGACY_LOOKS, LOOKS, PALETTE_KEYS, PROPERTY_VALUES,
-						   SELECTOR_OF, SELECTORS)
+						   SELECTOR_OF, SELECTORS, SLUG,
+						   canonical_hex, validate)
 
 
 # Overrides for tests; see the module docstring.
@@ -58,8 +60,6 @@ THEMES_DIR = None
 # per-frame path, and `Path.resolve()` is a syscall per call.
 _PROJECT = Path(__file__).resolve().parents[1]
 
-_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-_HEX = re.compile(r"^#?([0-9a-fA-F]{6})$")
 _CACHE = {}
 
 
@@ -93,78 +93,6 @@ def list_themes():
 					  if entry.is_file())
 	except OSError:
 		return []
-
-
-def canonical_hex(value, lower=True):
-	"""`#rrggbb` for a hex string, or None when invalid.
-
-	`lower=False` keeps the file's own spelling, which is what a load hands out so
-	the shipped uppercase document renders exactly the bytes it always has.
-	"""
-	if not isinstance(value, str):
-		return None
-	match = _HEX.match(value.strip())
-	if match is None:
-		return None
-	return "#" + (match.group(1).lower() if lower else match.group(1))
-
-
-def validate(document):
-	"""Every reason `document` is not a valid theme; [] when it is valid."""
-	if not isinstance(document, dict):
-		return ["theme document must be a JSON object"]
-	errors = []
-	schema = document.get("schema")
-	if isinstance(schema, bool) or schema != 1:
-		errors.append("schema must be 1")
-	name = document.get("name")
-	if not isinstance(name, str) or not _SLUG.match(name):
-		errors.append("name must be a slug matching [a-z0-9][a-z0-9-]*")
-	display = document.get("display")
-	if not isinstance(display, str) or not display.strip():
-		errors.append("display must be non-empty text")
-	errors.extend(_property_errors(document.get("properties")))
-	errors.extend(_look_errors(document.get("looks")))
-	return errors
-
-
-def _property_errors(properties):
-	if not isinstance(properties, dict):
-		return ["properties must be an object"]
-	errors = []
-	for key, allowed in PROPERTY_VALUES.items():
-		if key not in properties:
-			errors.append("properties is missing {}".format(key))
-		elif not any(properties[key] == value and
-					 type(properties[key]) is type(value) for value in allowed):
-			errors.append("invalid property {}: {!r}".format(
-				key, properties[key]))
-	unknown = sorted(set(properties) - set(PROPERTY_VALUES))
-	if unknown:
-		errors.append("unknown properties: {}".format(", ".join(unknown)))
-	return errors
-
-
-def _look_errors(looks):
-	if not isinstance(looks, dict):
-		return ["looks must be an object"]
-	errors = []
-	for look in LOOKS:
-		entry = looks.get(look)
-		if not isinstance(entry, dict):
-			errors.append("looks is missing {}".format(look))
-			continue
-		errors.extend("looks.{} has no valid {} colour".format(look, key)
-					  for key in PALETTE_KEYS
-					  if canonical_hex(entry.get(key)) is None)
-		unknown = sorted(set(entry) - set(PALETTE_KEYS))
-		if unknown:
-			errors.append("looks.{} has unknown keys: {}".format(
-				look, ", ".join(unknown)))
-	unknown = sorted(set(looks) - set(LOOKS))
-	if unknown:
-		errors.append("unknown looks: {}".format(", ".join(unknown)))
-	return errors
 
 
 def _ordered(document, lower=True):
@@ -207,7 +135,7 @@ def load_theme(name=None):
 	an editor draft can never change what the next read hands out.
 	"""
 	name = str(name if name is not None else DEFAULT_THEME).strip().lower()
-	if not _SLUG.match(name):
+	if not SLUG.match(name):
 		raise ThemeError("invalid theme name: {!r}".format(name))
 	return _copy(_document_for(name))
 
@@ -219,7 +147,7 @@ def _cached_document(name):
 	this, so a hot renderer costs one stat and no copy per colour.
 	"""
 	name = str(name).strip().lower()
-	if not _SLUG.match(name):
+	if not SLUG.match(name):
 		raise ThemeError("invalid theme name: {!r}".format(name))
 	key = _cache_key(_path_for(name))
 	cached = _CACHE.get(key)
@@ -281,7 +209,7 @@ def _read_selection_file():
 	selector = fold(parser.get("theme", "look", fallback=""))
 	if selector not in SELECTORS:
 		selector = None
-	return (name if _SLUG.match(name) else None), selector
+	return (name if SLUG.match(name) else None), selector
 
 
 def _legacy_selection():
@@ -355,7 +283,7 @@ def set_selection(name=None, look=None):
 	candidate, selector = selection()
 	if name is not None and str(name).strip():
 		candidate = str(name).strip().lower()
-		if not _SLUG.match(candidate):
+		if not SLUG.match(candidate):
 			raise ThemeError("invalid theme name: {!r}".format(name))
 		# Selecting is a user request: an invalid or corrupt file must surface
 		# here (CLI exit 2) rather than be selected and silently ignored.
