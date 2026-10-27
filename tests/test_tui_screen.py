@@ -22,6 +22,7 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 
 setUpModule, tearDownModule = module_isolation()
 
+from tui import canvas as canvas_module  # noqa: E402
 from tui import screen  # noqa: E402  (import after sys.path setup)
 
 
@@ -131,7 +132,7 @@ class CanvasTests(unittest.TestCase):
 
 	def test_clear_resizes_when_the_terminal_changes(self):
 		canvas = self.make()
-		with mock.patch.object(screen, "terminal_size", lambda stream=None: (6, 3)):
+		with mock.patch.object(canvas_module, "terminal_size", lambda stream=None: (6, 3)):
 			canvas.clear()
 		self.assertEqual((canvas.width, canvas.height), (6, 3))
 		self.assertEqual(len(canvas.region(0, 0, 6, 3)), 3)
@@ -139,7 +140,7 @@ class CanvasTests(unittest.TestCase):
 	def test_clear_keeps_the_size_and_blanks_the_grid(self):
 		canvas = self.make()
 		canvas.draw_text(0, 0, "data")
-		with mock.patch.object(screen, "terminal_size", lambda stream=None: (10, 4)):
+		with mock.patch.object(canvas_module, "terminal_size", lambda stream=None: (10, 4)):
 			canvas.clear()
 		self.assertEqual((canvas.width, canvas.height), (10, 4))
 		self.assertEqual(canvas.region(0, 0, 10, 1), [" " * 10])
@@ -246,6 +247,16 @@ class TerminalRendererTests(unittest.TestCase):
 		renderer.draw_text(0, 0, "abc")
 		renderer.clear()
 		self.assertEqual(renderer.region(0, 0, renderer.width, 1), [" " * renderer.width])
+class SplitShimTests(unittest.TestCase):
+	"""The emission layer moved to `tui.canvas`; the old paths must still win."""
+
+	def test_the_moved_names_still_resolve_through_the_screen_module(self):
+		for name in ("Canvas", "TerminalRenderer", "SGR_RESET", "terminal_size"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(screen, name), getattr(canvas_module, name))
+
+	def test_the_screensaver_name_is_still_a_canvas_subclass(self):
+		self.assertTrue(issubclass(canvas_module.TerminalRenderer, canvas_module.Canvas))
 
 
 if __name__ == "__main__":

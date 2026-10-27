@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
+from tui import canvas as canvas_module  # noqa: E402
 from tui import screen as screen_module  # noqa: E402
 from tui.loop import FrameLoop, ScreensaverHost  # noqa: E402
 
@@ -142,8 +143,12 @@ class ScreensaverHostTests(unittest.TestCase):
 		self.size = mock.patch.object(screen_module, "terminal_size",
 									  lambda stream=None: (8, 3))
 		self.size.start()
+		self.canvas_size = mock.patch.object(canvas_module, "terminal_size",
+											 lambda stream=None: (8, 3))
+		self.canvas_size.start()
 
 	def tearDown(self):
+		self.canvas_size.stop()
 		self.size.stop()
 		self.env.stop()
 		self._td.cleanup()
