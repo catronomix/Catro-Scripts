@@ -3,9 +3,14 @@
 			PAGE CHROME
 			============
 String-returning building blocks for a page of terminal output: a masthead, a
-framed panel, a horizontal rule, a key/value field, a status line, a filled
-background line and a menu. Nothing here prints and nothing returns a trailing
-newline, so the caller decides how the lines land.
+horizontal rule, a key/value field, a status line, a filled background line and
+a menu. Nothing here prints and nothing returns a trailing newline, so the
+caller decides how the lines land.
+
+The framed panel and the masthead/panel band painters (`panel`, `_band`,
+`_top_frame`) live in `tui.chrome_panels`; `panel()` and the shared `_band`
+painter are re-exported here, so `chrome.panel()` keeps resolving for
+`keygen`, `jsonl_monitor` and the tests.
 
 The two interactive seams - the styled button label and the scrollbar column,
 with their decoration/style/glyph tables - live in `tui.chrome_controls` and are
@@ -31,6 +36,7 @@ from . import caps, palette, table
 from .chrome_controls import (ASCII_DECORATIONS, BUTTON_DECORATIONS,  # noqa: F401
 							  BUTTON_STYLES, SCROLLBAR_GLYPHS, button,
 							  scrollbar)
+from .chrome_panels import (_band, _flat, _span, panel)  # noqa: F401
 from .text import display_width, pad, truncate as _truncate
 
 # A standalone rule with no width anywhere has to pick something; this is the
@@ -87,45 +93,6 @@ def rule(width=None, *, char=None, cap=None, theme=None):
 		span = DEFAULT_RULE_WIDTH
 	return palette.style(glyph * max(1, int(span)), fg="border", cap=cap,
 						 theme=theme)
-
-
-def panel(title, body, *, width=None, padding=1, cap=None, theme=None):
-	"""Framed box with `surface` interior and the title in the top rule.
-
-	`body` is a string (one line per `\\n`) or an iterable of lines; lines are
-	truncated to the interior, never wrapped, never raise. `padding` is the
-	spaces between frame and text on each side; a caller `width` wins.
-	"""
-	cap = cap or caps.detect()
-	padding = max(0, int(padding))
-	title = "" if title is None else _flat(title)
-	body_lines = _body_lines(body)
-	if cap.plain:
-		lines = ([title] if title else []) + body_lines
-		return "\n".join(lines)
-	glyphs = table.glyphs_for(cap)
-	gutter = " " * padding
-	content = max([display_width(line) for line in body_lines] + [0])
-	needed = content + 2 * padding + 2
-	if title:
-		# Room for one rule glyph, " title ", and one more rule glyph.
-		needed = max(needed, display_width(title) + 6)
-	inner = _span(width, cap)
-	if inner is None:
-		inner = needed
-	inner = max(4, inner)
-	lines = [_top_frame(glyphs, inner, title, cap, theme)]
-	cell = max(0, inner - 2 - 2 * padding)
-	edge = palette.prefix(fg="border", cap=cap, theme=theme)
-	inside = palette.prefix(fg="fg", bg="surface", cap=cap, theme=theme)
-	reset = _reset(cap)
-	for line in body_lines:
-		text = _truncate(line, cell) if display_width(line) > cell else line
-		lines.append(edge + glyphs["v"] + inside + gutter + pad(text, cell)
-					 + gutter + edge + glyphs["v"] + reset)
-	lines.append(palette.style(glyphs["bl"] + glyphs["h"] * (inner - 2)
-							   + glyphs["br"], fg="border", cap=cap, theme=theme))
-	return "\n".join(lines)
 
 
 def field(key, value, *, width=None, cap=None, theme=None):
@@ -229,69 +196,3 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	return "\n".join(lines)
 
 
-def _top_frame(glyphs, inner, title, cap, theme):
-	"""Top border with the title cut into it, or a plain rule when untitled."""
-	if not title:
-		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
-							 + glyphs["tr"], fg="border", cap=cap, theme=theme)
-	label = title
-	if display_width(label) > inner - 6:
-		label = _truncate(label, max(0, inner - 6))
-	if not label:
-		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
-							 + glyphs["tr"], fg="border", cap=cap, theme=theme)
-	rest = max(0, inner - 5 - display_width(label))
-	return (palette.prefix(fg="border", cap=cap, theme=theme) + glyphs["tl"]
-			+ glyphs["h"]
-			+ palette.prefix(fg="header", bold=True, cap=cap, theme=theme)
-			+ " " + label + " "
-			+ palette.prefix(fg="border", cap=cap, theme=theme)
-			+ glyphs["h"] * rest + glyphs["tr"] + _reset(cap))
-
-
-def _band(text, width, *, fg, bold=False, align="left", cap, theme):
-	"""One full-width `surface` band with the label placed by `align`.
-
-	`left` is the shipped shape: one space, the label, the padding (and one
-	trailing space), so the masthead bytes do not move; `center`/`right` only
-	move the padding inside those two end spaces.
-	"""
-	inner = max(0, width - 2)
-	label = _truncate(text, inner)
-	slack = max(0, inner - display_width(label))
-	if align == "center":
-		left = slack // 2
-	elif align == "right":
-		left = slack
-	else:
-		left = 0
-	body = " " + " " * left + label + " " * (slack - left) + " "
-	return palette.style(body, fg=fg, bg="surface", bold=bold, cap=cap,
-						 theme=theme)
-
-
-def _body_lines(body):
-	"""The panel body as one flattened string per line; never empty."""
-	if isinstance(body, str):
-		return body.splitlines() or [""]
-	return [_flat(line) for line in body] or [""]
-
-
-def _flat(value):
-	"""str() with newlines flattened: a page row is always one line."""
-	return str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-
-
-def _span(width, cap):
-	"""Explicit width, else the terminal width, else None (content-sized)."""
-	if width is not None:
-		try:
-			return max(0, int(width))
-		except (TypeError, ValueError):
-			return None
-	return cap.width
-
-
-def _reset(cap):
-	"""The reset code, or "" when the caller asked for no styling at all."""
-	return "" if cap.level == "none" else palette.RESET

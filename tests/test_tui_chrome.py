@@ -27,7 +27,8 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, chrome, chrome_controls, table  # noqa: E402  (import after sys.path setup)
+from tui import (caps, chrome, chrome_controls, chrome_panels,  # noqa: E402
+				 table)  # (import after sys.path setup)
 from tui.text import display_width, strip_ansi  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
@@ -345,6 +346,23 @@ class ControlShimTests(unittest.TestCase):
 		self.assertEqual(chrome_controls.ASCII_DECORATIONS["chevron"], ("<< ", " >>"))
 		self.assertEqual(chrome_controls.BUTTON_DECORATIONS["chevron"],
 						 ("\u00ab ", " \u00bb"))
+
+class PanelSplitShimTests(unittest.TestCase):
+	"""The panel/masthead painters moved to `tui.chrome_panels`; old paths win."""
+
+	def test_the_moved_names_still_resolve_through_the_chrome_module(self):
+		for name in ("panel", "_band", "_flat", "_span"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(chrome, name), getattr(chrome_panels, name))
+
+	def test_chrome_panels_does_not_import_chrome(self):
+		source = (REPO / "tui" / "chrome_panels.py").read_text(encoding="utf-8")
+		imports = [line for line in source.splitlines()
+				   if line.startswith("from .") or line.startswith("import ")]
+		self.assertTrue(imports)
+		for line in imports:
+			self.assertNotIn(" chrome", line)
+			self.assertNotIn("chrome_controls", line)
 
 
 if __name__ == "__main__":
