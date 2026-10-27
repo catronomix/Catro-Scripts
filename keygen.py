@@ -224,17 +224,17 @@ def show_key(stream, cap, algo_idx, length):
 	wrap = 64
 	lines = [key[i:i + wrap] for i in range(0, len(key), wrap)] or [""]
 	cell = max(tui.display_width(line) for line in lines)
-	body = [tui.style(tui.pad(line, cell), fg="accent", bg="surface",
+	body = [tui.style(tui.pad(line, cell), fg="fg-accent", bg="bg-inside",
 					  bold=True, cap=cap) for line in lines]
 	stream.write(tui.chrome.panel("Generated key", body, padding=1,
 								  cap=cap) + "\n")
 	stream.write("\n")
-	hint = (tui.style("[ENTER]", fg="accent", bold=True, cap=cap) + " new key   "
-			+ tui.style("[A]", fg="accent", bold=True, cap=cap) + " algorithm   ")
+	hint = (tui.style("[ENTER]", fg="fg-accent", bold=True, cap=cap) + " new key   "
+			+ tui.style("[A]", fg="fg-accent", bold=True, cap=cap) + " algorithm   ")
 	if alphabet is not None:
-		hint += (tui.style("[L]", fg="accent", bold=True, cap=cap)
+		hint += (tui.style("[L]", fg="fg-accent", bold=True, cap=cap)
 				 + " length   ")
-	hint += tui.style("[ESC/Q]", fg="accent", bold=True, cap=cap) + " quit"
+	hint += tui.style("[ESC/Q]", fg="fg-accent", bold=True, cap=cap) + " quit"
 	stream.write(hint + "\n")
 	stream.flush()
 

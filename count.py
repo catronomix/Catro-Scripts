@@ -269,7 +269,7 @@ def main():
 	print(tui.fill("{:<{}} {:<{}} {:<{}}".format(
 		footer_label, NAME_WIDTH, total_count, COUNT_WIDTH,
 		format_size(total_size, raw=args.raw), SIZE_WIDTH),
-		width=70, bg="surface", fg="header", cap=cap))
+		width=70, bg="bg-inside", fg="header-fg", cap=cap))
 	print()
 
 if __name__ == "__main__":

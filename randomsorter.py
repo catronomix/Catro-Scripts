@@ -113,12 +113,12 @@ def distribute_files(folder_path, counts, allowed_extensions, include_all, prefi
 					shutil.copy2(old_path, new_dest_path)
 					print("Copied: {} -> {}".format(
 						filename,
-						tui.style(f"{subfolder_name}/{new_name}", fg="success", cap=cap)))
+						tui.style(f"{subfolder_name}/{new_name}", fg="fg-success", cap=cap)))
 				else:
 					os.rename(old_path, new_dest_path)
 					print("Moved: {} -> {}".format(
 						filename,
-						tui.style(f"{subfolder_name}/{new_name}", fg="success", cap=cap)))
+						tui.style(f"{subfolder_name}/{new_name}", fg="fg-success", cap=cap)))
 				
 				file_idx += 1
 			else:

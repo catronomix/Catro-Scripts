@@ -127,10 +127,10 @@ def get_resize_config(cap):
 	print()
 	print(tui.section("--- Resize Configuration ---", cap=cap))
 	try:
-		w = int(input("{} ".format(tui.style("Target Width (px):", fg="accent", cap=cap))).strip())
+		w = int(input("{} ".format(tui.style("Target Width (px):", fg="fg-accent", cap=cap))).strip())
 		if w % 2 != 0: w += 1 
 		
-		h_in = input("{} ".format(tui.style("Target Height (px) [Enter for Auto]:", fg="accent", cap=cap))).strip()
+		h_in = input("{} ".format(tui.style("Target Height (px) [Enter for Auto]:", fg="fg-accent", cap=cap))).strip()
 		if not h_in:
 			h = -2
 		else:

@@ -94,7 +94,7 @@ def draw_menu(stream, names, selected_idx, cap):
 		# (bright magenta) of the standard 16, so the identity still reads as
 		# magenta without hardcoding a code that 256/truecolor themes cannot
 		# override.
-		return tui.style(text, fg="border", cap=cap)
+		return tui.style(text, fg="border-fg", cap=cap)
 
 	stream.write(tui.screen.CLEAR_HOME)
 

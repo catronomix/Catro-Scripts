@@ -140,17 +140,17 @@ def print_colored_docstring(docstring, cap=None):
 	h, v, l_join, r_join = glyphs["h"], glyphs["v"], glyphs["ml"], glyphs["mr"]
 
 	# Top Border
-	print(tui.style(tl + h * box_width + tr, fg="border", cap=cap))
+	print(tui.style(tl + h * box_width + tr, fg="border-fg", cap=cap))
 
 	if has_header:
 		# Header Row: the docstring title as a themed section heading, framed by
 		# the box borders. No per-script yellow-on-purple any more.
 		centered_header = header_text.center(box_width)
-		print(tui.style(v, fg="border", cap=cap)
+		print(tui.style(v, fg="border-fg", cap=cap)
 			  + tui.section(centered_header, cap=cap)
-			  + tui.style(v, fg="border", cap=cap))
+			  + tui.style(v, fg="border-fg", cap=cap))
 		# Divider Row replacing the equal signs
-		print(tui.style(l_join + h * box_width + r_join, fg="border", cap=cap))
+		print(tui.style(l_join + h * box_width + r_join, fg="border-fg", cap=cap))
 
 	for line in content_lines:
 		# Count leading tabs for coloring
@@ -168,12 +168,12 @@ def print_colored_docstring(docstring, cap=None):
 		display_line = line.replace('\t', '    ')
 		padding = " " * (max_w - len(display_line))
 
-		print(tui.style(v, fg="border", cap=cap) + " "
+		print(tui.style(v, fg="border-fg", cap=cap) + " "
 			  + tui.style(display_line + padding, cap=cap, **indent_style) + " "
-			  + tui.style(v, fg="border", cap=cap))
+			  + tui.style(v, fg="border-fg", cap=cap))
 
 	# Bottom Border
-	print(tui.style(bl + h * box_width + br, fg="border", cap=cap))
+	print(tui.style(bl + h * box_width + br, fg="border-fg", cap=cap))
 
 
 def main():

@@ -66,7 +66,7 @@ def warn_malformed(actions, cap=None):
             print(
                 tui.style(f"Warning: action '{name}' is not an object with "
                           f"'command' and 'description'; it will be skipped.",
-                          fg="warn", cap=cap),
+                          fg="fg-warn", cap=cap),
                 file=sys.stderr,
             )
             continue
@@ -78,7 +78,7 @@ def warn_malformed(actions, cap=None):
         if missing:
             print(
                 tui.style(f"Warning: action '{name}' is missing "
-                          f"{', '.join(missing)}.", fg="warn", cap=cap),
+                          f"{', '.join(missing)}.", fg="fg-warn", cap=cap),
                 file=sys.stderr,
             )
 
@@ -186,7 +186,7 @@ def run_action(action_name, extra_args, cap=None):
         )
         print(
             "Use {} to view available macros.".format(
-                tui.style("python action.py list", fg="border", cap=cap))
+                tui.style("python action.py list", fg="border-fg", cap=cap))
         )
         sys.exit(1)
 
@@ -197,7 +197,7 @@ def run_action(action_name, extra_args, cap=None):
             tui.status("error", f"Error: Action '{action_name}' has no command.",
                        cap=cap)
             + " Fix it with "
-            + tui.style(f"python action.py add {action_name}", fg="border", cap=cap)
+            + tui.style(f"python action.py add {action_name}", fg="border-fg", cap=cap)
             + "."
         )
         sys.exit(1)
@@ -298,7 +298,7 @@ def prompt_input_with_default(prompt_str, default_value="", cap=None):
         except ImportError:
             # Fallback prompt showing current value for Windows/systems without readline
             disp_prompt = "{} [{}]: ".format(
-                prompt_str, tui.style(default_value, fg="warn", cap=cap))
+                prompt_str, tui.style(default_value, fg="fg-warn", cap=cap))
             val = input(disp_prompt).strip()
             return val if val else default_value
     else:
@@ -407,7 +407,7 @@ def interactive_remove(target_name=None, cap=None):
     confirm = (
         input(
             tui.style(f"Are you sure you want to delete '{target_name}'? (y/N): ",
-                      fg="warn", cap=cap)
+                      fg="fg-warn", cap=cap)
         )
         .strip()
         .lower()

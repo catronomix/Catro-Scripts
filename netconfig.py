@@ -83,7 +83,7 @@ def require_tool(name, cap=None):
 		cap = tui.detect()
 	if shutil.which(name) is None:
 		print(tui.style(f"Error: required tool '{name}' is not installed or not on PATH.",
-						fg="error", cap=cap), file=sys.stderr)
+						fg="fg-error", cap=cap), file=sys.stderr)
 		return False
 	return True
 
@@ -93,10 +93,10 @@ def run_step(cmd, cap=None):
 		cap = tui.detect()
 	_, err = run_cmd(cmd)
 	if err:
-		print(tui.style(f"Error: command failed: {cmd}", fg="error", cap=cap),
+		print(tui.style(f"Error: command failed: {cmd}", fg="fg-error", cap=cap),
 			  file=sys.stderr)
 		for line in err.splitlines():
-			print(tui.style(f"  {line}", fg="error", cap=cap), file=sys.stderr)
+			print(tui.style(f"  {line}", fg="fg-error", cap=cap), file=sys.stderr)
 		return False
 	return True
 
@@ -130,14 +130,14 @@ def elevate_privileges(cap=None):
 	elif system == "linux":
 		is_admin = os.getuid() == 0
 	else:
-		print(tui.style(f"Error: elevation is not supported on {system}.", fg="error",
+		print(tui.style(f"Error: elevation is not supported on {system}.", fg="fg-error",
 						cap=cap), file=sys.stderr)
 		return False
 
 	if is_admin:
 		return True
 
-	print(tui.style("Requesting administrative privileges...", fg="warn", cap=cap))
+	print(tui.style("Requesting administrative privileges...", fg="fg-warn", cap=cap))
 	
 	try:
 		if system == "windows":
@@ -151,13 +151,13 @@ def elevate_privileges(cap=None):
 			args = ['sudo', sys.executable] + sys.argv
 			os.execvp('sudo', args)
 		else:
-			print(tui.style(f"Error: elevation is not supported on {system}.", fg="error",
+			print(tui.style(f"Error: elevation is not supported on {system}.", fg="fg-error",
 							cap=cap), file=sys.stderr)
 			return False
 			
 		sys.exit(0) # Exit the non-privileged instance
 	except Exception as e:
-		print(tui.style(f"Elevation failed: {e}", fg="error", cap=cap))
+		print(tui.style(f"Elevation failed: {e}", fg="fg-error", cap=cap))
 		return False
 
 def load_configs():
@@ -219,7 +219,7 @@ def show_network_info(iface, cap=None):
 		ip_out, _ = run_cmd(f'netsh interface ipv4 show config name="{iface}"')
 		if ip_out:
 			print(ip_out.replace("IP Address:",
-								 tui.style("IP Address:", fg="success", cap=cap)))
+								 tui.style("IP Address:", fg="fg-success", cap=cap)))
 		
 		# 2. Hardware and Performance via PowerShell
 		print()
@@ -280,7 +280,7 @@ def restart_adapter(iface, cap=None):
 	if cap is None:
 		cap = tui.detect()
 	system = get_platform()
-	print(tui.style(f"Restarting {iface}...", fg="warn", cap=cap))
+	print(tui.style(f"Restarting {iface}...", fg="fg-warn", cap=cap))
 	if system == "windows":
 		ok = run_step(f'netsh interface set interface name="{iface}" admin=disabled', cap)
 		time.sleep(2)
@@ -293,11 +293,11 @@ def restart_adapter(iface, cap=None):
 		ok = run_step(f"nmcli device connect {iface}", cap) and ok
 	else:
 		print(tui.style(f"Error: adapter restart is not supported on {system}.",
-						fg="error", cap=cap), file=sys.stderr)
+						fg="fg-error", cap=cap), file=sys.stderr)
 		return False
 	if not ok:
 		return False
-	print(tui.style("Restart command issued.", fg="success", cap=cap))
+	print(tui.style("Restart command issued.", fg="fg-success", cap=cap))
 	time.sleep(1)
 	return True
 
@@ -306,7 +306,7 @@ def get_manual_input(iface, current_configs, cap=None):
 		cap = tui.detect()
 	print()
 	print(tui.section("Setting up static IP for: {}".format(
-		tui.style(iface, fg="header", bold=True, cap=cap)), cap=cap))
+		tui.style(iface, fg="header-fg", bold=True, cap=cap)), cap=cap))
 	prev = current_configs.get(iface, {})
 	
 	ip = tui.ask_text("IP Address [{}]: ".format(prev.get('ip', '')), prev.get('ip'))
@@ -323,7 +323,7 @@ def apply_dns(iface, mode, dns_list=None, cap=None):
 	if cap is None:
 		cap = tui.detect()
 	system = get_platform()
-	print(tui.style("Updating DNS settings...", fg="warn", cap=cap))
+	print(tui.style("Updating DNS settings...", fg="fg-warn", cap=cap))
 	
 	if mode == "auto":
 		if system == "windows":
@@ -335,11 +335,11 @@ def apply_dns(iface, mode, dns_list=None, cap=None):
 			ok = run_step(f"nmcli device reapply {iface}", cap) and ok
 		else:
 			print(tui.style(f"Error: DNS changes are not supported on {system}.",
-							fg="error", cap=cap), file=sys.stderr)
+							fg="fg-error", cap=cap), file=sys.stderr)
 			return False
 		if not ok:
 			return False
-		print(tui.style("DNS set to Automatic (DHCP).", fg="success", cap=cap))
+		print(tui.style("DNS set to Automatic (DHCP).", fg="fg-success", cap=cap))
 	
 	elif mode == "manual" and dns_list:
 		if system == "windows":
@@ -359,14 +359,14 @@ def apply_dns(iface, mode, dns_list=None, cap=None):
 			ok = run_step(f"nmcli device reapply {iface}", cap) and ok
 		else:
 			print(tui.style(f"Error: DNS changes are not supported on {system}.",
-							fg="error", cap=cap), file=sys.stderr)
+							fg="fg-error", cap=cap), file=sys.stderr)
 			return False
 		if not ok:
 			return False
-		print(tui.style(f"DNS set to Manual: {', '.join(dns_list)}", fg="success", cap=cap))
+		print(tui.style(f"DNS set to Manual: {', '.join(dns_list)}", fg="fg-success", cap=cap))
 	else:
 		print(tui.style("Error: no DNS servers supplied for manual mode.",
-						fg="error", cap=cap), file=sys.stderr)
+						fg="fg-error", cap=cap), file=sys.stderr)
 		return False
 	
 	time.sleep(1)
@@ -377,7 +377,7 @@ def apply_config(iface, mode, config=None, cap=None):
 	if cap is None:
 		cap = tui.detect()
 	system = get_platform()
-	print(tui.style("Applying IP configuration...", fg="warn", cap=cap))
+	print(tui.style("Applying IP configuration...", fg="fg-warn", cap=cap))
 	
 	if mode == "dhcp":
 		if system == "windows":
@@ -389,11 +389,11 @@ def apply_config(iface, mode, config=None, cap=None):
 			ok = run_step(f"nmcli device reapply {iface}", cap) and ok
 		else:
 			print(tui.style(f"Error: IP configuration is not supported on {system}.",
-							fg="error", cap=cap), file=sys.stderr)
+							fg="fg-error", cap=cap), file=sys.stderr)
 			return False
 		if not ok:
 			return False
-		print(tui.style(f"Interface {iface} set to DHCP.", fg="success", cap=cap))
+		print(tui.style(f"Interface {iface} set to DHCP.", fg="fg-success", cap=cap))
 		
 	elif mode == "static" and config:
 		if system == "windows":
@@ -405,20 +405,20 @@ def apply_config(iface, mode, config=None, cap=None):
 			prefix = mask_to_prefix(config["mask"])
 			if prefix is None:
 				print(tui.style(f"Error: '{config['mask']}' is not a valid subnet mask or prefix length.",
-								fg="error", cap=cap), file=sys.stderr)
+								fg="fg-error", cap=cap), file=sys.stderr)
 				return False
 			ok = run_step(f"nmcli device modify {iface} ipv4.addresses {config['ip']}/{prefix} ipv4.gateway {config['gw']} ipv4.method manual", cap)
 			ok = run_step(f"nmcli device reapply {iface}", cap) and ok
 		else:
 			print(tui.style(f"Error: IP configuration is not supported on {system}.",
-							fg="error", cap=cap), file=sys.stderr)
+							fg="fg-error", cap=cap), file=sys.stderr)
 			return False
 		if not ok:
 			return False
 		print(tui.style(f"Interface {iface} set to Static IP: {config['ip']}",
-						fg="success", cap=cap))
+						fg="fg-success", cap=cap))
 	else:
-		print(tui.style("Error: no static configuration supplied.", fg="error", cap=cap),
+		print(tui.style("Error: no static configuration supplied.", fg="fg-error", cap=cap),
 			  file=sys.stderr)
 		return False
 	
@@ -462,7 +462,7 @@ def interface_menu(selected_iface, cap=None):
 					save_configs(configs)
 				apply_config(selected_iface, "static", configs[selected_iface], cap)
 			else:
-				print(tui.style("Invalid mode.", fg="error", cap=cap))
+				print(tui.style("Invalid mode.", fg="fg-error", cap=cap))
 
 		elif choice == "2":
 			print()
@@ -489,9 +489,9 @@ def interface_menu(selected_iface, cap=None):
 				if dns_list:
 					apply_dns(selected_iface, "manual", dns_list, cap)
 				else:
-					print(tui.style("No DNS servers provided.", fg="error", cap=cap))
+					print(tui.style("No DNS servers provided.", fg="fg-error", cap=cap))
 			else:
-				print(tui.style("Invalid choice.", fg="error", cap=cap))
+				print(tui.style("Invalid choice.", fg="fg-error", cap=cap))
 				
 		elif choice == "3":
 			restart_adapter(selected_iface, cap)
@@ -500,7 +500,7 @@ def interface_menu(selected_iface, cap=None):
 		elif choice == "5":
 			break
 		else:
-			print(tui.style("Invalid choice.", fg="error", cap=cap))
+			print(tui.style("Invalid choice.", fg="fg-error", cap=cap))
 
 def main():
 	# Bootstrap the console, then resolve capabilities once for the whole run
@@ -511,18 +511,18 @@ def main():
 	system = get_platform()
 	if system not in ("windows", "linux"):
 		print(tui.style(f"Error: netconfig is not supported on {system or 'this platform'}. Supported platforms: Windows (netsh) and Linux (nmcli).",
-						fg="error", cap=cap), file=sys.stderr)
+						fg="fg-error", cap=cap), file=sys.stderr)
 		return 1
 
 	if not elevate_privileges(cap):
 		print(tui.style("Error: This script requires administrative/root privileges to run.",
-						fg="error", bold=True, cap=cap))
+						fg="fg-error", bold=True, cap=cap))
 		return 1
 
 	while True:
 		interfaces = get_interfaces(cap)
 		if not interfaces:
-			print(tui.style("No network interfaces found.", fg="error", cap=cap))
+			print(tui.style("No network interfaces found.", fg="fg-error", cap=cap))
 			tui.ask_text("Press Enter to refresh or Ctrl+C to quit...")
 			continue
 
@@ -542,9 +542,9 @@ def main():
 			if 0 <= choice < len(interfaces):
 				interface_menu(interfaces[choice], cap)
 			else:
-				print(tui.style("Invalid number.", fg="error", cap=cap))
+				print(tui.style("Invalid number.", fg="fg-error", cap=cap))
 		except ValueError:
-			print(tui.style("Please enter a valid number.", fg="error", cap=cap))
+			print(tui.style("Please enter a valid number.", fg="fg-error", cap=cap))
 		except KeyboardInterrupt:
 			break
 	return 0

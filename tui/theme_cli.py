@@ -113,7 +113,7 @@ def palette_rows(cap):
 		else:
 			sample = "{}  {}".format(
 				palette.style(glyph, fg=key, cap=cap),
-				palette.style(value, fg="muted", cap=cap))
+				palette.style(value, fg="fg-muted", cap=cap))
 		rows.append(chrome.field(key, sample, width=PALETTE_KEY_WIDTH,
 								 cap=cap))
 	return rows
@@ -148,7 +148,7 @@ def _error_line(message, cap):
 	without colour.
 	"""
 	try:
-		return palette.style(message, fg="error", cap=cap)
+		return palette.style(message, fg="fg-error", cap=cap)
 	except theme_engine.ThemeError:
 		return message
 
@@ -161,7 +161,7 @@ def _dispatch(args, out, cap):
 						cap, warn=not config.writable()) + "\n")
 		return 0
 	if command in ("-h", "--help", "help"):
-		out.write(palette.style(USAGE, fg="muted", cap=cap) + "\n")
+		out.write(palette.style(USAGE, fg="fg-muted", cap=cap) + "\n")
 		return 0
 	if command == "list":
 		out.write(_page("themes", "available themes", theme_rows(cap),
@@ -188,7 +188,7 @@ def _dispatch(args, out, cap):
 def _set(args, out, cap):
 	"""`set <key> <value>`, including the `theme.mode` legacy shape."""
 	if len(args) != 3:
-		out.write(palette.style(USAGE, fg="muted", cap=cap) + "\n")
+		out.write(palette.style(USAGE, fg="fg-muted", cap=cap) + "\n")
 		return 2
 	key, raw = args[1].strip().lower(), args[2].strip()
 	value = raw.lower()
@@ -196,7 +196,7 @@ def _set(args, out, cap):
 		if _look_selector(value) is None:
 			out.write(palette.style(
 				"invalid {}: {} (valid: {})".format(key, raw, MODES),
-				fg="error", cap=cap) + "\n")
+				fg="fg-error", cap=cap) + "\n")
 			return 2
 		return _write_look(value, cap)
 	if key == "theme.name":
@@ -204,7 +204,7 @@ def _set(args, out, cap):
 	if key in VALID and value in VALID[key]:
 		return _write(key, value, cap)
 	out.write(palette.style("invalid setting: {} {}".format(key, value),
-							fg="error", cap=cap) + "\n")
+							fg="fg-error", cap=cap) + "\n")
 	return 2
 
 
@@ -232,7 +232,7 @@ def _write(key, value, cap):
 		return 0
 	sys.stdout.write(palette.style(
 		"config.ini is not writable here: {}".format(config.path()),
-		fg="error", cap=cap) + "\n")
+		fg="fg-error", cap=cap) + "\n")
 	return 1
 
 
@@ -243,13 +243,13 @@ def _write_look(value, cap):
 	except theme_engine.ThemeError as exc:
 		sys.stdout.write(palette.style(
 			"invalid theme.mode: {} ({})".format(value, exc),
-			fg="error", cap=cap) + "\n")
+			fg="fg-error", cap=cap) + "\n")
 		return 2
 	if written:
 		return 0
 	sys.stdout.write(palette.style(
 		"theme.ini is not writable here: {}".format(theme_engine.theme_file()),
-		fg="error", cap=cap) + "\n")
+		fg="fg-error", cap=cap) + "\n")
 	return 1
 
 
@@ -264,13 +264,13 @@ def _select_theme(name, out, cap):
 		message = str(exc)
 		if str(target) not in message:
 			message = "{} (expected {})".format(message, target)
-		out.write(palette.style(message, fg="error", cap=cap) + "\n")
+		out.write(palette.style(message, fg="fg-error", cap=cap) + "\n")
 		return 2
 	if written:
 		return 0
 	out.write(palette.style(
 		"theme.ini is not writable here: {}".format(theme_engine.theme_file()),
-		fg="error", cap=cap) + "\n")
+		fg="fg-error", cap=cap) + "\n")
 	return 1
 
 
@@ -282,7 +282,7 @@ def _edit(name, cap):
 		document = (theme_engine.load_theme(slug) if slug
 					else theme_engine.document())
 	except theme_engine.ThemeError as exc:
-		sys.stdout.write(palette.style(str(exc), fg="error", cap=cap) + "\n")
+		sys.stdout.write(palette.style(str(exc), fg="fg-error", cap=cap) + "\n")
 		return 2
 	from .editor import ThemeEditor
 

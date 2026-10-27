@@ -256,7 +256,7 @@ def process_file(file_path, args, codec_settings, index=0, cap=None):
     cmd.append(out_path)
 
     print(tui.style(f"[Processing] {os.path.basename(file_path)} -> "
-                    f"{os.path.basename(out_path)}", fg="accent", cap=cap))
+                    f"{os.path.basename(out_path)}", fg="fg-accent", cap=cap))
     try:
         subprocess.run(cmd, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         return True

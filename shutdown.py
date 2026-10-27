@@ -193,7 +193,7 @@ def main():
 		# tui.ask_text(), which would reword the prompt.
 		user_input = input(
 			tui.style("\nEnter shutdown delay (or 'q' to quit): ",
-					  fg="header", bold=True, cap=cap)).strip()
+					  fg="header-fg", bold=True, cap=cap)).strip()
 		
 		if user_input.lower() == 'q':
 			break

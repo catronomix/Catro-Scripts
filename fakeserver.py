@@ -234,7 +234,7 @@ def main():
 
 	# One styled span for the whole run (the fixed green this script always
 	# had). With colour off, `prefix` is empty and the reset is omitted.
-	colour = tui.prefix(fg="success", cap=cap)
+	colour = tui.prefix(fg="fg-success", cap=cap)
 	reset = tui.RESET if colour else ""
 
 	# raw_mode owns cbreak and restores it on the way out; key polling then

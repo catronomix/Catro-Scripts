@@ -95,7 +95,7 @@ def run_opencode(opencode_bin, args):
 def print_not_installed(cap=None):
 	# Install guidance shown when `opencode` is not on PATH.
 	cap = cap or tui.detect()
-	command = lambda text: tui.style(text, fg="success", cap=cap)
+	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
 	print()
 	print(tui.header("--- OPENCODE NOT FOUND ---", cap=cap))
 	print(tui.status("error",
@@ -132,7 +132,7 @@ def normalize_instruction(raw):
 def print_usage(default_model, cap=None):
 	# Short usage block printed alongside the model list.
 	cap = cap or tui.detect()
-	command = lambda text: tui.style(text, fg="success", cap=cap)
+	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
 	print()
 	print(tui.header("--- USAGE ---", cap=cap))
 	print("  {}".format(command('catro-scripts opencode "<instruction>"')))

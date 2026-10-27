@@ -203,16 +203,16 @@ class MdreaderPreflightTests(unittest.TestCase):
         """Background, frame and both bars come from the shared palette keys.
 
         The reader keeps its own curses renderer, so the gate is the pair map:
-        the window fill is `bg`, the frame `border`, the status bar
-        `header`-on-`surface` and the shortcut bar `fg`-on-`zebra_bg`, which is
-        the same vocabulary `tui.chrome` uses for a page.
+        the window fill is `bg`, the frame `border-fg`, the status bar
+        `header-fg`-on-`bg-inside` and the shortcut bar `fg`-on-`bg-stripe`,
+        which is the vocabulary `tui.chrome` uses for a page.
         """
         expected = {
             "window": ("fg", "bg"),
-            "frame": ("border", "bg"),
-            "thumb": ("header", "surface"),
-            "status": ("header", "surface"),
-            "shortcuts": ("fg", "zebra_bg"),
+            "frame": ("border-fg", "bg"),
+            "thumb": ("header-fg", "bg-inside"),
+            "status": ("header-fg", "bg-inside"),
+            "shortcuts": ("fg", "bg-stripe"),
         }
         roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
         self.assertEqual(

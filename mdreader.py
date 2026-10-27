@@ -157,27 +157,27 @@ THEME_MODES = ("soft", "contrast-light", "contrast-dark")
 # color_pair(); because the roles are semantic, switching mode recolours the
 # content and the frame together.
 PAIR_ROLES = (
-    (1, "fg", "bg"),          # body text
-    (2, "header", "bg"),      # headings, bullets, numbers
-    (3, "warn", "bg"),        # links and secondary emphasis
-    (4, "fg", "surface"),     # code spans, table cells
-    (5, "muted", "bg"),       # dimmed text
-    (6, "header", "surface"),  # status bar
-    (7, "fg", "zebra_bg"),    # shortcut bar, alternate table row
-    (8, "border", "bg"),      # window frame
-    (9, "header", "surface"),  # table header row
+    (1, "fg", "bg"),              # body text
+    (2, "header-fg", "bg"),       # headings, bullets, numbers
+    (3, "fg-warn", "bg"),         # links and secondary emphasis
+    (4, "fg", "bg-inside"),       # code spans, table cells
+    (5, "fg-muted", "bg"),        # dimmed text
+    (6, "header-fg", "bg-inside"),  # status bar
+    (7, "fg", "bg-stripe"),       # shortcut bar, alternate table row
+    (8, "border-fg", "bg"),       # window frame
+    (9, "header-fg", "bg-inside"),  # table header row
 )
 
 # The full-screen furniture of the reader, named instead of numbered so the
 # frame and the bars cannot drift away from the palette roles: the window is
-# painted `bg`, the frame `border`, and the header/footer bars sit on `surface`
-# and `zebra_bg` exactly like a chrome.header/field page in the other scripts.
+# painted `bg`, the frame `border-fg`, and the header/footer bars sit on
+# `bg-inside` and `bg-stripe` exactly like a chrome.header/field page.
 CHROME_PAIRS = {
     "window": 1,     # fg on bg: the whole-screen background fill
-    "frame": 8,      # border on bg: viewport frame and scroll track
-    "thumb": 6,      # header on surface: scroll thumb, same band as the status
-    "status": 6,     # header on surface: status bar
-    "shortcuts": 7,  # fg on zebra_bg: shortcut bar
+    "frame": 8,      # border-fg on bg: viewport frame and scroll track
+    "thumb": 6,      # header-fg on bg-inside: scroll thumb, like the status bar
+    "status": 6,     # header-fg on bg-inside: status bar
+    "shortcuts": 7,  # fg on bg-stripe: shortcut bar
 }
 
 
@@ -296,23 +296,23 @@ def get_rich_theme(theme_mode=0):
     colours = tui.palette.palette(theme_id(theme_mode))
     return Theme(
         {
-            "markdown.h1": "bold " + colours["header"],
-            "markdown.h2": "bold " + colours["warn"],
-            "markdown.h3": "bold " + colours["header"],
-            "markdown.h4": "bold " + colours["muted"],
-            "markdown.code": colours["fg"] + " on " + colours["surface"],
-            "markdown.code_block": colours["fg"] + " on " + colours["surface"],
-            "markdown.block_quote": colours["muted"] + " italic",
-            "markdown.item.bullet": "bold " + colours["header"],
-            "markdown.item.number": "bold " + colours["header"],
-            "markdown.hr": colours["muted"],
-            "markdown.table.header": ("bold " + colours["header"] + " on "
-                                      + colours["surface"]),
-            "markdown.table.cell": colours["fg"] + " on " + colours["surface"],
-            "markdown.table.border": colours["border"],
-            "markdown.link": "underline " + colours["warn"],
+            "markdown.h1": "bold " + colours["header-fg"],
+            "markdown.h2": "bold " + colours["fg-warn"],
+            "markdown.h3": "bold " + colours["header-fg"],
+            "markdown.h4": "bold " + colours["fg-muted"],
+            "markdown.code": colours["fg"] + " on " + colours["bg-inside"],
+            "markdown.code_block": colours["fg"] + " on " + colours["bg-inside"],
+            "markdown.block_quote": colours["fg-muted"] + " italic",
+            "markdown.item.bullet": "bold " + colours["header-fg"],
+            "markdown.item.number": "bold " + colours["header-fg"],
+            "markdown.hr": colours["fg-muted"],
+            "markdown.table.header": ("bold " + colours["header-fg"] + " on "
+                                      + colours["bg-inside"]),
+            "markdown.table.cell": colours["fg"] + " on " + colours["bg-inside"],
+            "markdown.table.border": colours["border-fg"],
+            "markdown.link": "underline " + colours["fg-warn"],
             # The table patch below reads this for the alternate row fill.
-            "mdreader.table.zebra": "on " + colours["zebra_bg"],
+            "mdreader.table.zebra": "on " + colours["bg-stripe"],
         }
     )
 
@@ -376,12 +376,12 @@ def segment_pair(style, colours):
 
     fg = _colour_name(style.color)
     bg = _colour_name(style.bgcolor)
-    surface = colours["surface"].lower()
-    zebra = colours["zebra_bg"].lower()
-    header = {colours["header"].lower(), colours["accent"].lower()}
-    warn = colours["warn"].lower()
+    surface = colours["bg-inside"].lower()
+    zebra = colours["bg-stripe"].lower()
+    header = {colours["header-fg"].lower(), colours["fg-accent"].lower()}
+    warn = colours["fg-warn"].lower()
     is_dim = (bool(style.dim) or "gray" in fg or "grey" in fg
-              or fg == colours["muted"].lower())
+              or fg == colours["fg-muted"].lower())
 
     if bg or fg in (surface, zebra):
         if fg in header:

@@ -98,7 +98,7 @@ def list_scripts():
 
 		tui.print_table(["ID", "Script Name", "Size", "Description"], rows,
 						widths=COLUMN_WIDTHS, truncate=False, cap=cap)
-		print(tui.style("Total scripts found:", fg="border", bold=True, cap=cap),
+		print(tui.style("Total scripts found:", fg="border-fg", bold=True, cap=cap),
 			  len(scripts))
 		print()
 

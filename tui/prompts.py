@@ -12,11 +12,11 @@ from . import caps, chrome, palette
 
 
 def _label(text):
-	"""Accent pointer plus a `header`-on-`surface` label, resolved once."""
+	"""Accent pointer plus a `header-fg`-on-`bg-inside` label, once."""
 	cap = caps.detect()
 	return "{} {}".format(
-		palette.style(">", fg="accent", cap=cap),
-		palette.style(text, fg="header", bg="surface", bold=True, cap=cap))
+		palette.style(">", fg="fg-accent", cap=cap),
+		palette.style(text, fg="header-fg", bg="bg-inside", bold=True, cap=cap))
 
 
 _EOF = object()  # sentinel: a caller wants EOF told apart from a blank answer
