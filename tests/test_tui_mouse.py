@@ -16,6 +16,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -178,6 +180,89 @@ class ReportingTests(unittest.TestCase):
 		for code in ("?1000l", "?1002l", "?1006l"):
 			self.assertIn(code, restore)
 		self.assertFalse(mouse.disable(stream))
+
+
+class FakeKernel32:
+	"""Just the console-mode calls `mouse` makes; records every mode written."""
+
+	def __init__(self, mode=0x0080):
+		self.mode = mode
+		self.written = []
+
+	def GetStdHandle(self, which):
+		return -10
+
+	def GetConsoleMode(self, handle, pointer):
+		pointer._obj.value = self.mode
+		return 1
+
+	def SetConsoleMode(self, handle, mode):
+		self.written.append(mode)
+		self.mode = mode
+		return 1
+
+
+class FakeCtypes:
+	"""The `ctypes` surface `tui.mouse` touches, pointed at a fake kernel32."""
+
+	def __init__(self, kernel32):
+		self.windll = SimpleNamespace(kernel32=kernel32)
+
+	def c_uint(self):
+		return SimpleNamespace(value=0)
+
+	def byref(self, obj):
+		return SimpleNamespace(_obj=obj)
+
+
+class WindowsInputModeTests(unittest.TestCase):
+	"""VT input is a saved-and-restored console mode, never a leaked bit."""
+
+	def setUp(self):
+		self._saved = getattr(mouse, "_windows_input", None)
+		mouse._windows_input = None
+		mouse.disable()
+
+	def tearDown(self):
+		mouse.disable()
+		mouse._windows_input = self._saved
+
+	def run_with(self, kernel32, body):
+		with mock.patch.dict(sys.modules, {"ctypes": FakeCtypes(kernel32)}), \
+				mock.patch.object(mouse, "os", SimpleNamespace(name="nt")):
+			body()
+
+	def test_enable_sets_the_bit_and_disable_restores_the_mode(self):
+		kernel32 = FakeKernel32(0x0080)
+
+		def body():
+			stream = FakeStream()
+			self.assertTrue(mouse.enable(stream))
+			self.assertTrue(mouse.disable(stream))
+
+		self.run_with(kernel32, body)
+		self.assertEqual(kernel32.written, [0x0280, 0x0080])
+
+	def test_reporting_restores_the_mode_when_the_body_raises(self):
+		kernel32 = FakeKernel32(0x0080)
+
+		def body():
+			stream = FakeStream()
+			with self.assertRaises(RuntimeError):
+				with mouse.reporting(stream):
+					raise RuntimeError("boom")
+
+		self.run_with(kernel32, body)
+		self.assertEqual(kernel32.written, [0x0280, 0x0080])
+
+	def test_a_failed_enable_write_does_not_leave_vt_input_on(self):
+		kernel32 = FakeKernel32(0x0080)
+
+		def body():
+			self.assertFalse(mouse.enable(BrokenStream()))
+
+		self.run_with(kernel32, body)
+		self.assertEqual(kernel32.written, [0x0280, 0x0080])
 
 
 class KeyTokenTests(unittest.TestCase):

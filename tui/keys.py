@@ -13,9 +13,13 @@ SGR mouse reports (`ESC [ < b ; x ; y M/m`) come back as `mouse:...` tokens from
 unchanged.
 
 No platform module is imported at import time, and `raw_mode()` leaves the
-terminal alone when stdin is not a tty. `decode_key()` is the pure token decoder
-the tests drive with pretend input, and `KeyReader(reader=...)` accepts a fake
-reader so the thread can be tested without a keyboard.
+terminal alone when stdin is not a tty. On Windows the console is read through
+`msvcrt`, and an ESC-led sequence (what a console with VT input enabled sends)
+is assembled with the same decoder and the same short timeout as the POSIX
+path, while the old `\\x00`/`\\xe0` scan codes still decode as before.
+`decode_key()` is the pure token decoder the tests drive with pretend input, and
+`KeyReader(reader=...)` accepts a fake reader so the thread can be tested
+without a keyboard.
 """
 
 import os
@@ -188,18 +192,28 @@ def _read_byte(stream):
 
 def _decode_escape(stream):
 	"""ESC already consumed: resolve a cursor/function sequence or a bare ESC."""
-	second = _read_more(stream)
+	return _decode_escape_with(lambda: _read_more(stream))
+
+
+def _decode_escape_with(read_more):
+	"""Shared ESC-sequence assembly over any `read_more()` byte source.
+
+	The POSIX stream and the Windows console both deliver a sequence as ESC
+	plus bytes, so both feed the same state machine; only the timeout-bounded
+	"next byte or None" call differs.
+	"""
+	second = read_more()
 	if second not in ("[", "O"):
 		return "esc"
 	sequence = "\x1b" + second
-	char = _read_more(stream)
+	char = read_more()
 	if char is None:
 		return "esc"
 	sequence += char
 	if sequence == "\x1b[<":
-		return _read_mouse(stream)
+		return _read_mouse_with(read_more)
 	while sequence[-1].isdigit() or sequence[-1] == ";":
-		char = _read_more(stream)
+		char = read_more()
 		if char is None:
 			break
 		sequence += char
@@ -208,9 +222,13 @@ def _decode_escape(stream):
 
 def _read_mouse(stream):
 	"""`ESC [ <` already consumed: read the SGR body up to its final M/m."""
+	return _read_mouse_with(lambda: _read_more(stream))
+
+
+def _read_mouse_with(read_more):
 	sequence = "\x1b[<"
 	while len(sequence) < 32:
-		char = _read_more(stream)
+		char = read_more()
 		if char is None:
 			return "esc"
 		sequence += char
@@ -258,7 +276,24 @@ def _read_key_windows(timeout=None):
 	first = msvcrt.getch()
 	if first in (b"\x00", b"\xe0"):
 		return _WINDOWS_SPECIAL.get(msvcrt.getch().decode("latin-1", "ignore"))
+	# With ENABLE_VIRTUAL_TERMINAL_INPUT the console hands over the bytes of a
+	# cursor/function/mouse sequence (`ESC [ A`) instead of a `\x00`/`\xe0`
+	# scan code, so it has to be assembled and decoded like a POSIX sequence.
+	# Every follow-up byte is timeout-bounded, so a bare ESC still reads as
+	# `esc` instead of blocking for the rest of a sequence.
+	if first == b"\x1b":
+		return _decode_escape_with(lambda: _read_more_windows(msvcrt))
 	return decode_key(first.decode("utf-8", "ignore"))
+
+
+def _read_more_windows(msvcrt):
+	"""Next byte of a Windows escape sequence, or None after ESCAPE_TIMEOUT."""
+	deadline = time.monotonic() + ESCAPE_TIMEOUT
+	while not msvcrt.kbhit():
+		if time.monotonic() >= deadline:
+			return None
+		time.sleep(0.001)
+	return msvcrt.getch().decode("latin-1", "ignore")
 
 
 def _fileno(stream):
