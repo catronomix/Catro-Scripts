@@ -24,7 +24,7 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 
 setUpModule, tearDownModule = module_isolation()
 
-from tui import caps, palette, table  # noqa: E402  (import after sys.path setup)
+from tui import caps, palette, table, table_glyphs  # noqa: E402  (import after sys.path setup)
 from tui.text import display_width  # noqa: E402
 
 # soft's truecolor codes, pinned literally: `list.py` itself renders through
@@ -281,6 +281,20 @@ class BlockTests(unittest.TestCase):
 		self.assertEqual(table.section("Part", cap=PIPE), "Part")
 		self.assertIn(palette.style("Part", fg="header", bold=True, cap=TRUE, theme="soft"),
 					  table.section("Part", cap=TRUE, theme="soft"))
+
+class GlyphShimTests(unittest.TestCase):
+	"""The glyph tables moved to `tui.table_glyphs`; old paths must resolve."""
+
+	def test_the_moved_names_still_resolve_through_the_table_module(self):
+		for name in ("UNICODE_GLYPHS", "ASCII_GLYPHS", "HEAVY_GLYPHS",
+					 "DOUBLE_GLYPHS", "SQUARE_GLYPHS", "SPACE_GLYPHS",
+					 "BORDER_GLYPHS", "glyphs_for"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(table, name), getattr(table_glyphs, name))
+
+	def test_the_shipped_family_is_the_same_object_both_ways(self):
+		self.assertIs(table.BORDER_GLYPHS["rounded"], table_glyphs.UNICODE_GLYPHS)
+
 
 if __name__ == "__main__":
 	unittest.main()
