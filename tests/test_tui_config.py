@@ -366,8 +366,14 @@ class ThemeCommandTests(unittest.TestCase):
 	def test_help_and_palette(self):
 		code, out = self.run_main(["palette"])
 		self.assertEqual(code, 0)
-		for key in ("bg", "fg", "accent", "zebra_bg"):
+		for key in ("bg", "fg", "fg-accent", "bg-stripe"):
 			self.assertIn(key, out)
+
+	def test_palette_page_shows_only_the_canonical_keys(self):
+		code, out = self.run_main(["palette"])
+		self.assertEqual(code, 0)
+		for alias in ("surface", "muted", "zebra_bg", "header"):
+			self.assertNotIn(alias + "  ", out)
 
 	def test_palette_swatches_carry_each_keys_own_colour(self):
 		# A terminal page paints the swatch with the key's own palette role and
@@ -379,7 +385,8 @@ class ThemeCommandTests(unittest.TestCase):
 				redirect_stdout(stream):
 			self.assertEqual(main(["palette"]), 0)
 		out = stream.getvalue()
-		for key, value in palette.palette().items():
+		for key in theme_engine.PALETTE_KEYS:
+			value = palette.palette()[key]
 			self.assertIn(palette.prefix(fg=key, cap=cap) + "\u25a0", out)
 			self.assertIn(value, out)
 

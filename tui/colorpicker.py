@@ -188,8 +188,10 @@ class ColorPicker:
 								 self.grid_y + row, text, colour)
 		self._draw_panel(glyph, cap)
 		inner = max(1, self.width - 2)
-		ratios = {name: contrast_ratio(self.value, self.colours[name])
-				  for name in ("bg", "zebra_bg") if name in self.colours}
+		ratios = {palette.role(name): contrast_ratio(
+					  self.value, self.colours[palette.role(name)])
+				  for name in ("bg", "zebra_bg")
+				  if palette.role(name) in self.colours}
 		low = bool(ratios) and min(ratios.values()) < WCAG_AA
 		if low:
 			facts = "{}  below AA 4.5:1".format(self.value)

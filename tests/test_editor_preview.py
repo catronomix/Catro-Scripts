@@ -144,7 +144,7 @@ class PreviewFrameTests(EditorTestCase):
 						self.assertEqual(
 							canvas._colors[2][1],
 							palette.prefix(
-								fg=document["looks"][look]["border"],
+								fg=document["looks"][look]["border-fg"],
 								cap=self.cap))
 
 	def test_ascii_console_degrades_the_frame_but_keeps_the_band(self):

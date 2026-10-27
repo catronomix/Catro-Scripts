@@ -47,9 +47,15 @@ import os
 from . import caps, theme_engine
 from .color_levels import (_BASE16, _CUBE, _NEAREST, _XTERM256,  # noqa: F401
 						   _hex, _nearest, _rgb, _sgr, index, rgb)
+from .theme_migrate import V1_TO_V2
 
 # The active frame memo (None outside a frame); see the module docstring.
 _FRAME = None
+
+# Schema-1 role spelling -> schema-2 key. Both render identically while the
+# migration is landing: the published tables carry both, and `prefix()` resolves
+# an old name before the colour slot lookup.
+_ROLE_ALIASES = dict(V1_TO_V2)
 
 
 def begin_frame():
@@ -91,13 +97,30 @@ def __getattr__(name):
 	"""
 	if name in _LOOK_TABLES:
 		_theme_id, look_id = _LOOK_TABLES[name]
-		return dict(theme_engine.builtin_looks()[look_id])
+		return _with_aliases(theme_engine.builtin_looks()[look_id])
 	if name == "THEMES":
 		looks = theme_engine.builtin_looks()
-		return {theme_id: dict(looks[look_id])
+		return {theme_id: _with_aliases(looks[look_id])
 				for theme_id, look_id in _LOOK_TABLES.values()}
 	raise AttributeError(
 		"module {!r} has no attribute {!r}".format(__name__, name))
+
+
+def _with_aliases(colours):
+	"""`colours` plus every schema-1 role spelling, pointing at the same hex."""
+	merged = dict(colours)
+	for old, new in _ROLE_ALIASES.items():
+		if new in merged:
+			merged[old] = merged[new]
+	return merged
+
+
+def role(name):
+	"""Canonical schema-2 key for a role spelling; anything else unchanged."""
+	if isinstance(name, str):
+		return _ROLE_ALIASES.get(name.strip().lower(), name)
+	return name
+
 
 # Every accepted spelling, folded by `fold()` before lookup. Only the three
 # names in THEMES are real palettes; the rest are inputs, including the legacy
@@ -164,11 +187,13 @@ def palette(theme=None, cap=None):
 
 	`theme` keeps its old meaning: a look spelling (`soft`, `contrast-light`, ...)
 	selects that look of the active theme, so every existing caller and test
-	still names the palette it used to get.
+	still names the palette it used to get. Both the schema-2 keys and the
+	schema-1 spellings are present, with the same hex, until the rename lands.
 	"""
 	name, look_selector = _active(theme)
 	key = ("palette", name, look_selector)
-	return dict(_memo(key, lambda: theme_engine.look_palette(name, look_selector)))
+	return dict(_memo(key, lambda: _with_aliases(
+		theme_engine.look_palette(name, look_selector))))
 
 
 def style(text, fg=None, bg=None, bold=False, dim=False, reverse=False,
@@ -200,6 +225,7 @@ def prefix(fg=None, bg=None, bold=False, dim=False, reverse=False,
 	if cap.level == "none":
 		return ""
 	colours = palette(theme)
+	fg, bg = role(fg), role(bg)
 	parts = []
 	if fg is not None:
 		parts.append(_sgr(_rgb(fg, colours, "fg"), cap.level, background=False))

@@ -6,15 +6,15 @@ The frame alphabets the table renderer, the page chrome and the editor preview
 draw with, plus `glyphs_for()`, the one place that decides which family a run
 uses: the `table.style` override first, then the theme's `border_style`, then
 the capability probe (`cap.unicode` False degrades every family but `none` to
-ASCII). Keeping the tables here means a caller that only needs a corner glyph
-does not pull in the renderer.
+ASCII), then the theme's `corner-char`, which `tui.frame_corners` stamps on the
+corners of the winner; the tables live here so callers skip the renderer.
 
 Every set has the same eleven keys (`tl`, `tm`, `tr`, `ml`, `mm`, `mr`, `bl`,
 `bm`, `br`, `h`, `v`); `rounded` is the shipped default and is byte-pinned by
 the golden fixture, so it must not move between families.
 """
 
-from . import config, palette
+from . import config, frame_corners, palette
 
 UNICODE_GLYPHS = {
 	"tl": "\u250c", "tm": "\u252c", "tr": "\u2510",
@@ -81,9 +81,10 @@ def glyphs_for(cap, theme=None):
 	"""
 	style = str(config.get("table", "style", "auto")).strip().lower()
 	if style == "ascii":
-		return ASCII_GLYPHS
-	border = str(palette.properties().get("border_style", "rounded"))
-	glyphs = BORDER_GLYPHS.get(border, UNICODE_GLYPHS)
-	if not cap.unicode and glyphs is not SPACE_GLYPHS:
-		return ASCII_GLYPHS
-	return glyphs
+		glyphs = ASCII_GLYPHS
+	else:
+		border = str(palette.properties().get("border_style", "rounded"))
+		glyphs = BORDER_GLYPHS.get(border, UNICODE_GLYPHS)
+		if not cap.unicode and glyphs is not SPACE_GLYPHS:
+			glyphs = ASCII_GLYPHS
+	return frame_corners.apply_corners(glyphs, cap, palette.properties())

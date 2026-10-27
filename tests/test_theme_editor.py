@@ -481,15 +481,19 @@ class EditingTests(EditorTestCase):
 
 	def test_a_single_valued_property_nudges_to_nothing(self):
 		ed = self.make()
-		ed.pump(["end"])  # `selection_style` is the last row and has one value
-		self.assertEqual(ed.property_index,
-						 len(editorviews.PROPERTY_KEYS) - 1)
-		before = copy.deepcopy(ed.document)
-		ed.handle("right")
-		ed.handle("left")
-		self.assertEqual(ed.document, before)
-		self.assertFalse(ed.dirty)
-		self.assertIn("only value", ed.message[1])
+		# No shipped property has one value any more, so pin the seam that
+		# still has to handle one (`selection_style` retired in schema 2).
+		with mock.patch.dict(theme_engine.PROPERTY_VALUES,
+							 {"corner-char": ("none",)}):
+			ed.pump(["end"])  # the last row is the single-valued one
+			self.assertEqual(ed.property_index,
+							 len(editorviews.PROPERTY_KEYS) - 1)
+			before = copy.deepcopy(ed.document)
+			ed.handle("right")
+			ed.handle("left")
+			self.assertEqual(ed.document, before)
+			self.assertFalse(ed.dirty)
+			self.assertIn("only value", ed.message[1])
 
 	def test_zebra_toggles_in_place(self):
 		ed = self.make()

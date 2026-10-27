@@ -19,14 +19,13 @@ truth, and `tui.theme_engine` loads it lazily for the built-in fallback.
 
 import re
 
+from .picker_keys import CORNER_CHARS, PALETTE_KEYS, V1_PALETTE_KEYS
+
 DEFAULT_THEME = "cozypurple"
 DEFAULT_LOOK = "soft"
 
 # Look ids are the JSON file's keys; selectors are what a user types.
 LOOKS = ("default", "contrast-dark", "contrast-light")
-
-PALETTE_KEYS = ("bg", "surface", "fg", "muted", "accent", "success", "warn",
-				"error", "border", "header", "zebra_bg")
 
 PROPERTY_VALUES = {
 	"header_align": ("left", "center", "right"),
@@ -38,8 +37,17 @@ PROPERTY_VALUES = {
 	"table_zebra": (True, False),
 	"focus_style": ("reverse", "accent", "underline"),
 	"scrollbar_style": ("block", "line", "ascii"),
-	"selection_style": ("accent",),
+	"corner-char": CORNER_CHARS,
 }
+
+# Schema 1 is still accepted and read; its own key/property set is the only
+# thing that validates it, so a v1 file is never refused or silently rewritten.
+V1_PROPERTY_VALUES = dict(PROPERTY_VALUES, selection_style=("accent",))
+del V1_PROPERTY_VALUES["corner-char"]
+
+# schema -> (palette keys, property table) the checker validates against.
+SCHEMAS = {1: (V1_PALETTE_KEYS, V1_PROPERTY_VALUES),
+		   2: (PALETTE_KEYS, PROPERTY_VALUES)}
 
 # The document's top-level keys, in the order `_ordered()` writes them. Anything
 # else is rejected rather than dropped by a save.
@@ -96,37 +104,40 @@ def validate(document):
 		errors.append("unknown top-level keys: {}".format(
 			", ".join(str(key) for key in unknown)))
 	schema = document.get("schema")
-	if isinstance(schema, bool) or schema != 1:
-		errors.append("schema must be 1")
+	if isinstance(schema, bool) or schema not in SCHEMAS:
+		errors.append("schema must be 1 or 2")
+		keys, properties = PALETTE_KEYS, PROPERTY_VALUES
+	else:
+		keys, properties = SCHEMAS[schema]
 	name = document.get("name")
 	if not isinstance(name, str) or not SLUG.match(name):
 		errors.append("name must be a slug matching [a-z0-9][a-z0-9-]*")
 	display = document.get("display")
 	if not isinstance(display, str) or not display.strip():
 		errors.append("display must be non-empty text")
-	errors.extend(_property_errors(document.get("properties")))
-	errors.extend(_look_errors(document.get("looks")))
+	errors.extend(_property_errors(document.get("properties"), properties))
+	errors.extend(_look_errors(document.get("looks"), keys))
 	return errors
 
 
-def _property_errors(properties):
+def _property_errors(properties, allowed_values):
 	if not isinstance(properties, dict):
 		return ["properties must be an object"]
 	errors = []
-	for key, allowed in PROPERTY_VALUES.items():
+	for key, allowed in allowed_values.items():
 		if key not in properties:
 			errors.append("properties is missing {}".format(key))
 		elif not any(properties[key] == value and
 					 type(properties[key]) is type(value) for value in allowed):
 			errors.append("invalid property {}: {!r}".format(
 				key, properties[key]))
-	unknown = sorted(set(properties) - set(PROPERTY_VALUES))
+	unknown = sorted(set(properties) - set(allowed_values))
 	if unknown:
 		errors.append("unknown properties: {}".format(", ".join(unknown)))
 	return errors
 
 
-def _look_errors(looks):
+def _look_errors(looks, keys):
 	if not isinstance(looks, dict):
 		return ["looks must be an object"]
 	errors = []
@@ -136,9 +147,9 @@ def _look_errors(looks):
 			errors.append("looks is missing {}".format(look))
 			continue
 		errors.extend("looks.{} has no valid {} colour".format(look, key)
-					  for key in PALETTE_KEYS
+					  for key in keys
 					  if canonical_hex(entry.get(key)) is None)
-		unknown = sorted(set(entry) - set(PALETTE_KEYS))
+		unknown = sorted(set(entry) - set(keys))
 		if unknown:
 			errors.append("looks.{} has unknown keys: {}".format(
 				look, ", ".join(unknown)))

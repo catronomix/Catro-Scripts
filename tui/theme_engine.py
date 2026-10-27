@@ -7,8 +7,11 @@ One JSON file per theme under `themes/`, one selection file per checkout
 data; `tui.palette` stays the public styling API and delegates here.
 
 A document is `{schema, name, display, properties, looks}`: exactly the three
-looks `default`, `contrast-dark`, `contrast-light` with the eleven palette keys
-as `#rrggbb` strings, plus the nine rendering properties. Validation is
+looks `default`, `contrast-dark`, `contrast-light` with the sixteen schema-2
+palette keys as `#rrggbb` strings, plus the nine rendering properties. A
+schema-1 file is validated against its own key set and migrated in memory on
+read (`tui.theme_migrate`), so an old theme keeps loading and a save writes the
+current schema. Validation is
 all-or-nothing, so a typo can never ship a half-theme. The tables and their
 checker live in `tui.theme_schema` and are re-exported here, so this module
 stays the public surface while `theme_schema` owns what "valid" means.
@@ -53,6 +56,7 @@ from .theme_schema import (DEFAULT_LOOK, DEFAULT_THEME, DOCUMENT_KEYS,  # noqa: 
 						   LEGACY_LOOKS, LOOKS, PALETTE_KEYS, PROPERTY_VALUES,
 						   SELECTOR_OF, SELECTORS, SLUG,
 						   canonical_hex, validate)
+from .theme_migrate import SCHEMA_CURRENT, migrate_doc
 
 
 # Overrides for tests; see the module docstring.
@@ -101,7 +105,7 @@ def list_themes():
 def _ordered(document, lower=True):
 	"""Copy in the pinned order; `lower=False` keeps the file's hex spelling."""
 	return {
-		"schema": 1,
+		"schema": SCHEMA_CURRENT,
 		"name": str(document["name"]).strip().lower(),
 		"display": str(document["display"]).strip(),
 		"properties": {key: document["properties"][key]
@@ -175,7 +179,7 @@ def _document_for(name):
 	if str(document.get("name")).strip().lower() != name:
 		raise ThemeError("theme name {!r} does not match {}".format(
 			document.get("name"), target.name))
-	normalized = _ordered(document, lower=False)
+	normalized = _ordered(migrate_doc(document), lower=False)
 	_CACHE.clear()
 	if key is not None:
 		_CACHE[key] = normalized
@@ -200,7 +204,7 @@ def builtin_document():
 
 
 def builtin_looks():
-	"""Copy of the shipped document's looks (look id -> eleven hexes)."""
+	"""Copy of the shipped document's looks (look id -> palette hexes)."""
 	return builtin_document()["looks"]
 
 
@@ -284,7 +288,7 @@ def resolve(name=None, look=None):
 
 
 def look_palette(name=None, look=None):
-	"""Copy of one look's eleven hexes; never raises for a bad theme name.
+	"""Copy of one look's palette hexes; never raises for a bad theme name.
 
 	The fallback is the shipped `cozypurple` look, so it raises `ThemeError`
 	only when the shipped file itself is missing or unreadable.
@@ -365,7 +369,7 @@ def save_theme(document, overwrite=False):
 	errors = validate(document)
 	if errors:
 		raise ThemeError("invalid theme: {}".format("; ".join(errors)))
-	canonical = _ordered(document, lower=False)
+	canonical = _ordered(migrate_doc(document), lower=False)
 	target = _path_for(canonical["name"])
 	if target.exists() and not overwrite:
 		raise ThemeError("theme file exists: {}".format(target))

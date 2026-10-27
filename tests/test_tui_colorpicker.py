@@ -32,7 +32,7 @@ CAP = caps.Capabilities(level="16", unicode=True, width=120, isatty=True,
 						plain=False, reason="test")
 ASCII = caps.Capabilities(level="16", unicode=False, width=120, isatty=True,
 						  plain=False, reason="test")
-COLOURS = {"bg": "#ffffff", "zebra_bg": "#f4f4f8"}
+COLOURS = {"bg": "#ffffff", "bg-stripe": "#f4f4f8"}
 
 
 class FakeStream:
@@ -350,10 +350,11 @@ class DrawTests(unittest.TestCase):
 
 	def test_a_narrow_popup_truncates_the_facts_to_the_popup_not_the_panel(self):
 		popup = picker("#ffffff", width=CELL * STEPS + 2,
-					   colours={"bg": "#000000", "zebra_bg": "#000000"})
+					   colours={"bg": "#000000", "bg-stripe": "#000000"})
 		popup.draw()
 		facts = "".join(popup.canvas._buffer[popup.grid_y + len(ROWS)])
-		self.assertIn("zebra_bg", facts)
+		self.assertIn("bg-strip", facts)
+		self.assertIn("..", facts)
 
 	def test_the_selected_swatch_carries_the_reverse_marker(self):
 		popup = picker()
@@ -385,7 +386,7 @@ class DrawTests(unittest.TestCase):
 		self.assertNotIn("..", hint)
 
 	def test_low_contrast_warns_but_never_blocks(self):
-		popup = picker("#777777", colours={"bg": "#666666", "zebra_bg": "#666666"})
+		popup = picker("#777777", colours={"bg": "#666666", "bg-stripe": "#666666"})
 		popup.draw()
 		text = "\n".join(popup.canvas.region(0, 0, 90, 24))
 		self.assertIn("below AA 4.5:1", text)
@@ -393,7 +394,7 @@ class DrawTests(unittest.TestCase):
 		self.assertEqual(popup.result, "#777777")
 
 	def test_high_contrast_reports_the_ratio_without_the_warning(self):
-		popup = picker("#ffffff", colours={"bg": "#000000", "zebra_bg": "#000000"})
+		popup = picker("#ffffff", colours={"bg": "#000000", "bg-stripe": "#000000"})
 		popup.draw()
 		text = "\n".join(popup.canvas.region(0, 0, 90, 24))
 		self.assertNotIn("below AA", text)

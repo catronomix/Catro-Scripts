@@ -27,7 +27,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import config, theme_engine  # noqa: E402  (import after sys.path setup)
+from tui import config, theme_engine, theme_migrate  # noqa: E402  (import after sys.path setup)
 
 SHIPPED = REPO / "themes" / "cozypurple.json"
 
@@ -76,7 +76,9 @@ class ShippedDocumentTests(SeamCase):
 	def test_the_shipped_file_is_valid_and_matches_the_builtin_table(self):
 		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
 		self.assertEqual(theme_engine.validate(document), [])
-		self.assertEqual(document, builtin())
+		# The file is still schema 1; the built-in table is its migrated form.
+		self.assertEqual(document["schema"], 1)
+		self.assertEqual(theme_migrate.migrate_doc(document), builtin())
 
 	def test_load_preserves_the_file_spelling(self):
 		theme_engine.THEMES_DIR = REPO / "themes"
@@ -85,7 +87,7 @@ class ShippedDocumentTests(SeamCase):
 		# The load hands out the file's own spelling, not a canonicalised copy.
 		self.assertEqual(document["looks"]["default"]["bg"],
 						 shipped["looks"]["default"]["bg"])
-		self.assertEqual(document["looks"]["contrast-dark"]["accent"],
+		self.assertEqual(document["looks"]["contrast-dark"]["fg-accent"],
 						 shipped["looks"]["contrast-dark"]["accent"])
 		# ... and the shipped file really is mixed-case, so the two pins above
 		# cannot pass on an accidentally lowercased file.
@@ -139,23 +141,26 @@ class ValidationTests(SeamCase):
 
 	def test_every_look_needs_every_palette_key(self):
 		document = builtin()
-		del document["looks"]["contrast-light"]["warn"]
+		del document["looks"]["contrast-light"]["fg-warn"]
 		self.assertTrue(self.check(document))
 
 	def test_hexes_accept_optional_hash_and_mixed_case(self):
 		document = builtin()
-		document["looks"]["default"]["accent"] = "f5CD68"
+		document["looks"]["default"]["fg-accent"] = "f5CD68"
 		self.assertEqual(self.check(document), [])
-		document["looks"]["default"]["accent"] = "#12345"
+		document["looks"]["default"]["fg-accent"] = "#12345"
 		self.assertTrue(self.check(document))
-		document["looks"]["default"]["accent"] = "#GGGGGG"
+		document["looks"]["default"]["fg-accent"] = "#GGGGGG"
 		self.assertTrue(self.check(document))
 
 	def test_schema_and_name_rules(self):
-		for schema in (2, "1", True):
+		for schema in (3, "1", True):
 			document = builtin()
 			document["schema"] = schema
 			self.assertTrue(self.check(document), schema)
+		document = builtin()
+		document["schema"] = theme_migrate.SCHEMA_CURRENT
+		self.assertEqual(self.check(document), [])
 		for name in ("Cozy Purple", "", "-leading", "UPPER"):
 			document = builtin()
 			document["name"] = name
@@ -274,32 +279,39 @@ class SaveTests(SeamCase):
 
 	def test_editing_one_look_changes_only_that_look(self):
 		target = self.themes / "cozypurple.json"
+		# Normalise the v1 fixture once, then a one-look edit must be one line.
+		theme_engine.save_theme(theme_engine.load_theme("cozypurple"),
+								overwrite=True)
 		before = target.read_text(encoding="utf-8").splitlines()
 		document = theme_engine.load_theme("cozypurple")
-		old = document["looks"]["contrast-light"]["accent"]
-		document["looks"]["contrast-light"]["accent"] = "#123456"
+		old = document["looks"]["contrast-light"]["fg-accent"]
+		document["looks"]["contrast-light"]["fg-accent"] = "#123456"
 		theme_engine.save_theme(document, overwrite=True)
 		after = target.read_text(encoding="utf-8").splitlines()
 		self.assertEqual(len(after), len(before))
 		changed = [(a, b) for a, b in zip(before, after) if a != b]
-		self.assertEqual(changed, [('      "accent": "{}",'.format(old),
-									'      "accent": "#123456",')])
+		self.assertEqual(changed, [('      "fg-accent": "{}",'.format(old),
+									'      "fg-accent": "#123456",')])
 
-	def test_an_unedited_load_and_save_matches_the_shipped_file(self):
+	def test_an_unedited_load_and_save_is_canonical_v2(self):
 		path = theme_engine.save_theme(
 			theme_engine.load_theme("cozypurple"), overwrite=True)
 		written = Path(path).read_bytes()
-		shipped = SHIPPED.read_bytes()
-		# The writer always emits LF; a checkout may hand us CRLF (autocrlf).
-		# Compare the index bytes, so only content is pinned here.
-		self.assertEqual(written.replace(b"\r\n", b"\n"),
-						 shipped.replace(b"\r\n", b"\n"),
-						 "an unedited save must not rewrite the shipped file")
 		text = written.decode("utf-8")
+		document = json.loads(text)
+		# The writer always emits LF; a checkout may hand us CRLF (autocrlf).
+		self.assertNotIn("\r", text)
+		self.assertEqual(document["schema"], theme_migrate.SCHEMA_CURRENT)
+		self.assertEqual(list(document["looks"]["default"]),
+						 list(theme_engine.PALETTE_KEYS))
+		self.assertNotIn("selection_style", document["properties"])
 		self.assertEqual(list(json.loads(text)), ["schema", "name", "display",
 												 "properties", "looks"])
 		self.assertTrue(text.endswith("}\n"), "one trailing LF, no blank line")
-		self.assertNotIn("\r", text)
+		# A second unedited save is byte-identical: the write is canonical.
+		theme_engine.save_theme(theme_engine.load_theme("cozypurple"),
+								overwrite=True)
+		self.assertEqual(Path(path).read_bytes(), written)
 
 	def test_saving_a_loaded_document_is_byte_stable(self):
 		document = builtin()
@@ -349,24 +361,25 @@ class BuiltinSourceTests(SeamCase):
 
 	def test_the_builtin_document_is_the_shipped_file(self):
 		shipped = json.loads(SHIPPED.read_text(encoding="utf-8"))
-		self.assertEqual(theme_engine.builtin_document(), shipped)
-		self.assertEqual(theme_engine.builtin_looks(), shipped["looks"])
+		migrated = theme_migrate.migrate_doc(shipped)
+		self.assertEqual(theme_engine.builtin_document(), migrated)
+		self.assertEqual(theme_engine.builtin_looks(), migrated["looks"])
 		self.assertEqual(theme_engine.builtin_properties(),
-						 shipped["properties"])
+						 migrated["properties"])
 
 	def test_the_builtin_tracks_the_file_in_a_redirected_theme_dir(self):
 		# A deliberate palette change is a one-file commit: no literal to edit.
 		document = builtin()
-		document["looks"]["default"]["accent"] = "#112233"
+		document["looks"]["default"]["fg-accent"] = "#112233"
 		document["properties"]["border_style"] = "ascii"
 		(self.themes / "cozypurple.json").write_text(
 			json.dumps(document, indent=2) + "\n", encoding="utf-8")
 		theme_engine._CACHE.clear()
-		self.assertEqual(theme_engine.builtin_looks()["default"]["accent"],
+		self.assertEqual(theme_engine.builtin_looks()["default"]["fg-accent"],
 						 "#112233")
 		self.assertEqual(theme_engine.builtin_properties()["border_style"],
 						 "ascii")
-		self.assertEqual(theme_engine.look_palette("ghost")["accent"],
+		self.assertEqual(theme_engine.look_palette("ghost")["fg-accent"],
 						 "#112233")
 		self.assertEqual(theme_engine.properties("ghost")["border_style"],
 						 "ascii")
@@ -394,7 +407,9 @@ class BuiltinSourceTests(SeamCase):
 		with mock.patch.object(theme_engine, "_document_for",
 							   side_effect=AssertionError("import-time read")):
 			importlib.reload(palette)
-		self.assertEqual(palette.SOFT, theme_engine.builtin_looks()["default"])
+		self.assertEqual(
+			{key: palette.SOFT[key] for key in theme_engine.PALETTE_KEYS},
+			theme_engine.builtin_looks()["default"])
 		self.assertEqual(set(palette.THEMES),
 						 {"soft", "contrast-light", "contrast-dark"})
 
@@ -423,14 +438,14 @@ class SelectionTests(SeamCase):
 		document["name"] = "mint"
 		document["display"] = "Mint"
 		document["properties"]["border_style"] = "ascii"
-		document["looks"]["contrast-dark"]["accent"] = "#22CC88"
+		document["looks"]["contrast-dark"]["fg-accent"] = "#22CC88"
 		self.write_theme(document)
 		self.selection_file.write_text(
 			"[theme]\nname = mint\nlook = dark\n", encoding="utf-8")
 		self.assertEqual(theme_engine.resolve(), ("mint", "contrast-dark"))
 		self.assertEqual(theme_engine.document()["name"], "mint")
 		self.assertEqual(theme_engine.properties()["border_style"], "ascii")
-		self.assertEqual(theme_engine.look_palette()["accent"], "#22CC88")
+		self.assertEqual(theme_engine.look_palette()["fg-accent"], "#22CC88")
 
 	def test_a_selected_theme_that_breaks_later_falls_back(self):
 		document = builtin()

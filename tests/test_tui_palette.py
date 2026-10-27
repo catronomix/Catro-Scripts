@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, config, palette, table, theme_engine  # noqa: E402  (import after sys.path setup)
+from tui import caps, config, palette, table, theme_engine, theme_migrate  # noqa: E402  (import after sys.path setup)
 from support import isolate_checkout_config, module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -37,8 +37,9 @@ SHIPPED = REPO / "themes" / "cozypurple.json"
 
 
 def shipped_looks():
-	"""The three looks as the shipped document writes them (one source)."""
-	return json.loads(SHIPPED.read_text(encoding="utf-8"))["looks"]
+	"""The three looks as the engine hands them out (schema 2, one source)."""
+	document = json.loads(SHIPPED.read_text(encoding="utf-8"))
+	return theme_migrate.migrate_doc(document)["looks"]
 
 # soft's truecolor codes, byte for byte: border #A392C0, fg #D4C8EB,
 # bg #1B1726, surface #292238.
@@ -99,14 +100,19 @@ class SoftByteTests(unittest.TestCase):
 
 	def test_soft_palette_values_come_from_the_shipped_document(self):
 		soft = shipped_looks()["default"]
-		self.assertEqual(dict(palette.SOFT), soft)
+		table = palette.SOFT
+		self.assertEqual({key: table[key] for key in theme_engine.PALETTE_KEYS},
+						 soft)
 		# The pinned escapes spell the same colours the shipped file carries.
-		for escape, key in ((BORDER, "border"), (ACCENT, "accent"),
-							(FG, "fg"), (BG, "bg"), (SURFACE, "surface")):
+		for escape, key in ((BORDER, "border-fg"), (ACCENT, "fg-accent"),
+							(FG, "fg"), (BG, "bg"), (SURFACE, "bg-inside")):
 			with self.subTest(key=key):
 				self.assertEqual(rgb_of(escape), palette.rgb(soft[key]))
-		self.assertEqual(soft["muted"], soft["border"])
-		self.assertEqual(soft["header"], soft["accent"])
+		self.assertEqual(soft["fg-muted"], soft["border-fg"])
+		self.assertEqual(soft["header-fg"], soft["fg-accent"])
+		# ... and the schema-1 spellings still name the same hexes.
+		self.assertEqual(table["muted"], table["fg-muted"])
+		self.assertEqual(table["surface"], table["bg-inside"])
 
 
 class PrefixSeamTests(unittest.TestCase):
@@ -230,16 +236,22 @@ class ThreeThemeTests(unittest.TestCase):
 	def test_theme_set_is_exactly_three(self):
 		self.assertEqual(set(palette.THEMES), set(self.shipped()))
 
-	def test_every_theme_has_the_same_eleven_keys(self):
-		keys = set(self.shipped()["soft"])
-		self.assertEqual(len(keys), 11)
+	def test_every_theme_has_the_same_sixteen_keys(self):
+		keys = set(theme_engine.PALETTE_KEYS)
+		self.assertEqual(len(keys), 16)
 		for name, table in palette.THEMES.items():
-			self.assertEqual(set(table), keys, name)
+			self.assertLessEqual(keys, set(table), name)
+			# Both spellings are published, with the same hex, until C4.
+			for old, new in theme_migrate.V1_TO_V2.items():
+				self.assertEqual(table[old], table[new], (name, old))
 
 	def test_tables_are_the_shipped_values(self):
 		for name, expected in self.shipped().items():
 			with self.subTest(theme=name):
-				self.assertEqual(palette.THEMES[name], expected)
+				table = palette.THEMES[name]
+				self.assertEqual(
+					{key: table[key] for key in theme_engine.PALETTE_KEYS},
+					expected)
 
 	def test_contrast_dark_true_accent_is_cyan(self):
 		self.assertEqual(
@@ -267,9 +279,14 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 	def test_shipped_document_matches_the_published_tables(self):
 		# The adapter publishes exactly the shipped document, look for look.
 		document = theme_engine.load_theme("cozypurple")
-		self.assertEqual(document["looks"]["default"], palette.SOFT)
-		self.assertEqual(document["looks"]["contrast-light"], palette.CONTRAST_LIGHT)
-		self.assertEqual(document["looks"]["contrast-dark"], palette.CONTRAST_DARK)
+		pairs = (("default", palette.SOFT),
+				 ("contrast-light", palette.CONTRAST_LIGHT),
+				 ("contrast-dark", palette.CONTRAST_DARK))
+		for look, table in pairs:
+			with self.subTest(look=look):
+				self.assertEqual(
+					{key: table[key] for key in theme_engine.PALETTE_KEYS},
+					document["looks"][look])
 		self.assertEqual(document["properties"],
 						 theme_engine.builtin_properties())
 		self.assertEqual(document["looks"], shipped_looks())
@@ -344,13 +361,13 @@ def _contrast(first, second):
 class ContrastGateTests(unittest.TestCase):
 	"""Every theme clears WCAG AA on both backgrounds, recomputed from hexes."""
 
-	FOREGROUND = ("fg", "muted", "accent", "success", "warn", "error",
-				  "border", "header")
+	FOREGROUND = ("fg", "fg-muted", "fg-accent", "fg-success", "fg-warn",
+				  "fg-error", "border-fg", "header-fg")
 
 	def test_all_three_themes_clear_wcag_aa(self):
 		for name, colours in palette.THEMES.items():
 			for key in self.FOREGROUND:
-				for backdrop in ("bg", "zebra_bg"):
+				for backdrop in ("bg", "bg-stripe"):
 					ratio = _contrast(colours[key], colours[backdrop])
 					self.assertGreaterEqual(
 						ratio, 4.5, "{} {} on {} is {:.2f}:1".format(
@@ -414,10 +431,57 @@ class ThemeAliasTests(unittest.TestCase):
 				self.assertEqual(palette.theme(), "contrast-light")
 
 
+class RoleAliasTests(unittest.TestCase):
+	"""Schema-1 role spellings render byte-identically to their v2 key."""
+
+	def test_every_alias_targets_a_real_v2_key(self):
+		for old, new in theme_migrate.V1_TO_V2.items():
+			with self.subTest(alias=old):
+				self.assertIn(new, theme_engine.PALETTE_KEYS)
+				self.assertNotIn(old, theme_engine.PALETTE_KEYS)
+				self.assertEqual(palette.role(old), new)
+				self.assertEqual(palette.role(new), new)
+				self.assertEqual(palette.role(" " + old + " "), new)
+
+	def test_old_roles_emit_the_same_sgr_as_their_v2_key(self):
+		for theme in palette.THEMES:
+			for old, new in theme_migrate.V1_TO_V2.items():
+				with self.subTest(theme=theme, alias=old):
+					self.assertEqual(
+						palette.style("x", fg=old, cap=TRUE, theme=theme),
+						palette.style("x", fg=new, cap=TRUE, theme=theme))
+					self.assertEqual(
+						palette.style("x", bg=old, cap=TRUE, theme=theme),
+						palette.style("x", bg=new, cap=TRUE, theme=theme))
+					self.assertEqual(
+						palette.prefix(fg=old, cap=TRUE, theme=theme),
+						palette.prefix(fg=new, cap=TRUE, theme=theme))
+
+	def test_published_tables_carry_both_spellings(self):
+		tables = [palette.palette("soft")]
+		tables += [getattr(palette, name) for name in
+				   ("SOFT", "CONTRAST_LIGHT", "CONTRAST_DARK")]
+		for table in tables:
+			self.assertLessEqual(set(theme_engine.PALETTE_KEYS), set(table))
+			self.assertLessEqual(set(theme_migrate.V1_PALETTE_KEYS), set(table))
+			for old, new in theme_migrate.V1_TO_V2.items():
+				self.assertEqual(table[old], table[new], old)
+
+	def test_unknown_and_custom_roles_keep_todays_fallback(self):
+		for value in ("nonsense", "#0A0B0C", (1, 2, 3)):
+			with self.subTest(value=value):
+				self.assertEqual(palette.role(value), value)
+		self.assertEqual(
+			palette.style("x", fg="nonsense", cap=TRUE, theme="soft"),
+			palette.style("x", fg="fg", cap=TRUE, theme="soft"))
+		self.assertEqual(palette.style("x", fg="#0A0B0C", cap=TRUE),
+						 "\x1b[38;2;10;11;12mx\x1b[0m")
+
+
 class DowngradeTests(unittest.TestCase):
 	def test_256_mapping_is_deterministic_and_total(self):
 		soft = shipped_looks()["default"]
-		samples = (soft["accent"], soft["bg"], soft["surface"], soft["fg"],
+		samples = (soft["fg-accent"], soft["bg"], soft["bg-inside"], soft["fg"],
 				   shipped_looks()["contrast-light"]["bg"], "#123456")
 		for value in samples:
 			with self.subTest(colour=value):
@@ -430,7 +494,7 @@ class DowngradeTests(unittest.TestCase):
 
 	def test_16_mapping_stays_in_the_basic_range(self):
 		soft = shipped_looks()["default"]
-		for value in (soft["accent"], soft["bg"], soft["fg"],
+		for value in (soft["fg-accent"], soft["bg"], soft["fg"],
 					  shipped_looks()["contrast-light"]["bg"]):
 			with self.subTest(colour=value):
 				fore = palette.style("x", fg=value, cap=LEVEL16)

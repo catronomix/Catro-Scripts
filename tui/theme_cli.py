@@ -32,7 +32,9 @@ VALID = {
 # Key column of the settings block and the palette/list tables: the widest key
 # ("color.level", "table.style") plus one cell, matching the old layout.
 KEY_WIDTH = 11
-PALETTE_KEY_WIDTH = 10
+# The palette page shows the canonical v2 keys only, so the column fits the
+# longest of them ("bg-inside-active").
+PALETTE_KEY_WIDTH = max(len(key) for key in theme_engine.PALETTE_KEYS)
 # ASCII fallback for the palette swatch, so a legacy codepage never raises.
 SWATCH_GLYPH = "\u25a0"
 SWATCH_ASCII = "#"
@@ -102,8 +104,10 @@ def palette_rows(cap):
 	stays readable when the swatch downgrades or the theme is monochrome.
 	"""
 	glyph = SWATCH_GLYPH * 4 if cap.unicode else SWATCH_ASCII * 4
+	colours = palette.palette()
 	rows = []
-	for key, value in palette.palette().items():
+	for key in theme_engine.PALETTE_KEYS:
+		value = colours[key]
 		if cap.plain:
 			sample = value
 		else:

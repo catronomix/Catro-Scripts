@@ -47,8 +47,8 @@ def button_text(label, properties, colours, *, focused=False, disabled=False,
 			attributes["reverse"] = True
 	if disabled:
 		attributes = {"fg": "muted"}
-	fg = colours.get(attributes.pop("fg", "fg"))
-	bg = colours.get(attributes.pop("bg", ""), None)
+	fg = colours.get(palette.role(attributes.pop("fg", "fg")))
+	bg = colours.get(palette.role(attributes.pop("bg", "")), None)
 	return palette.style(text, fg=fg, bg=bg, cap=cap, **attributes)
 
 
@@ -76,7 +76,7 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 		inner_w, inner_h = width - 2, height - 2
 
 	def ink(role):
-		return colours.get(role, role)
+		return colours.get(palette.role(role), role)
 
 	rows = []
 	if not framed:
@@ -183,4 +183,5 @@ def _draw_scrollbar(canvas, x, y, height, properties, colours, cap):
 		active = row < stop
 		glyph = thumb if active else track
 		canvas.draw_char(x, y + row, glyph, palette.prefix(
-			fg=colours.get("accent" if active else "muted"), cap=cap))
+			fg=colours.get(palette.role("accent" if active else "muted")),
+			cap=cap))
