@@ -1,13 +1,33 @@
 # Themes
 
 One JSON file per theme in this directory. `cozypurple.json` ships with the
-repository and reproduces the look the scripts have always had.
+repository and holds the current default look (cozy purple: gold on velvet
+purple), the look the golden fixture pins.
 
 Select a theme by writing its `name` in the gitignored `theme.ini` next to the
 scripts; the look (`soft`, `light`, `dark`) can also be changed with
 `catro-scripts theme soft|light|dark` or `theme toggle`. `catro-scripts theme`
 prints the active look and the paths it uses, and falls back to the built-in
 `cozypurple` default whenever the file is missing or invalid.
+
+## The editor
+
+`catro-scripts theme edit [name]` opens the full-screen editor on `<name>`, or
+on the active theme when no name is given. It needs an interactive terminal and
+exits 2 without one.
+
+- Properties edits the nine rendering properties; Colours opens a hex/HSV colour
+  picker for the selected palette key. Below WCAG AA (4.5:1 against `bg` and
+  `zebra_bg`) the picker warns but never blocks.
+- The three previews show the three looks of the document under edit, live.
+- `Ctrl-S` saves. The filename is preseeded with the theme name and `.json` is
+  implied; the name must be a legal slug (`a-z`, `0-9`, `-`). Saving is atomic
+  and updates `theme.ini` to the saved theme. An existing different file asks
+  `overwrite? y/n` first, so `n` leaves it byte-identical.
+- Load lists every `themes/*.json` sorted, marks the active theme with `*` and
+  an unreadable or invalid file with `!`; Enter loads a valid row (asking first
+  when there are unsaved changes) and the list keeps working after an invalid
+  row is chosen.
 
 ## Schema
 
@@ -73,7 +93,8 @@ cycles soft -> light -> dark -> soft.
 ## Sharing a theme
 
 Copy the JSON here, keep `name` equal to the filename, and select it in
-`theme.ini`. Keep every non-background colour at or above 4.5:1 contrast against
+`theme.ini` (`catro-scripts theme set theme.name <name>`) or with the editor's
+Load popup. Keep every non-background colour at or above 4.5:1 contrast against
 both `bg` and `zebra_bg` if you want it to stay readable for everyone: the
-shipped looks meet that threshold and are pinned by a test, while a custom file
-is only warned about by later tooling (see the theme-engine contract).
+shipped looks meet that threshold and are pinned by a test, while the editor's
+colour picker only warns about a custom file below it.

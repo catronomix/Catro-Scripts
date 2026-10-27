@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, config, palette, theme_engine  # noqa: E402  (import after sys.path setup)
+from tui import caps, config, editor, palette, theme_engine  # noqa: E402  (import after sys.path setup)
 from tui.__main__ import main, summary  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
@@ -224,6 +224,16 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertIn("cozypurple\tCozy Purple (active)", out)
 		self.assertIn("plain\tPlain", out)
 
+	def test_list_handles_an_empty_and_an_invalid_themes_directory(self):
+		code, out = self.run_main(["list"])
+		self.assertEqual(code, 0)
+		self.assertNotIn(".json", out)
+		(theme_engine.themes_dir() / "broken.json").write_text(
+			"{not json", encoding="utf-8")
+		code, out = self.run_main(["list"])
+		self.assertEqual(code, 0)
+		self.assertIn("broken\t(invalid)", out)
+
 	def test_every_theme_command_writes_its_look(self):
 		for mode, look in (("soft", "soft"), ("contrast-light", "light"),
 						   ("contrast-dark", "dark")):
@@ -248,6 +258,15 @@ class ThemeCommandTests(unittest.TestCase):
 			with self.subTest(alias=alias):
 				self.assertEqual(self.run_main([alias])[0], 0)
 				self.assertEqual(palette.theme(), expected)
+
+	def test_short_and_canonical_look_spellings_agree(self):
+		for alias, canonical in (("default", "soft"), ("light", "contrast-light"),
+								 ("dark", "contrast-dark")):
+			with self.subTest(alias=alias):
+				self.assertEqual(self.run_main([alias])[0], 0)
+				from_alias = palette.theme()
+				self.assertEqual(self.run_main([canonical])[0], 0)
+				self.assertEqual(palette.theme(), from_alias)
 
 	def test_toggle_cycles_soft_light_dark_soft(self):
 		self.run_main(["soft"])
@@ -310,7 +329,7 @@ class ThemeCommandTests(unittest.TestCase):
 		code, out = self.run_main(["--help"])
 		self.assertEqual(code, 0)
 		self.assertIn("usage: theme", out)
-		for mode in ("soft", "contrast-light", "contrast-dark", "toggle"):
+		for mode in ("soft", "contrast-light", "contrast-dark", "toggle", "edit"):
 			self.assertIn(mode, out)
 
 	def test_help_and_palette(self):
@@ -355,6 +374,35 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertEqual(caught.exception.code, 2)
 		self.assertIn("needs an interactive terminal", err.getvalue())
 		self.assertEqual(target.getvalue(), "")
+
+	def test_edit_on_a_tty_launches_the_editor_and_returns_zero(self):
+		self.add_theme("plain", "Plain")
+		instances = []
+
+		class FakeEditor:
+			def __init__(self, name=None, *, document=None, cap=None):
+				self.args = (name, document, cap)
+				self.ran = False
+				instances.append(self)
+
+			def run(self):
+				self.ran = True
+				return 0
+
+		with mock.patch.object(caps, "require_tty") as tty, \
+				mock.patch.object(editor, "ThemeEditor", FakeEditor):
+			code, out = self.run_main(["edit", "plain"])
+			self.assertEqual(code, 0)
+			self.assertEqual(out, "")
+			code, _ = self.run_main(["edit"])
+		tty.assert_called_with("theme edit")
+		named, default = instances
+		self.assertEqual(named.args[0], "plain")
+		self.assertEqual(named.args[1]["name"], "plain")
+		self.assertTrue(named.ran)
+		self.assertIsNone(default.args[0])
+		self.assertEqual(default.args[1]["name"], "cozypurple")
+		self.assertTrue(default.ran)
 
 	def test_summary_is_plain_text(self):
 		lines = summary(io.StringIO())

@@ -15,6 +15,7 @@ a `theme.ini` and the developer's checkout never leaks into the assertions.
 import contextlib
 import copy
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -149,14 +150,63 @@ class HeadlessOpenTests(EditorTestCase):
 			self.assertGreater(button.y, y)
 		self.assertEqual(ed.buttons[-1].y, y + height - 2)
 
-	def test_f1_toggles_the_help_overlay(self):
+	def test_f1_toggles_the_help_overlay_without_touching_the_document(self):
 		ed = self.make()
+		before = copy.deepcopy(ed.document)
 		ed.handle("f1")
 		self.assertTrue(ed.help)
 		ed.draw()
 		self.assertTrue(any("THEME EDITOR" in row for row in self.lines(ed)))
 		ed.handle("esc")
 		self.assertFalse(ed.help)
+		# Opening the overlay is a view: no value, draft or dirty flag moves.
+		self.assertEqual(ed.document, before)
+		self.assertFalse(ed.dirty)
+		self.assertIsNone(ed.edit)
+
+	def test_overlays_survive_a_resize_and_reopen(self):
+		# 90x24 -> 60x16 -> 90x24, with each popup open in turn: the small
+		# terminal shows the notice (and swallows editing keys), and the popup
+		# is painted again once the terminal is large enough.
+		ed = self.make()
+		before = copy.deepcopy(ed.document)
+		ed.pump(["tab", "enter"])
+		self.assertIsNotNone(ed.picker)
+		ed.canvas = screen.Canvas(60, 16)
+		ed.draw()
+		self.assertIn("too small", self.lines(ed)[0])
+		self.assertIsNotNone(ed.picker)
+		ed.canvas = screen.Canvas(90, 24)
+		ed.draw()
+		self.assertIsNotNone(ed.picker)
+		self.assertTrue(any("Colour picker" in row for row in self.lines(ed)))
+		ed.handle("esc")
+		self.assertIsNone(ed.picker)
+
+		ed.handle("ctrl-s")
+		ed.canvas = screen.Canvas(60, 16)
+		ed.draw()
+		self.assertIn("too small", self.lines(ed)[0])
+		self.assertEqual(ed.prompt, "save")
+		ed.canvas = screen.Canvas(90, 24)
+		ed.draw()
+		self.assertEqual(ed.prompt, "save")
+		self.assertTrue(any("Save theme" in row for row in self.lines(ed)))
+		ed.handle("esc")
+
+		ed.load_popup()
+		ed.canvas = screen.Canvas(60, 16)
+		ed.draw()
+		self.assertIn("too small", self.lines(ed)[0])
+		self.assertEqual(ed.prompt, "load")
+		ed.canvas = screen.Canvas(90, 24)
+		ed.draw()
+		self.assertEqual(ed.prompt, "load")
+		self.assertTrue(any("Load theme" in row for row in self.lines(ed)))
+		ed.handle("esc")
+		self.assertEqual(ed.prompt, None)
+		self.assertEqual(ed.document, before)
+		self.assertFalse(ed.dirty)
 
 
 class NavigationTests(EditorTestCase):
@@ -197,6 +247,27 @@ class NavigationTests(EditorTestCase):
 		# Column 2 is inside the Properties panel; the preview band is not.
 		ed.handle("mouse:wheel-down:2:16")
 		self.assertGreater(ed.property_offset, 0)
+
+	def test_pagekeys_and_wheel_scroll_the_panel_not_the_document(self):
+		ed = self.make()
+		before = copy.deepcopy(ed.document)
+		# Colours panel: PageDown and the wheel both only move its window.
+		ed.pump(["tab", "pagedown"])
+		self.assertGreater(ed.colour_index, 0)
+		ed.handle("mouse:wheel-down:45:16")  # column inside the Colours panel
+		self.assertGreater(ed.colour_offset, 0)
+		self.assertEqual(ed.document, before)
+		self.assertFalse(ed.dirty)
+
+	def test_pagekeys_and_wheel_leave_an_open_draft_alone(self):
+		ed = self.make()
+		ed.handle("enter")
+		key = editorviews.PROPERTY_KEYS[0]
+		before = ed.document["properties"][key]
+		ed.pump(["pagedown", "pageup", "mouse:wheel-down:2:16"])
+		self.assertIsNotNone(ed.edit, "scrolling committed or cancelled the draft")
+		self.assertEqual(ed.document["properties"][key], before)
+		self.assertFalse(ed.dirty)
 
 
 class EditingTests(EditorTestCase):
@@ -304,15 +375,32 @@ class SaveTests(EditorTestCase):
 		other = theme_engine.document()
 		other["name"], other["display"] = "other", "Other"
 		theme_engine.save_theme(other)
+		target = theme_engine.themes_dir() / "other.json"
+		before = target.read_bytes()
 		ed.save_prompt()
 		ed.save_field.value = "other"
 		ed.pump(["enter"])
 		self.assertEqual(ed.prompt, "overwrite")
 		self.assertIn("overwrite? y/n", ed.message[1])
+		# `n` leaves the other file byte-identical and writes no temp file.
 		ed.pump(["n"])
 		self.assertIsNone(ed.prompt)
+		self.assertEqual(target.read_bytes(), before)
+		self.assertEqual(list(theme_engine.themes_dir().glob("*.tmp")), [])
 		self.assertEqual(ed.document["name"], "cozypurple")
 		self.assertEqual(theme_engine.selection()[0], "cozypurple")
+		# `y` rewrites that file atomically with the edited document.
+		ed.save_prompt()
+		ed.save_field.value = "other"
+		ed.pump(["enter", "y"])
+		self.assertIsNone(ed.prompt)
+		self.assertNotEqual(target.read_bytes(), before)
+		self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["name"],
+						 "other")
+		self.assertEqual(list(theme_engine.themes_dir().glob("*.tmp")), [])
+		self.assertEqual(ed.document["name"], "other")
+		self.assertFalse(ed.dirty)
+		self.assertEqual(theme_engine.selection()[0], "other")
 
 
 class LoadTests(EditorTestCase):
@@ -347,6 +435,28 @@ class LoadTests(EditorTestCase):
 		self.assertFalse(ed.dirty)
 		self.assertEqual(theme_engine.selection()[0], "other")
 		self.assertIn("loaded other", ed.message[1])
+
+	def test_an_invalid_row_keeps_the_list_and_a_valid_one_loads_after_it(self):
+		(theme_engine.themes_dir() / "broken.json").write_text(
+			"{not json", encoding="utf-8")
+		other = theme_engine.document()
+		other["name"], other["display"] = "other", "Other"
+		theme_engine.save_theme(other)
+		ed = self.make()
+		labels = ed.load_popup()
+		self.assertEqual(labels, ["! broken (broken.json) - invalid",
+								  "* Cozy Purple (cozypurple.json)",
+								  "  Other (other.json)"])
+		# The broken row reports and leaves the popup open...
+		ed.pump(["home", "enter"])
+		self.assertEqual(ed.message[0], "error")
+		self.assertEqual(ed.prompt, "load")
+		self.assertEqual(ed.document["name"], "cozypurple")
+		# ...and a valid row after it still loads.
+		ed.pump(["end", "enter"])
+		self.assertIsNone(ed.prompt)
+		self.assertEqual(ed.document["name"], "other")
+		self.assertEqual(theme_engine.selection()[0], "other")
 
 	def test_loading_while_dirty_asks_first(self):
 		other = theme_engine.document()
