@@ -14,7 +14,7 @@ The conversions and the WCAG gate live in `tui.color_math`; they are
 re-exported here so `tui.colorpicker.hex_to_rgb()` and friends keep resolving.
 """
 
-from . import caps, editorviews, mouse, palette, widgets
+from . import caps, editor_overlays, mouse, palette, widgets
 from .color_math import (STEPS, WCAG_AA, cell_index, contrast_ratio,  # noqa: F401
 						 hex_to_rgb, hsv_to_rgb, luminance, rgb_to_hex,
 						 rgb_to_hsv)
@@ -22,7 +22,8 @@ from .text import truncate
 
 LIMITS = (360, 100, 100)
 CELL = 2  # two cells per swatch: a 32-cell grid
-WIDTH, HEIGHT = 36, 8  # bordered popup: poles, 3 grid rows, 3 info rows
+WIDTH, HEIGHT = 44, 9  # bordered popup: poles, 3 grid rows, 4 info rows
+PANEL = 8  # the preview swatch: a solid block beside the grid
 SWATCH = "\u2588"  # full block; ASCII falls back to `#`
 ROWS = ("hue", "saturation", "value")
 
@@ -41,8 +42,8 @@ class ColorPicker:
 		self.row, self.col = 0, cell_index(self.hue / 360)
 		self._original_cell = (self.row, self.col)
 		self.result, self.closed, self._queue, self._grab = None, False, list(keys), None
-		# Centre the 32-cell grid inside the frame; one spare cell each side.
-		self.grid_x = self.x + max(0, (self.width - CELL * STEPS) // 2)
+		# One pad cell, the 32-cell grid, then the panel on the right.
+		self.grid_x = self.x + 2
 		self.grid_y = self.y + 1
 
 	# -- model -----------------------------------------------------------
@@ -187,10 +188,8 @@ class ColorPicker:
 		if notice is not None:
 			canvas.draw_text(self.x, self.y, *reversed(widgets.cells(notice)))
 			return self
-		editorviews.fill_rect(canvas, self.x, self.y, self.width, self.height,
-							  cap=cap)
-		editorviews.frame(canvas, self.x, self.y, self.width, self.height,
-						  "Colour picker", cap)
+		editor_overlays.surface(canvas, cap, self.x, self.y, self.width,
+								self.height, "Colour picker")
 		glyph = SWATCH if cap.unicode else "#"
 		for row in range(len(ROWS)):
 			for col in range(STEPS):
@@ -205,6 +204,7 @@ class ColorPicker:
 											bold=selected, cap=cap)
 				canvas.draw_text(self.grid_x + col * CELL,
 								 self.grid_y + row, text, colour)
+		self._draw_panel(glyph, cap)
 		inner = max(1, self.width - 2)
 		ratios = {name: contrast_ratio(self.value, self.colours[name])
 				  for name in ("bg", "zebra_bg") if name in self.colours}
@@ -215,13 +215,30 @@ class ColorPicker:
 			facts = "  ".join("{} {:.1f}:1".format(*pair)
 							  for pair in ratios.items())
 			facts = self.value + ("  " + facts if facts else "")
-		rows = ((facts, "warn" if low else "fg"),
+		# One blank row between the facts and the HSV triple.
+		rows = ((truncate(facts, max(1, self.width - PANEL - 4)),
+				 "warn" if low else "fg"),
+				(None, None),
 				("h {:3.0f}  s {:3.0f}%  v {:3.0f}%".format(
 					self.hue, self.saturation * 100, self.brightness * 100),
 				 "muted"),
 				("arrows  Enter apply  Esc cancel", "muted"))
-		for offset, (text, role) in enumerate(rows):
-			canvas.draw_text(self.x + 2, self.grid_y + len(ROWS) + offset,
+		for offset, (text, role) in enumerate(rows, start=len(ROWS)):
+			if text is None:
+				continue
+			canvas.draw_text(self.x + 2, self.grid_y + offset,
 							 truncate(text, max(1, inner - 2)),
 							 palette.prefix(fg=role, bg="surface", cap=cap))
 		return self
+
+	def _draw_panel(self, glyph, cap):
+		"""The selected colour as a solid block beside the grid, hex beneath."""
+		x = self.x + self.width - PANEL - 1
+		if x <= self.grid_x + CELL * STEPS:
+			return
+		colour = palette.prefix(fg=self.value, cap=cap)
+		for row in range(len(ROWS)):
+			self.canvas.draw_text(x, self.grid_y + row, glyph * PANEL, colour)
+		self.canvas.draw_text(x, self.grid_y + len(ROWS),
+							  truncate(self.value, PANEL),
+							  palette.prefix(fg="fg", bg="surface", cap=cap))

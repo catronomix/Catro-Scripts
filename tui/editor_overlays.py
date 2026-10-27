@@ -2,10 +2,10 @@
 """
 			EDITOR OVERLAYS
 			===============
-The popup painters of `tui.editor`: the centred surface box (`_overlay()`) and
-the three overlays drawn on top of the frame - the F1 help page, the Save
-prompt with its filename field and inline error, and the Load list with its
-hint row.
+The popup painters of `tui.editor`: the shared `surface()` box (filled and
+framed at an explicit origin), the centred `_overlay()` built on it, and the
+three overlays drawn on top of the frame - the F1 help page, the Save prompt
+with its filename field and inline error, and the Load list with its hint row.
 
 They live apart from the band painters in `tui.editorpaint` because they are a
 separate concern: a popup owns a rectangle of its own, repaints it whole and
@@ -22,15 +22,25 @@ from . import editorviews, palette
 from .text import truncate
 
 
+def surface(canvas, cap, x, y, width, height, title=None):
+	"""A popup surface at an explicit origin; returns (x, y, width, height).
+
+	The shared seam for a bordered block that owns its rectangle: the fill
+	first (so the box hides what is behind it), then the frame. `_overlay()`
+	centres one; the colour picker places its own.
+	"""
+	editorviews.fill_rect(canvas, x, y, width, height, cap=cap)
+	editorviews.frame(canvas, x, y, width, height, title, cap)
+	return x, y, width, height
+
+
 def _overlay(canvas, cap, width, height, title):
 	"""A centred surface box; returns its (x, y, width, height)."""
 	width = min(max(20, width), canvas.width - 2)
 	height = min(max(4, height), canvas.height - 2)
 	x = max(1, (canvas.width - width) // 2)
 	y = max(1, (canvas.height - height) // 2)
-	editorviews.fill_rect(canvas, x, y, width, height, cap=cap)
-	editorviews.frame(canvas, x, y, width, height, title, cap)
-	return x, y, width, height
+	return surface(canvas, cap, x, y, width, height, title)
 
 
 def _draw_help(editor, canvas, cap):

@@ -24,8 +24,9 @@ from support import module_isolation, repaint_errors  # noqa: E402  (test helper
 setUpModule, tearDownModule = module_isolation()
 
 from tui import caps, palette, screen  # noqa: E402
-from tui.colorpicker import (CELL, HEIGHT, ROWS, STEPS, WIDTH,  # noqa: E402
-							 ColorPicker, cell_index, hsv_to_rgb, rgb_to_hex)
+from tui.colorpicker import (CELL, HEIGHT, PANEL, ROWS, STEPS,  # noqa: E402
+							 WIDTH, ColorPicker, cell_index, hsv_to_rgb,
+							 rgb_to_hex)
 
 CAP = caps.Capabilities(level="16", unicode=True, width=120, isatty=True,
 						plain=False, reason="test")
@@ -81,10 +82,11 @@ class GridTests(unittest.TestCase):
 		popup = picker()
 		x, y, width, height = popup.rect()
 		self.assertEqual((width, height), (WIDTH, HEIGHT))
-		self.assertEqual((WIDTH, HEIGHT), (36, 8))
+		self.assertEqual((WIDTH, HEIGHT), (44, 9))
 		self.assertEqual(popup.grid_x, x + 2)
 		self.assertEqual(popup.grid_y, y + 1)
-		self.assertEqual(popup.grid_x + CELL * STEPS, x + WIDTH - 2)
+		self.assertEqual(popup.grid_x + CELL * STEPS, x + 2 + CELL * STEPS)
+		self.assertEqual(popup.grid_x + CELL * STEPS + 1, x + WIDTH - PANEL - 1)
 		self.assertEqual(popup.cell_at(x, y), None)  # the top border, not a cell
 		self.assertEqual(popup.cell_at(popup.grid_x, popup.grid_y), (0, 0))
 		self.assertEqual(popup.cell_at(popup.grid_x + CELL * STEPS - 1,
@@ -285,6 +287,37 @@ class DrawTests(unittest.TestCase):
 			self.assertEqual(line.count("\u2588"), CELL * STEPS)
 		self.assertIn("#3366cc", "\n".join(
 			canvas.region(x, y, width, height)))
+
+	def test_the_selected_colour_gets_a_solid_panel_and_its_hex(self):
+		popup = picker()
+		popup.select(1, 4)
+		popup.draw()
+		x, y, width, height = popup.rect()
+		panel_x = x + width - PANEL - 1
+		colour = palette.prefix(fg=popup.value, cap=CAP)
+		for grid_row in range(len(ROWS)):
+			self.assertEqual(
+				popup.canvas._buffer[popup.grid_y + grid_row][panel_x], "\u2588")
+			self.assertEqual(
+				popup.canvas._colors[popup.grid_y + grid_row][panel_x], colour)
+		hex_row = "".join(popup.canvas._buffer[popup.grid_y + len(ROWS)])
+		self.assertEqual(hex_row[panel_x:panel_x + PANEL].rstrip(), popup.value)
+
+	def test_one_blank_row_sits_between_the_facts_and_the_hsv_triple(self):
+		popup = picker()
+		popup.draw()
+		x, y, width, height = popup.rect()
+		self.assertIn("#3366cc", "".join(popup.canvas._buffer[popup.grid_y + 3]))
+		self.assertIn("h 220", "".join(popup.canvas._buffer[popup.grid_y + 5]))
+		blank = "".join(popup.canvas._buffer[popup.grid_y + 4])
+		self.assertEqual(blank[x + 2:x + width - 1].strip(), "")
+
+	def test_a_narrow_popup_skips_the_panel_instead_of_overwriting_the_grid(self):
+		popup = picker(width=CELL * STEPS + 2)
+		popup.draw()
+		self.assertEqual(popup.width, CELL * STEPS + 2)
+		line = row(popup.canvas, popup.grid_x, popup.grid_y, CELL * STEPS)
+		self.assertEqual(line.count("\u2588"), CELL * STEPS)
 
 	def test_the_selected_swatch_carries_the_reverse_marker(self):
 		popup = picker()
