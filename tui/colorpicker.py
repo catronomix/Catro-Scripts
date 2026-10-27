@@ -3,11 +3,13 @@
 			COLOUR PICKER
 			==============
 Pure conversions plus the modal popup: one HSV triple is the model and a
-16x3 grid of two-cell swatches is its view. Row 1 walks the hue at the current
-saturation and value, row 2 the saturation at the current hue and value, row 3
-the value at the current hue and saturation, so the same grid reaches every
-component without text fields. `run()` returns `#rrggbb` (None on cancel) and
-a colour under WCAG AA against the look's background still warns.
+16x3 grid of two-cell swatches is its view. Row 1 walks the hue at full
+saturation and value (a vivid ramp whatever the current colour), row 2 the
+saturation at the current hue and full value, row 3 the value at the current
+hue and saturation, so the same grid reaches every component without text
+fields and no ramp collapses to black on a dark colour. `run()` returns
+`#rrggbb` (None on cancel) and a colour under WCAG AA against the look's
+background still warns.
 """
 
 import colorsys
@@ -88,16 +90,21 @@ class ColorPicker:
 	# -- model -----------------------------------------------------------
 
 	def value_at(self, row, col):
-		"""The `#rrggbb` swatch at one grid cell."""
-		hue, saturation, value = (self.hue, self.saturation, self.brightness)
+		"""The `#rrggbb` swatch at one grid cell.
+
+		Only row 3 (value) is tinted with the complete current colour. Rows 1
+		and 2 are *pickers*, not previews: hue runs at full saturation/value and
+		saturation runs at the current hue but full value, so a dark current
+		colour cannot collapse either ramp into a near-black strip.
+		"""
 		fraction = max(0, min(STEPS - 1, int(col))) / (STEPS - 1)
 		if row == 0:
-			hue = fraction * 360
+			hsv = (fraction * 360, 1.0, 1.0)
 		elif row == 1:
-			saturation = fraction
+			hsv = (self.hue, fraction, 1.0)
 		else:
-			value = fraction
-		return rgb_to_hex(hsv_to_rgb((hue, saturation, value)))
+			hsv = (self.hue, self.saturation, fraction)
+		return rgb_to_hex(hsv_to_rgb(hsv))
 
 	def _refresh(self):
 		"""Re-derive the hex from the HSV model."""
@@ -254,7 +261,7 @@ class ColorPicker:
 				("h {:3.0f}  s {:3.0f}%  v {:3.0f}%".format(
 					self.hue, self.saturation * 100, self.brightness * 100),
 				 "muted"),
-				("arrows move  Enter apply  Esc", "muted"))
+				("arrows  Enter apply  Esc cancel", "muted"))
 		for offset, (text, role) in enumerate(rows):
 			canvas.draw_text(self.x + 2, self.grid_y + len(ROWS) + offset,
 							 truncate(text, max(1, inner - 2)),

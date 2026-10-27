@@ -142,21 +142,28 @@ class GridTests(unittest.TestCase):
 		self.assertEqual(popup.cell_at(popup.grid_x - 1, popup.grid_y), None)
 		self.assertEqual(popup.cell_at(popup.grid_x, popup.grid_y + 3), None)
 
-	def test_row_one_walks_the_hue_at_the_current_saturation_and_value(self):
+	def test_row_one_is_a_vivid_hue_ramp_at_full_saturation_and_value(self):
 		popup = picker()
-		self.assertEqual(popup.value_at(0, 0), "#cc3333")
 		for col in range(STEPS):
-			expected = rgb_to_hex(hsv_to_rgb((col / (STEPS - 1) * 360,
-											  0.75, 0.8)))
+			expected = hsv_hex(col / (STEPS - 1) * 360, 1.0, 1.0)
 			self.assertEqual(popup.value_at(0, col), expected)
-		self.assertEqual(popup.value_at(0, STEPS - 1), "#cc3333")
+		# The ramp never dims to the current colour: 15% value stays vivid.
+		dark = picker("#1b1726")
+		for col in range(STEPS):
+			self.assertEqual(dark.value_at(0, col), popup.value_at(0, col))
+		self.assertEqual(popup.value_at(0, 0), "#ff0000")
+		self.assertEqual(popup.value_at(0, STEPS - 1), "#ff0000")
 
-	def test_row_two_walks_the_saturation_at_the_current_hue_and_value(self):
+	def test_row_two_is_a_saturation_ramp_at_the_current_hue_and_full_value(self):
 		popup = picker()
-		self.assertEqual(popup.value_at(1, 0), "#cccccc")
-		self.assertEqual(popup.value_at(1, cell_index(0.75)),
-						 hsv_hex(220, cell_index(0.75) / (STEPS - 1), 0.8))
-		self.assertEqual(popup.value_at(1, STEPS - 1), hsv_hex(220, 1, 0.8))
+		self.assertEqual(popup.value_at(1, 0), "#ffffff")
+		for col in range(STEPS):
+			self.assertEqual(popup.value_at(1, col),
+							 hsv_hex(220, col / (STEPS - 1), 1.0))
+		self.assertEqual(popup.value_at(1, STEPS - 1), hsv_hex(220, 1, 1))
+		dark = picker("#1b1726")
+		self.assertEqual(dark.value_at(1, STEPS - 1),
+						 hsv_hex(256, 1, 1))
 
 	def test_row_three_walks_the_value_at_the_current_hue_and_saturation(self):
 		popup = picker()
@@ -186,11 +193,11 @@ class KeyTests(unittest.TestCase):
 		popup.select(0, 0)
 		self.assertTrue(popup.key("right"))
 		self.assertEqual((popup.row, popup.col), (0, 1))
-		self.assertEqual(popup.value, popup.value_at(0, 1))
+		self.assertEqual(popup.value, hsv_hex(1 / (STEPS - 1) * 360, 0.75, 0.8))
 		self.assertTrue(popup.key("left"))
 		self.assertTrue(popup.key("left"))
 		self.assertEqual(popup.col, STEPS - 1)
-		self.assertEqual(popup.value, popup.value_at(0, STEPS - 1))
+		self.assertEqual(popup.value, "#cc3333")
 
 	def test_up_down_change_row_and_snap_to_the_current_component(self):
 		popup = picker()
@@ -265,7 +272,7 @@ class MouseTests(unittest.TestCase):
 		y = popup.grid_y + 1
 		self.assertTrue(popup.key("mouse:press:{}:{}".format(x, y)))
 		self.assertEqual((popup.row, popup.col), (1, 3))
-		self.assertEqual(popup.value, popup.value_at(1, 3))
+		self.assertEqual(popup.value, hsv_hex(220, 3 / (STEPS - 1), 0.8))
 
 	def test_drag_moves_the_selection_inside_the_grid(self):
 		popup = picker()
@@ -355,7 +362,7 @@ class DrawTests(unittest.TestCase):
 		popup.draw()
 		x, y, width, height = popup.rect()
 		hint = "".join(popup.canvas._buffer[y + height - 2])
-		self.assertIn("arrows move  Enter apply  Esc", hint)
+		self.assertIn("arrows  Enter apply  Esc cancel", hint)
 		self.assertNotIn("..", hint)
 
 	def test_low_contrast_warns_but_never_blocks(self):
