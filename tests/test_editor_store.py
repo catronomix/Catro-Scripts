@@ -30,9 +30,10 @@ if str(REPO) not in sys.path:
 
 from types import SimpleNamespace
 
-from tui import (caps, config, editor, editor_keys, editor_nav, editor_overlays,
-				 editor_preview, editoractions, editorpaint, editor_store,
-				 editorviews, keys, palette, screen, table, theme_engine)  # noqa: E402
+from tui import (caps, config, editor, editor_keys, editor_mouse, editor_nav,
+				 editor_overlays, editor_preview, editoractions, editorpaint,
+				 editor_store, editorviews, keys, palette, screen, table,
+				 theme_engine)  # noqa: E402
 from tui.editor import ThemeEditor  # noqa: E402
 from tui.editor_keys import EditorKeys  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
@@ -103,9 +104,16 @@ class StoreSplitShimTests(unittest.TestCase):
 
 	def test_the_pane_half_stayed_in_editoractions(self):
 		for name in ("begin_property_edit", "edit_key", "commit_property",
-					 "open_picker", "picker_key", "mouse", "scroll", "_hit"):
+					 "open_picker", "picker_key"):
 			with self.subTest(name=name):
 				self.assertTrue(hasattr(editoractions, name))
+				self.assertFalse(hasattr(editor_store, name))
+
+	def test_the_mouse_half_moved_to_editor_mouse(self):
+		for name in ("mouse", "scroll", "_hit"):
+			with self.subTest(name=name):
+				self.assertTrue(hasattr(editor_mouse, name))
+				self.assertFalse(hasattr(editoractions, name))
 				self.assertFalse(hasattr(editor_store, name))
 
 	def test_editor_store_does_not_import_editoractions_or_its_importers(self):

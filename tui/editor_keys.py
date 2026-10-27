@@ -14,7 +14,8 @@ This is where ticket B's arrow-editing and double-click routing lands, so the
 key half stays free of session and storage code.
 """
 
-from . import editoractions, editorviews, mouse, theme_engine, widgets
+from . import (editor_mouse, editoractions, editorviews, mouse, theme_engine,
+			   widgets)
 from .editorviews import BUTTONS, PANELS, PROPERTY_KEYS
 
 
@@ -30,6 +31,9 @@ class EditorKeys:
 		if self.prompt == "save":
 			return editoractions.save_key(self, token)
 		if self.prompt == "load":
+			event = mouse.parse_token(token)
+			if event is not None:
+				return editor_mouse.load_mouse(self, *event)
 			return editoractions.load_key(self, token)
 		if self.prompt in ("quit", "discard-load", "overwrite"):
 			return editoractions.confirm_key(self, token)
@@ -43,7 +47,7 @@ class EditorKeys:
 			return True
 		event = mouse.parse_token(token)
 		if event is not None:
-			return editoractions.mouse(self, *event)
+			return editor_mouse.mouse(self, *event)
 		if token == "ctrl-s":
 			self.save_prompt()
 			return True

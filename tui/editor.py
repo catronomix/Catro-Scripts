@@ -22,7 +22,7 @@ the token router in `tui.editor_keys`.
 import sys
 
 from . import caps, editoractions, editorpaint, editorviews, keys as keyio
-from . import mouse, screen, theme_engine, widgets
+from . import mouse, mouse_clicks, screen, theme_engine, widgets
 from .editor_keys import EditorKeys
 from .editorviews import BUTTONS, HELP_LINE
 
@@ -58,6 +58,7 @@ class ThemeEditor(EditorKeys):
 		self.colour_index = 0
 		self.colour_offset = 0
 		self.button_index = 0
+		self.clicks = mouse_clicks.ClickTracker()
 		self.message = ("info", HELP_LINE)
 		self.document = document if document is not None else self._initial(name)
 		self.look_index = self._initial_look()

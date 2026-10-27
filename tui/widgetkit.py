@@ -94,6 +94,9 @@ class Widget:
 	def click(self, x, y):
 		"""Mouse press at a point; True when it landed on the widget."""
 		return self.hit_test(x, y)
+	def double_click(self, x, y):
+		"""Second click at the same point: the default is another click."""
+		return self.click(x, y)
 
 class Panel(Widget):
 	"""A clipping rectangle: a child can never draw outside the panel's rows."""

@@ -315,6 +315,68 @@ class NavigationTests(EditorTestCase):
 		self.assertFalse(ed.dirty)
 
 
+class DoubleClickTests(EditorTestCase):
+	"""A second press on the same cell activates it; the first only selects."""
+
+	def test_a_double_press_on_a_palette_row_opens_the_picker(self):
+		ed = self.make()
+		ed.handle("mouse:press:45:16")  # inside the Colours panel
+		self.assertEqual(ed.focus, 1)
+		self.assertIsNone(ed.picker)
+		ed.handle("mouse:press:45:16")
+		self.assertIsNotNone(ed.picker)
+		self.assertEqual(ed.focus, 1)
+
+	def test_a_double_press_on_a_property_row_opens_its_draft(self):
+		ed = self.make()
+		ed.handle("mouse:press:2:16")  # inside the Properties panel
+		self.assertIsNone(ed.edit)
+		ed.handle("mouse:press:2:16")
+		self.assertEqual(ed.focus, 0)
+		self.assertIsNotNone(ed.edit)
+		self.assertEqual(ed.edit["key"], editorviews.PROPERTY_KEYS[0])
+
+	def test_a_double_press_on_a_preview_only_selects_that_look(self):
+		ed = self.make()
+		ed.pump(["tab"])  # on Colours, a preview click is still explicit
+		ed.handle("mouse:press:31:3")  # the second preview
+		ed.handle("mouse:press:31:3")
+		self.assertEqual(ed.look_index, 1)
+		self.assertIsNone(ed.picker)
+
+	def test_a_double_press_on_an_action_button_presses_it(self):
+		ed = self.make()
+		ed.handle("mouse:press:75:16")  # the Save button
+		self.assertEqual(ed.prompt, "save")
+		ed.handle("mouse:press:75:16")
+		self.assertEqual(ed.prompt, "save")
+		self.assertFalse(ed.closed)
+
+	def test_a_double_press_on_a_load_row_opens_that_theme(self):
+		ed = self.make()
+		ed.load_popup()
+		ed.handle("mouse:press:0:0")
+		self.assertEqual(ed.prompt, "load")
+		self.assertEqual(ed.load_box.selected, 0)
+		ed.handle("mouse:press:0:0")
+		self.assertIsNone(ed.prompt)
+		self.assertIn("loaded", ed.message[1])
+
+	def test_a_double_press_on_an_invalid_load_row_only_selects_it(self):
+		(theme_engine.themes_dir() / "broken.json").write_text("{",
+															   encoding="utf-8")
+		ed = self.make()
+		ed.load_popup()
+		index = next(index for index, entry in enumerate(ed.entries)
+					 if entry["error"])
+		token = "mouse:press:0:{}".format(index)
+		ed.handle(token)
+		ed.handle(token)
+		self.assertEqual(ed.prompt, "load")
+		self.assertEqual(ed.load_box.selected, index)
+		self.assertIn("cannot load", ed.message[1])
+
+
 class EditingTests(EditorTestCase):
 	def test_enter_drafts_a_property_and_a_second_enter_commits_it(self):
 		ed = self.make()

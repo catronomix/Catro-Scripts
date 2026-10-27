@@ -177,11 +177,13 @@ class CheckField(Widget):
 
 class ListBox(Widget):
 	"""Scrollable rows: arrows, Home/End, PageUp/PageDown, click, wheel."""
-	def __init__(self, x, y, items, *, width=20, height=5, selected=0, cap=None):
+	def __init__(self, x, y, items, *, width=20, height=5, selected=0, cap=None,
+				 on_activate=None):
 		Widget.__init__(self, x, y, width, height, cap=cap)
 		self.items = [str(item) for item in items]
 		self.selected = max(0, min(len(self.items) - 1, int(selected)))
 		self.offset = 0
+		self.on_activate = on_activate
 		self.ensure_visible()
 	def ensure_visible(self):
 		"""Keep the selection inside the visible window."""
@@ -218,6 +220,13 @@ class ListBox(Widget):
 		if 0 <= index < len(self.items):
 			self.selected = index
 			self.ensure_visible()
+		return True
+	def double_click(self, x, y):
+		"""Second click on a row: select it, then fire the host's Enter hook."""
+		if not self.click(x, y):
+			return False
+		if callable(self.on_activate):
+			self.on_activate(self)
 		return True
 	def draw(self, canvas, focused=False):
 		for row, item in enumerate(self.visible()):

@@ -14,7 +14,8 @@ The conversions and the WCAG gate live in `tui.color_math`; they are
 re-exported here so `tui.colorpicker.hex_to_rgb()` and friends keep resolving.
 """
 
-from . import caps, colorpicker_panel, editor_overlays, mouse, palette, widgets
+from . import (caps, colorpicker_mouse, colorpicker_panel, editor_overlays,
+			   mouse, mouse_clicks, palette, widgets)
 from .color_math import (STEPS, WCAG_AA, cell_index, contrast_ratio,  # noqa: F401
 						 hex_to_rgb, hsv_to_rgb, luminance, rgb_to_hex,
 						 rgb_to_hsv)
@@ -42,6 +43,7 @@ class ColorPicker:
 		self.row, self.col = 0, cell_index(self.hue / 360)
 		self._original_cell = (self.row, self.col)
 		self.result, self.closed, self._queue, self._grab = None, False, list(keys), None
+		self.clicks = mouse_clicks.ClickTracker()
 		# One pad cell, the 32-cell grid, then the panel on the right; at the
 		# minimum width the grid clamps to the left border so it cannot spill.
 		self.grid_x = self.x + min(2, max(1, (self.width - CELL * STEPS) // 2))
@@ -96,7 +98,7 @@ class ColorPicker:
 		"""Route one key token or `mouse:` event; True when consumed."""
 		event = mouse.parse_token(token)
 		if event is not None:
-			return self._mouse(*event)
+			return colorpicker_mouse.mouse(self, *event)
 		if self.closed:
 			return False
 		if token == "esc":
@@ -127,29 +129,8 @@ class ColorPicker:
 		return (int(y) - self.grid_y, offset // CELL)
 
 	def _mouse(self, kind, x, y, modifiers=()):
-		if kind == "press":
-			cell = self.cell_at(x, y)
-			if cell is None:
-				return False
-			self._grab = cell
-			self.select(*cell)
-			return True
-		if kind == "drag" and self._grab is not None:
-			if self.grid_y <= int(y) < self.grid_y + len(ROWS):
-				cell = self.cell_at(x, y)
-				if cell is not None:
-					self._grab = cell
-					self.select(*cell)
-					return True
-			# Dragging past the edge clamps to the grabbed row's last cell.
-			offset = min(CELL * STEPS - 1, max(0, int(x) - self.grid_x))
-			self._grab = (self.row, offset // CELL)
-			self.select(self.row, offset // CELL)
-			return True
-		if kind == "release":
-			self._grab = None
-			return True
-		return False
+		"""Delegate the mouse model to `tui.colorpicker_mouse`."""
+		return colorpicker_mouse.mouse(self, kind, x, y, modifiers)
 
 	# -- result ----------------------------------------------------------
 

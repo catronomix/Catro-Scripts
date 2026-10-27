@@ -1,10 +1,10 @@
-# Editor actions: property draft editing, colour picker and mouse routing
+# Editor actions: property draft editing, colour picker and nudge
 """
 			EDITOR ACTIONS
 			==============
 The pane-editing half of `tui.editor`: the Properties draft edit (Enter keeps
 the old value as the Esc target, arrows/space cycle it, Enter commits), the
-colour-picker wiring and the mouse/wheel routing.
+inline nudge, and the colour-picker wiring.
 
 Every function takes the editor and returns whether it consumed the token, so
 `ThemeEditor.handle()` stays a short dispatcher while one editor object keeps
@@ -111,53 +111,5 @@ def picker_key(editor, token):
 
 
 # -- mouse --------------------------------------------------------------------
-
-def mouse(editor, kind, x, y, modifiers=()):
-	"""Wheel scrolls the hovered panel; a press selects a preview/row/button."""
-	if kind.startswith("wheel-"):
-		panel = editor._panel_at(x, y)
-		if panel in (3, 4):
-			scroll(editor, panel, -3 if kind == "wheel-up" else 3)
-		return True
-	if kind != "press":
-		return False
-	for index in range(3):
-		rect = editor.rects.get(index)
-		if rect and _hit(rect, x, y):
-			editor.look_index = index
-			return True
-	panel = editor._panel_at(x, y)
-	if panel == 3:
-		row = editor.rects[3][1] + 1 + editor.property_offset
-		if row <= y < row + editor._visible(3):
-			editor.focus = 0
-			editor.property_index = y - row + editor.property_offset
-		return True
-	if panel == 4:
-		row = editor.rects[4][1] + 1 + editor.colour_offset
-		if row <= y < row + editor._visible(4):
-			editor.focus = 1
-			editor.colour_index = y - row + editor.colour_offset
-		return True
-	for index, button in enumerate(editor.buttons):
-		if button.hit_test(x, y):
-			editor.focus, editor.button_index = 2, index
-			return editor._activate()
-	return False
-
-
-def scroll(editor, panel, delta):
-	"""Scroll the Properties (3) or Colours (4) window by `delta` rows."""
-	keys = editorviews.PROPERTY_KEYS if panel == 3 else theme_engine.PALETTE_KEYS
-	visible = editor._visible(panel)
-	offset = editor.property_offset if panel == 3 else editor.colour_offset
-	offset = max(0, min(len(keys) - visible, offset + delta))
-	if panel == 3:
-		editor.property_offset = offset
-	else:
-		editor.colour_offset = offset
-
-
-def _hit(rect, x, y):
-	return (rect[0] <= x < rect[0] + rect[2]
-			and rect[1] <= y < rect[1] + rect[3])
+# The mouse routing (press/double/wheel, the hit test) lives in
+# `tui.editor_mouse`; `tui.editor_keys` dispatches decoded events there.

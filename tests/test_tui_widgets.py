@@ -26,7 +26,7 @@ from support import module_isolation, repaint_errors  # noqa: E402  (test helper
 
 setUpModule, tearDownModule = module_isolation()
 
-from tui import caps, chrome, palette, screen, widgets  # noqa: E402
+from tui import caps, chrome, mouse_clicks, palette, screen, widgets  # noqa: E402
 
 CAP = caps.Capabilities(level="16", unicode=True, width=120, isatty=True,
 						plain=False, reason="test")
@@ -331,6 +331,52 @@ class ListBoxTests(unittest.TestCase):
 		self.assertEqual(box.move(2), 0)
 		self.assertEqual((box.selected, box.offset), (0, 0))
 		self.assertEqual(box.visible(), [])
+
+
+class DoubleClickTests(unittest.TestCase):
+	"""Double-click is default widget behaviour: a plain host needs no editor."""
+
+	def test_the_default_double_click_is_a_second_click(self):
+		field = widgets.TextField(2, 3, "abc", width=6, cap=CAP)
+		self.assertTrue(field.double_click(4, 3))
+		self.assertTrue(field.editing)
+		self.assertEqual(field.cursor, 2)
+		self.assertFalse(field.double_click(0, 9))
+
+	def test_a_double_clicked_button_activates_again(self):
+		fired = []
+		button = widgets.Button(0, 0, "Save", on_activate=fired.append, cap=CAP)
+		self.assertTrue(button.double_click(0, 0))
+		self.assertTrue(button.activated)
+		self.assertEqual(fired, [button])
+
+	def test_a_disabled_button_ignores_a_double_click(self):
+		button = widgets.Button(0, 0, "Save", disabled=True, cap=CAP)
+		self.assertFalse(button.double_click(0, 0))
+		self.assertFalse(button.activated)
+
+	def test_a_double_clicked_list_row_selects_and_fires_the_host_hook(self):
+		fired = []
+		box = widgets.ListBox(0, 0, ["a", "b", "c"], width=4, height=3,
+							  on_activate=fired.append, cap=CAP)
+		self.assertTrue(box.double_click(0, 2))
+		self.assertEqual(box.selected, 2)
+		self.assertEqual(fired, [box])
+
+	def test_a_plain_host_turns_two_presses_into_one_double(self):
+		clock = [50.0]
+		tracker = mouse_clicks.ClickTracker(now=lambda: clock[0])
+		fired = []
+		box = widgets.ListBox(0, 0, ["a", "b"], width=4, height=2,
+							  on_activate=fired.append, cap=CAP)
+		for _ in range(2):
+			clock[0] += 0.1
+			if tracker.push("press", 0, 1) == "double":
+				box.double_click(0, 1)
+			else:
+				box.click(0, 1)
+		self.assertEqual(box.selected, 1)
+		self.assertEqual(fired, [box])
 
 
 class ScrollBarTests(unittest.TestCase):

@@ -262,6 +262,23 @@ class MouseTests(unittest.TestCase):
 			popup.grid_x + CELL * 5, popup.grid_y)))
 		self.assertEqual(popup.col, 0)
 
+	def test_a_double_press_on_a_cell_selects_it_and_commits(self):
+		popup = picker()
+		x, y = popup.grid_x + 4 * CELL, popup.grid_y + 2
+		self.assertTrue(popup.key("mouse:press:{}:{}".format(x, y)))
+		self.assertFalse(popup.closed)
+		self.assertTrue(popup.key("mouse:press:{}:{}".format(x, y)))
+		self.assertTrue(popup.closed)
+		self.assertEqual(popup.result, popup.value_at(2, 4))
+
+	def test_a_double_press_outside_the_grid_commits_nothing(self):
+		popup = picker()
+		outside = "mouse:press:{}:{}".format(popup.x, popup.y)
+		self.assertFalse(popup.key(outside))
+		self.assertFalse(popup.key(outside))
+		self.assertFalse(popup.closed)
+		self.assertIsNone(popup.result)
+
 	def test_wheel_and_move_never_change_the_colour(self):
 		popup = picker()
 		before = popup.value
