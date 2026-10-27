@@ -1,4 +1,4 @@
-# Canvas widgets: focus ring, buttons, fields, list, scrollbar
+# Canvas widgets: buttons, fields, list, scrollbar
 """
 			INTERACTIVE WIDGETS
 			====================

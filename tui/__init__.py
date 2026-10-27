@@ -19,7 +19,7 @@ Layout:
 	keys      raw mode, key decoding, background KeyReader
 	mouse     SGR mouse reporting, decoding and restore
 	widgetkit widget base, clipping panel, focus styling, small-terminal fallback
-	widgets   focus ring, buttons, fields, list, scrollbar (re-exports widgetkit)
+	widgets   buttons, fields, list, scrollbar (re-exports widgetkit)
 	progress  Spinner, ProgressBar, LiveRegion
 	pager     paged output
 	loop      FrameLoop, ScreensaverHost

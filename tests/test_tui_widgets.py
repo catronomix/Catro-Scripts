@@ -1,9 +1,9 @@
-# Widget tests: focus ring, buttons, fields, list, scrollbar
+# Widget tests: buttons, fields, list, scrollbar
 """
 			INTERACTIVE WIDGETS
 			====================
 Smoke coverage for `tui/widgets.py`: the shared rectangle/hit-test seam, each
-widget's keys and click mapping, focus cycling, the disabled button rule, the
+widget's keys and click mapping, the disabled button rule, the
 clip proxy behind `Panel` and the small-terminal fallback. Drawing is checked
 against the same `chrome` seams the widgets wrap, so a restyle cannot silently
 change a hit box. Pinned capabilities keep the checkout's `config.ini` out of

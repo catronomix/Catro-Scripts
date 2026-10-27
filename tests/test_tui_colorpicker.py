@@ -355,8 +355,7 @@ class DrawTests(unittest.TestCase):
 		popup.draw()
 		x, y, width, height = popup.rect()
 		hint = "".join(popup.canvas._buffer[y + height - 2])
-		self.assertIn("arrows move", hint)
-		self.assertIn("Esc cancel", hint)
+		self.assertIn("arrows move  Enter apply  Esc", hint)
 		self.assertNotIn("..", hint)
 
 	def test_low_contrast_warns_but_never_blocks(self):
