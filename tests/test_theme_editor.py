@@ -378,6 +378,47 @@ class DoubleClickTests(EditorTestCase):
 		self.assertIn("cannot load", ed.message[1])
 
 
+class LookScopeTests(EditorTestCase):
+	"""Only the Colours pane may switch the active look."""
+
+	def test_pane_moves_never_change_the_look(self):
+		ed = self.make()
+		for token in ("tab", "tab", "tab", "shift-tab", "shift-tab",
+					  "shift-tab"):
+			ed.handle(token)
+			self.assertEqual(ed.look_index, 0)
+		self.assertFalse(ed.dirty)
+
+	def test_colours_is_the_only_pane_that_steps_the_look(self):
+		ed = self.make()
+		ed.pump(["tab", "right"])
+		self.assertEqual(ed.look_index, 1)
+		ed.pump(["tab", "right"])  # Actions: consumed, no look change
+		self.assertEqual((ed.focus, ed.look_index), (2, 1))
+		ed.pump(["tab", "right"])  # Properties: nudges, no look change
+		self.assertEqual((ed.focus, ed.look_index), (0, 1))
+
+	def test_actions_arrows_leave_the_document_alone(self):
+		ed = self.make()
+		before = copy.deepcopy(ed.document)
+		ed.pump(["tab", "tab"])
+		self.assertTrue(ed.handle("left"))
+		self.assertEqual(ed.look_index, 0)
+		self.assertTrue(ed.handle("right"))
+		self.assertEqual(ed.look_index, 0)
+		self.assertEqual(ed.document, before)
+		self.assertFalse(ed.dirty)
+		self.assertEqual(ed.look_index, 0)
+
+	def test_an_open_picker_never_moves_the_look(self):
+		ed = self.make()
+		ed.pump(["tab", "enter"])
+		self.assertEqual(ed.look_index, 0)
+		ed.pump(["left", "right", "down", "right"])
+		self.assertIsNotNone(ed.picker)
+		self.assertEqual(ed.look_index, 0)
+
+
 class EditingTests(EditorTestCase):
 	def test_left_right_nudge_the_selected_property_in_place(self):
 		ed = self.make()
