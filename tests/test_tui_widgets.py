@@ -22,7 +22,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from support import module_isolation  # noqa: E402  (test helper, not production)
+from support import module_isolation, repaint_errors  # noqa: E402  (test helper)
 
 setUpModule, tearDownModule = module_isolation()
 
@@ -33,19 +33,27 @@ CAP = caps.Capabilities(level="16", unicode=True, width=120, isatty=True,
 
 
 class FakeStream:
-	"""A stream that is a tty only when a test says so."""
+	"""A stream that is a tty only when a test says so, and records bytes."""
 
 	def __init__(self, tty=False):
 		self._tty = tty
+		self.data = []
 
 	def isatty(self):
 		return self._tty
 
 	def write(self, text):
+		self.data.append(text)
 		return len(text)
 
 	def flush(self):
 		return None
+
+	def clear(self):
+		self.data.clear()
+
+	def getvalue(self):
+		return "".join(self.data)
 
 
 def new_canvas(width=60, height=12):
@@ -380,6 +388,40 @@ class PanelTests(unittest.TestCase):
 		panel.children.append(button)
 		panel.draw(canvas, focused=True)
 		self.assertIn("ok", rows(canvas, 0, 0, button.width, 1)[0])
+
+
+class SelectionRepaintTests(unittest.TestCase):
+	"""A widget repaint may not leave the previously selected row dressed."""
+
+	def test_an_up_move_repaints_the_vacated_row_as_unselected(self):
+		canvas = new_canvas()
+		box = widgets.ListBox(0, 0, ["alpha", "beta", "gamma"], width=8,
+							  height=3, selected=2, cap=CAP)
+		box.draw(canvas, focused=True)
+		canvas.render()
+		canvas.stream.clear()
+		box.key("up")
+		box.draw(canvas, focused=True)
+		canvas.render(full=False)
+		frame = canvas.stream.getvalue()
+		self.assertEqual(repaint_errors(canvas, frame), [])
+		vacated = frame.split("\033[3;1H")[1]
+		self.assertNotIn("\033[7m", vacated)
+		self.assertTrue(vacated.startswith(
+			screen.SGR_RESET + palette.prefix(fg="fg", cap=CAP)), vacated)
+
+	def test_a_button_drops_the_focus_style_when_the_focus_moves_away(self):
+		canvas = new_canvas()
+		button = widgets.Button(0, 0, "Save", cap=CAP)
+		button.draw(canvas, focused=True)
+		canvas.render()
+		canvas.stream.clear()
+		button.draw(canvas, focused=False)
+		canvas.render(full=False)
+		frame = canvas.stream.getvalue()
+		self.assertEqual(repaint_errors(canvas, frame), [])
+		self.assertNotIn("\033[7m", frame)
+		self.assertIn("\033[0m", frame)
 
 
 class SmallTerminalTests(unittest.TestCase):

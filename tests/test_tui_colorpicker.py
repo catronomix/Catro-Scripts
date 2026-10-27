@@ -19,12 +19,12 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from support import module_isolation  # noqa: E402  (test helper, not production)
+from support import module_isolation, repaint_errors  # noqa: E402  (test helper)
 
 setUpModule, tearDownModule = module_isolation()
 
 from tui import caps, palette, screen  # noqa: E402
-from tui.colorpicker import (CELL, HEIGHT, STEPS, WIDTH,  # noqa: E402
+from tui.colorpicker import (CELL, HEIGHT, ROWS, STEPS, WIDTH,  # noqa: E402
 							 ColorPicker, cell_index, hsv_to_rgb, rgb_to_hex)
 
 CAP = caps.Capabilities(level="16", unicode=True, width=120, isatty=True,
@@ -343,3 +343,26 @@ class DrawTests(unittest.TestCase):
 		popup = ColorPicker(canvas, "#3366cc", cap=CAP, colours=COLOURS)
 		popup.draw()
 		self.assertIn("too small", "\n".join(canvas.region(0, 0, 60, 12)))
+
+
+class StaleMarkerTests(unittest.TestCase):
+	"""The marker is a reverse run: leaving a cell may not tint it black."""
+
+	def test_every_direction_from_every_cell_leaves_no_stale_style(self):
+		canvas = new_canvas()
+		popup = ColorPicker(canvas, "#3366cc", cap=CAP, colours=COLOURS)
+		popup.draw()
+		canvas.render()
+		for grid_row in range(len(ROWS)):
+			for grid_col in range(STEPS):
+				for token in ("up", "down", "left", "right"):
+					with self.subTest(row=grid_row, col=grid_col, key=token):
+						popup.select(grid_row, grid_col)
+						popup.draw()
+						canvas.render(full=False)
+						canvas.stream.data.clear()
+						popup.key(token)
+						popup.draw()
+						canvas.render(full=False)
+						frame = "".join(canvas.stream.data)
+						self.assertEqual(repaint_errors(canvas, frame), [])

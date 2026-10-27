@@ -5,7 +5,7 @@
 `Canvas` is the double-buffered cell grid and the only place that turns cells
 into terminal bytes: `draw_*`/`hline`/`vline`/`box` mutate the buffer and
 `render()` emits a full repaint or a changed-cell diff (one CUP per contiguous
-run, one SGR per colour change). `TerminalRenderer` is the pre-extraction
+run, one SGR per SGR-state change). `TerminalRenderer` is the pre-extraction
 screensaver name, kept as a subclass so `.screensaver` files keep working.
 
 Self-contained by design - no `Screen`, no alternate screen, no cursor or input,
@@ -21,9 +21,40 @@ import sys
 
 SGR_RESET = "\033[0m"
 
-# Diff sentinel: a canvas cell colour never equals it, so the first changed
-# cell of a frame always emits its own SGR instead of inheriting terminal state.
+# No cell colour ever equals this: the first changed cell always emits.
 _SGR_UNKNOWN = object()
+
+
+def _sgr_state(color):
+	"""(fg, bg, attrs) the SGR state `color` leaves active on the terminal."""
+	fg = bg = None
+	attrs = set()
+	for chunk in str(color or "").split("\033[")[1:]:
+		params = chunk.split("m")[0].split(";")
+		code = int(params[0] or 0)
+		if code in (38, 48):
+			fg, bg = ((";".join(params), bg) if code == 38
+					  else (fg, ";".join(params)))
+		elif 30 <= code <= 37 or 90 <= code <= 97:
+			fg = code
+		elif 40 <= code <= 47 or 100 <= code <= 107:
+			bg = code
+		else:
+			attrs.add(code)
+	return fg, bg, frozenset(attrs)
+
+
+def _emit_sgr(out, active, color):
+	"""Append `color`'s codes; reset first when a run would inherit state."""
+	state = _sgr_state(color)
+	if state != active:
+		if active is not _SGR_UNKNOWN and color and not (
+				active[2] <= state[2]
+				and (state[0] is not None or active[0] is None)
+				and (state[1] is not None or active[1] is None)):
+			out.append(SGR_RESET)
+		out.append(color if color else SGR_RESET)
+	return state
 
 
 def terminal_size(stream=None):
@@ -132,33 +163,26 @@ class Canvas:
 		self.stream.flush()
 
 	def _full_frame(self):
-		out = ["\033[H"]
-		current = None
+		out, active = ["\033[H"], _SGR_UNKNOWN
 		for y in range(self.height):
 			for x in range(self.width):
-				color = self._colors[y][x]
-				if color != current:
-					out.append(color if color else SGR_RESET)
-					current = color
+				active = _emit_sgr(out, active, self._colors[y][x])
 				out.append(self._buffer[y][x])
 			if y < self.height - 1:
 				out.append("\n")
-		if current is not None:
+		if active is not _SGR_UNKNOWN and any(active):
 			out.append(SGR_RESET)
 		return "".join(out)
 
 	def _diff_frame(self):
 		"""Changed-cell diff: one CUP per contiguous run, SGR only on a change.
 
-		Batching is what keeps a keystroke cheap on the wire: a focused panel
-		row is one run, not ninety single-cell cursor moves. `current` tracks
-		the colour last emitted, so a run whose cells share a colour pays for
-		one SGR; `_SGR_UNKNOWN` forces the first changed cell to emit one (a
-		terminal's state is not ours to assume).
+		`active` is the SGR state the terminal really holds, so the reset a
+		sticky attribute needs is paid only by the run that would inherit it.
 		"""
 		previous_colors = self._previous_colors or self._previous
 		out = []
-		current = _SGR_UNKNOWN
+		active = _SGR_UNKNOWN
 		for y in range(self.height):
 			row = self._buffer[y]
 			was = self._previous[y]
@@ -175,10 +199,7 @@ class Canvas:
 					x += 1
 				out.append("\033[{};{}H".format(y + 1, start + 1))
 				for cell in range(start, x):
-					color = colors[cell]
-					if color != current:
-						out.append(color if color else SGR_RESET)
-						current = color
+					active = _emit_sgr(out, active, colors[cell])
 					out.append(row[cell])
 		if out:
 			out.append(SGR_RESET)

@@ -17,9 +17,14 @@ operator who selects contrast-light there would change the bytes every default
 look test pins. `isolate_checkout_config()` redirects those two seams at empty
 files in a temp folder for the duration of a test module, so the suite describes
 the code, not the checkout.
+
+`SgrTerminal`/`replay()`/`repaint_errors()` are the repaint oracle: they replay
+a canvas frame through an independent SGR state machine, so a regression can
+assert each cell's *effective* style instead of the bytes a painter emitted.
 """
 
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -76,3 +81,116 @@ def module_isolation():
 			restore()
 
 	return setUpModule, tearDownModule
+
+
+# -- repaint oracle -----------------------------------------------------------
+#
+# A canvas frame is only correct if the terminal it lands on dresses every cell
+# the way that cell's own colour says. The leak this models is cumulative SGR:
+# a run that omits an attribute still inherits it from the run before it. The
+# machine below is an independent reading of the escape codes, so a regression
+# test compares the *effective* style of each cell, not the bytes a painter
+# happened to emit.
+
+_HOME = re.compile(r"\033\[H")
+_CUP = re.compile(r"\033\[(\d+);(\d+)H")
+_SGR = re.compile(r"\033\[([0-9;]*)m")
+
+
+class SgrTerminal:
+	"""The SGR state a terminal holds after replaying some codes."""
+
+	def __init__(self):
+		self.reset()
+
+	def reset(self):
+		"""Back to the state a fresh terminal starts in."""
+		self.fg = self.bg = None
+		self.attrs = set()
+
+	def feed(self, codes):
+		"""Apply one SGR parameter string (`"38;2;1;2;3"`); returns the state."""
+		params = [int(part or 0) for part in str(codes).split(";")]
+		while params:
+			code = params.pop(0)
+			if code == 0:
+				self.reset()
+			elif code in (1, 2, 4, 7):
+				self.attrs.add(code)
+			elif code == 22:
+				self.attrs -= {1, 2}
+			elif code in (24, 27):
+				self.attrs.discard(code - 20)
+			elif 30 <= code <= 37 or 90 <= code <= 97:
+				self.fg = code
+			elif code == 39:
+				self.fg = None
+			elif 40 <= code <= 47 or 100 <= code <= 107:
+				self.bg = code
+			elif code == 49:
+				self.bg = None
+			elif code in (38, 48):
+				size = 4 if params and params[0] == 2 else 2
+				value = (code,) + tuple(params[:size])
+				del params[:size]
+				if code == 38:
+					self.fg = value
+				else:
+					self.bg = value
+		return self.state()
+
+	def state(self):
+		"""(fg, bg, attrs) as a hashable snapshot."""
+		return (self.fg, self.bg, frozenset(self.attrs))
+
+
+def cell_style(colour):
+	"""The state one cell colour leaves, applied to a reset terminal."""
+	terminal = SgrTerminal()
+	for codes in _SGR.findall(str(colour or "")):
+		terminal.feed(codes)
+	return terminal.state()
+
+
+def replay(frame):
+	"""{ (x, y): (char, effective state) } for one emitted frame."""
+	terminal = SgrTerminal()
+	cells, x, y, index = {}, 0, 0, 0
+	while index < len(frame):
+		match = _HOME.match(frame, index)
+		if match:
+			x = y = 0
+			index = match.end()
+			continue
+		match = _CUP.match(frame, index)
+		if match:
+			y, x = int(match.group(1)) - 1, int(match.group(2)) - 1
+			index = match.end()
+			continue
+		match = _SGR.match(frame, index)
+		if match:
+			terminal.feed(match.group(1))
+			index = match.end()
+			continue
+		if frame[index] == "\n":
+			y, x = y + 1, 0
+		else:
+			cells[(x, y)] = (frame[index], terminal.state())
+			x += 1
+		index += 1
+	return cells
+
+
+def repaint_errors(canvas, frame):
+	"""Cells whose effective style or character differs from the canvas buffer.
+
+	An empty list is the invariant: a repaint may leave no cell dressed by the
+	cell painted before it.
+	"""
+	errors = []
+	for (x, y), (char, state) in replay(frame).items():
+		expected_char = canvas._buffer[y][x]
+		expected = cell_style(canvas._colors[y][x])
+		if char != expected_char or state != expected:
+			errors.append((x, y, char, expected_char, state, expected))
+	return errors

@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from support import module_isolation  # noqa: E402  (test helper, not production)
+from support import module_isolation, repaint_errors  # noqa: E402  (test helper)
 
 setUpModule, tearDownModule = module_isolation()
 
@@ -257,6 +257,93 @@ class SplitShimTests(unittest.TestCase):
 
 	def test_the_screensaver_name_is_still_a_canvas_subclass(self):
 		self.assertTrue(issubclass(canvas_module.TerminalRenderer, canvas_module.Canvas))
+
+
+class RepaintStyleTests(unittest.TestCase):
+	"""A repaint is absolute: no cell may inherit the cell painted before it.
+
+	`repaint_errors()` replays the emitted bytes through an SGR state machine,
+	so these tests fail on the stale-tint leak (a run with only a foreground
+	code after a reverse run) even though every cell's *bytes* were re-emitted.
+	"""
+
+	FG = "\033[38;2;212;200;235m"
+	FOCUS = FG + "\033[48;2;27;23;38m\033[7m"
+
+	def canvas(self, width=10, height=3):
+		return screen.Canvas(width, height, stream=FakeStream(True))
+
+	def drain(self, canvas):
+		"""Throw the bytes rendered so far away; returns the stream."""
+		canvas.stream._buffer.seek(0)
+		canvas.stream._buffer.truncate()
+		return canvas.stream
+
+	def test_an_up_move_restores_the_vacated_row(self):
+		canvas = self.canvas()
+		canvas.draw_text(0, 0, "alpha", self.FG)
+		canvas.draw_text(0, 1, "beta ", self.FG)
+		canvas.draw_text(0, 2, "gamma", self.FOCUS)
+		canvas.render()
+		stream = self.drain(canvas)
+		# The selection moved from row 3 to row 2: row 3 is now a plain row and
+		# comes after the focused run, which is where the leak used to land.
+		canvas.draw_text(0, 0, "alpha", self.FG)
+		canvas.draw_text(0, 1, "beta ", self.FOCUS)
+		canvas.draw_text(0, 2, "gamma", self.FG)
+		canvas.render(full=False)
+		frame = stream.getvalue()
+		self.assertEqual(repaint_errors(canvas, frame), [])
+		self.assertIn("\033[3;1H" + screen.SGR_RESET + self.FG, frame)
+
+	def test_a_down_move_keeps_the_bytes_it_always_emitted(self):
+		canvas = self.canvas()
+		canvas.draw_text(0, 0, "alpha", self.FG)
+		canvas.draw_text(0, 1, "beta ", self.FOCUS)
+		canvas.draw_text(0, 2, "gamma", self.FG)
+		canvas.render()
+		stream = self.drain(canvas)
+		canvas.draw_text(0, 1, "beta ", self.FG)
+		canvas.draw_text(0, 2, "gamma", self.FOCUS)
+		canvas.render(full=False)
+		self.assertEqual(stream.getvalue(),
+						 "\033[2;1H" + self.FG + "beta "
+						 + "\033[3;1H" + self.FOCUS + "gamma"
+						 + screen.SGR_RESET)
+
+	def test_a_full_frame_never_inherits_a_mid_frame_reverse(self):
+		canvas = self.canvas(6, 3)
+		canvas.draw_text(0, 0, "aaaaaa", self.FG)
+		canvas.draw_text(0, 1, "bbbbbb", self.FOCUS)
+		canvas.draw_text(0, 2, "cccccc", self.FG)
+		canvas.render()
+		frame = canvas.stream.getvalue()
+		self.assertTrue(frame.startswith("\033[H"))
+		self.assertEqual(repaint_errors(canvas, frame), [])
+		self.assertIn("\033[0m" + self.FG + "cccccc", frame)
+
+	def test_a_colour_shared_by_two_runs_is_emitted_once(self):
+		# Pure-foreground churn must stay byte-identical: no reset is owed when
+		# the next run wants everything that is already active.
+		canvas = self.canvas()
+		canvas.render()
+		canvas.draw_text(0, 0, "aa", self.FG)
+		canvas.draw_text(0, 1, "bb", self.FG)
+		stream = self.drain(canvas)
+		canvas.render(full=False)
+		frame = stream.getvalue()
+		self.assertEqual(frame.count(self.FG), 1)
+		self.assertNotIn(screen.SGR_RESET + self.FG, frame)
+		self.assertEqual(repaint_errors(canvas, frame), [])
+
+	def test_redrawing_an_unchanged_run_writes_nothing(self):
+		canvas = self.canvas()
+		canvas.draw_text(0, 1, "beta ", self.FOCUS)
+		canvas.render()
+		stream = self.drain(canvas)
+		canvas.draw_text(0, 1, "beta ", self.FOCUS)
+		canvas.render(full=False)
+		self.assertEqual(stream.getvalue(), "")
 
 
 if __name__ == "__main__":
