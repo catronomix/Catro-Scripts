@@ -16,6 +16,7 @@ newline, or reads the terminal: every escape comes from `palette.style()`.
 """
 
 from . import caps, palette
+from .chrome_panels import _flat
 
 # button_decoration -> (prefix, suffix) wrapped around the label. `chevron`
 # uses the guillemets so it reads as a chevron without doubling `angles`.
@@ -105,8 +106,3 @@ def scrollbar(height, *, offset=0, total=None, cap=None, theme=None):
 	return [palette.style(thumb if start <= row < last else track,
 						  fg="accent" if start <= row < last else "muted",
 						  cap=cap, theme=theme) for row in range(height)]
-
-
-def _flat(value):
-	"""str() with newlines flattened: a control label is always one line."""
-	return str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
