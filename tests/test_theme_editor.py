@@ -31,8 +31,8 @@ if str(REPO) not in sys.path:
 
 from types import SimpleNamespace
 
-from tui import (caps, config, editor, editor_nav, editorviews, keys, palette,
-				 screen, table, theme_engine)  # noqa: E402
+from tui import (caps, config, editor, editor_nav, editor_preview, editorviews,
+				 keys, palette, screen, table, theme_engine)  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -806,6 +806,28 @@ class NavSplitShimTests(unittest.TestCase):
 		body = source.split('"""', 2)[2]
 		self.assertNotIn("import", body)
 		self.assertNotIn("editorviews", body)
+
+
+class PreviewSplitShimTests(unittest.TestCase):
+	"""The preview painter moved to `tui.editor_preview`; old paths must resolve."""
+
+	def test_the_moved_names_still_resolve_through_editorviews(self):
+		for name in ("draw_preview", "glyphs_for", "button_text",
+					 "_draw_scrollbar"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(editorviews, name),
+							  getattr(editor_preview, name))
+
+	def test_editor_preview_does_not_import_the_views_or_their_importers(self):
+		source = (REPO / "tui" / "editor_preview.py").read_text(encoding="utf-8")
+		imports = [line for line in source.splitlines()
+				   if line.startswith("from .") or line.startswith("import ")]
+		self.assertTrue(imports)
+		for line in imports:
+			self.assertNotIn("editorviews", line)
+			self.assertNotIn("editorpaint", line)
+			self.assertNotIn("editoractions", line)
+			self.assertNotIn("editorimport", line)
 
 
 if __name__ == "__main__":
