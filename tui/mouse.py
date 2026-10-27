@@ -18,7 +18,9 @@ exception.
 
 Windows: `enable()` tries to turn on VT input through `ctypes` (imported inside
 the function, so no platform module at import time); a console that refuses it
-stays keyboard-only instead of failing.
+stays keyboard-only instead of failing. The console's original input mode is
+remembered and put back by `disable()` (also on a failed enable and on the
+`reporting()` exception path), so the caller never inherits VT input.
 """
 
 import os
@@ -41,17 +43,23 @@ _WHEELS = ("wheel-up", "wheel-down", "wheel-left", "wheel-right")
 # The stream currently holding the mouse modes; `disable()` only talks about it.
 _active = None
 
+# `(handle, mode)` saved before VT input went on, until it is put back.
+_windows_input = None
+
 def enable(stream=None, *, drag=True):
 	"""Turn on button, wheel and (optionally) drag reporting; True when written."""
 	global _active
 	stream = sys.stdout if stream is None else stream
 	if not _isatty(stream):
 		return False
-	_enable_windows_vt()
 	if _active is stream:
 		return True
+	_enable_windows_vt()
 	codes = "\033[?1000h" + ("\033[?1002h" if drag else "") + "\033[?1006h"
 	if not _write(stream, codes):
+		# The mode bytes never reached the terminal, so VT input must not stay
+		# on behind the caller's back.
+		_restore_windows_input()
 		return False
 	_active = stream
 	return True
@@ -61,9 +69,14 @@ def disable(stream=None):
 	global _active
 	stream = sys.stdout if stream is None else stream
 	if _active is not stream:
+		# A stray `disable()` for a stream that never armed reporting must not
+		# pull the mode out from under the stream that did.
+		if _active is None:
+			_restore_windows_input()
 		return False
 	_write(stream, DISABLE)
 	_active = None
+	_restore_windows_input()
 	return True
 
 @contextmanager
@@ -134,7 +147,8 @@ def parse_token(value):
 
 def _enable_windows_vt():
 	"""Best-effort VT input on a Windows console; silent when unavailable."""
-	if os.name != "nt":
+	global _windows_input
+	if os.name != "nt" or _windows_input is not None:
 		return False
 	try:
 		import ctypes
@@ -144,7 +158,26 @@ def _enable_windows_vt():
 		mode = ctypes.c_uint()
 		if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
 			return False
-		return bool(kernel32.SetConsoleMode(handle, mode.value | 0x0200))
+		if not kernel32.SetConsoleMode(handle, mode.value | 0x0200):
+			return False
+		# Only remember the mode once the bit really went on, so the restore
+		# never writes a mode that was already the console's own.
+		_windows_input = (handle, mode.value)
+		return True
+	except Exception:
+		return False
+
+def _restore_windows_input():
+	"""Put the console input mode saved by `_enable_windows_vt()` back."""
+	global _windows_input
+	saved, _windows_input = _windows_input, None
+	if saved is None:
+		return False
+	try:
+		import ctypes
+
+		handle, mode = saved
+		return bool(ctypes.windll.kernel32.SetConsoleMode(handle, mode))
 	except Exception:
 		return False
 

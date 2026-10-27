@@ -249,6 +249,44 @@ class KeyReaderTests(unittest.TestCase):
 		reader.stop()
 
 
+class WindowsKeyTests(unittest.TestCase):
+	"""The Windows path, driven by a fake `msvcrt` in `sys.modules`."""
+
+	class FakeMsvcrt:
+		"""Only the two calls `_read_key_windows` makes, fed from a byte list."""
+
+		def __init__(self, *bytes_):
+			self._bytes = list(bytes_)
+
+		def kbhit(self):
+			return bool(self._bytes)
+
+		def getch(self):
+			return self._bytes.pop(0)
+
+	def read(self, *bytes_):
+		with mock.patch.dict(sys.modules,
+							 {"msvcrt": self.FakeMsvcrt(*bytes_)}), \
+				mock.patch.object(keys, "os", SimpleNamespace(name="nt")):
+			return keys.read_key(timeout=0.2)
+
+	def test_windows_vt_arrows_decode_as_up(self):
+		# Once ENABLE_VIRTUAL_TERMINAL_INPUT is on, the console sends the
+		# escape sequence, not the old 0x00/0xe0 scan code; decoding it byte
+		# by byte used to yield esc, then "[", then "A".
+		self.assertEqual(self.read(b"\x1b", b"[", b"A"), "up")
+
+	def test_windows_two_byte_arrows_still_decode(self):
+		self.assertEqual(self.read(b"\x00", b"H"), "up")
+		self.assertEqual(self.read(b"\xe0", b"P"), "down")
+
+	def test_windows_vt_digits_reach_the_same_table(self):
+		self.assertEqual(self.read(b"\x1b", b"[", b"6", b"~"), "pagedown")
+
+	def test_windows_lone_escape_stays_esc(self):
+		self.assertEqual(self.read(b"\x1b"), "esc")
+
+
 class ImportSafetyTests(unittest.TestCase):
 	def test_no_platform_module_is_imported(self):
 		code = ("import sys, tui; from tui import keys; "

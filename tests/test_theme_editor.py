@@ -26,7 +26,9 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, config, editor, editorviews, screen, theme_engine  # noqa: E402
+from types import SimpleNamespace
+
+from tui import caps, config, editor, editorviews, keys, screen, theme_engine  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -230,6 +232,30 @@ class NavigationTests(EditorTestCase):
 		self.assertEqual(ed.look_index, 2)
 		ed.handle("mouse:press:1:2")
 		self.assertEqual(ed.look_index, 0)
+
+	def test_an_esc_led_up_moves_the_focused_panel(self):
+		# End to end: the three bytes a VT-enabled Windows console sends for Up
+		# decode to one token and move the focused panel's row.
+		ed = self.make()
+		ed.pump(["down", "down"])
+		self.assertEqual(ed.property_index, 2)
+
+		class FakeMsvcrt:
+			def __init__(self):
+				self._bytes = [b"\x1b", b"[", b"A"]
+
+			def kbhit(self):
+				return bool(self._bytes)
+
+			def getch(self):
+				return self._bytes.pop(0)
+
+		with mock.patch.dict(sys.modules, {"msvcrt": FakeMsvcrt()}), \
+				mock.patch.object(keys, "os", SimpleNamespace(name="nt")):
+			token = keys.read_key(timeout=0.2)
+		self.assertEqual(token, "up")
+		ed.handle(token)
+		self.assertEqual(ed.property_index, 1)
 
 	def test_arrows_and_page_keys_scroll_the_properties_window(self):
 		ed = self.make()
