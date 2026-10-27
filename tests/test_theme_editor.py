@@ -31,8 +31,8 @@ if str(REPO) not in sys.path:
 
 from types import SimpleNamespace
 
-from tui import (caps, config, editor, editorviews, keys, palette, screen,
-				 table, theme_engine)  # noqa: E402
+from tui import (caps, config, editor, editor_nav, editorviews, keys, palette,
+				 screen, table, theme_engine)  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -790,6 +790,22 @@ class RunTests(EditorTestCase):
 				ed.run(stream=io.StringIO())
 		self.assertIn("raw-exit", calls)
 		self.assertIn("screen-exit", calls)
+
+class NavSplitShimTests(unittest.TestCase):
+	"""The caption tables moved to `tui.editor_nav`; old paths must resolve."""
+
+	def test_the_moved_names_still_resolve_through_editorviews(self):
+		for name in ("LOOK_ORDER", "LOOK_LABELS", "PANELS", "BUTTONS",
+					 "HELP_LINE", "HELP_LINES", "look_label", "preview_title",
+					 "preview_titles"):
+			with self.subTest(name=name):
+				self.assertIs(getattr(editorviews, name), getattr(editor_nav, name))
+
+	def test_editor_nav_does_not_import_the_views_or_their_importers(self):
+		source = (REPO / "tui" / "editor_nav.py").read_text(encoding="utf-8")
+		body = source.split('"""', 2)[2]
+		self.assertNotIn("import", body)
+		self.assertNotIn("editorviews", body)
 
 
 if __name__ == "__main__":

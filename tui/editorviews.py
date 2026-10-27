@@ -13,57 +13,27 @@ currently selects, so it passes the document's own `#rrggbb` values to
 `palette.prefix()`. The chrome roles (button decoration/style and scrollbar
 glyphs) come from `tui.chrome`'s tables and the frame glyphs from
 `tui.table.glyphs_for()`, so the editor does not grow a second style engine.
+
+This module is the fan-in leaf for the editor: the look/panel/button captions
+and the help copy live in `tui.editor_nav` and are re-exported here, so
+`editorviews.LOOK_ORDER`/`PANELS`/`preview_title` keep resolving while
+`editor_nav` imports nothing back.
 """
 
 import re
 
 from . import (chrome, editorframe, palette, progress, table, theme_engine,
 			   widgets)
+from .editor_nav import (BUTTONS, HELP_LINE, HELP_LINES, LOOK_LABELS,  # noqa: F401
+						 LOOK_ORDER, PANELS, look_label, preview_title,
+						 preview_titles)
 from .text import pad, truncate
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
-# The three previews, in the order Left/Right moves through them.
-LOOK_ORDER = ("default", "contrast-light", "contrast-dark")
-LOOK_LABELS = {"default": "soft", "contrast-light": "light",
-			   "contrast-dark": "dark"}
-
-# Editor chrome shared by the key router, the painter and the action popups.
-PANELS = ("Properties", "Colours", "Actions")
-BUTTONS = ("Save", "Load", "Quit")
-HELP_LINE = "Tab panel  <-/-> look  Enter edit  ^S save  F1 help  Q quit"
-HELP_LINES = (
-	"THEME EDITOR",
-	"",
-	"Tab / Shift-Tab   cycle Properties, Colours, Actions",
-	"Left / Right      select the look under edit",
-	"Up / Down         move inside the focused panel",
-	"Enter             edit a property, open the picker, press a button",
-	"Ctrl-S            save as themes/<name>.json",
-	"F1 / Esc          this help",
-	"Delete / Q        quit (asks when unsaved)",
-	"",
-	"Wheel or PageUp/PageDown scrolls the focused panel.",
-)
 # Properties panel rows, in schema order, and the key column width.
 PROPERTY_KEYS = tuple(theme_engine.PROPERTY_VALUES)
 PROPERTY_WIDTH = max(len(key) for key in PROPERTY_KEYS)
-
-
-def look_label(look_id):
-	"""User-facing selector for one look id (`default` -> `soft`)."""
-	return LOOK_LABELS.get(look_id, "soft")
-
-
-def preview_title(document, look_id):
-	"""`<display> - <selector>` for one preview's header band."""
-	display = str(document.get("display") or document.get("name") or "theme")
-	return "{} - {}".format(display, look_label(look_id))
-
-
-def preview_titles(document):
-	"""One title per preview, in Left/Right order."""
-	return [preview_title(document, look_id) for look_id in LOOK_ORDER]
 
 
 def clear(canvas):
