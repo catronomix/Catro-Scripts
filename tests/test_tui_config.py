@@ -333,6 +333,29 @@ class ThemeCommandTests(unittest.TestCase):
 		self.assertEqual(out, "theme.ini is not writable here: {}\n".format(
 			theme_engine.theme_file()))
 
+	def test_a_missing_shipped_theme_is_one_error_line_not_a_traceback(self):
+		# Issue #33: the shipped document is the only built-in palette, so a
+		# broken install turns every themed page into one ThemeError. `main()`
+		# is the last seam and must print it once with the usual exit code.
+		(theme_engine.themes_dir() / "cozypurple.json").unlink()
+		theme_engine._CACHE.clear()
+		cap = caps.Capabilities(level="true", unicode=True, width=None,
+								isatty=False, plain=False, reason="test")
+		for argv in (["palette"], [], ["list"]):
+			with self.subTest(argv=argv):
+				stream = io.StringIO()
+				with mock.patch.object(caps, "detect", return_value=cap), \
+						redirect_stdout(stream):
+					code = main(argv)
+				out = stream.getvalue()
+				self.assertEqual(code, 2)
+				self.assertEqual(out.count("\n"), 1)
+				self.assertIn("shipped default theme is unavailable", out)
+				self.assertIn("cozypurple.json", out)
+				self.assertNotIn("Traceback", out)
+		# Uncoloured output reads no palette, so the overview still answers.
+		self.assertEqual(self.run_main([])[0], 0)
+
 	def test_help_lists_every_theme_selector(self):
 		code, out = self.run_main(["--help"])
 		self.assertEqual(code, 0)
