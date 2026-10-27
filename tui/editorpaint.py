@@ -16,17 +16,41 @@ from .text import pad, truncate
 from .widgetkit import cells
 
 
-def draw(editor):
-	"""Paint one full frame onto the injected canvas; returns `editor`."""
+def draw(editor, full=True):
+	"""Paint one frame onto the injected canvas; returns `editor`.
+
+	`full` is a *terminal* decision, not a canvas one: the grid is always
+	repainted in full, so the buffer a diff compares against is complete. On an
+	incremental frame the only cells that need erasing are the overlay a
+	previous frame left behind (an overlay repaints its own box), because every
+	other painter writes the whole band it owns.
+	"""
 	canvas = editor.canvas
 	if canvas is None:
 		return editor
+	# One paint, one colour resolution: `begin_frame` keeps the look palette,
+	# the selection and the properties from being re-resolved per cell.
+	palette.begin_frame()
+	try:
+		_paint(editor, canvas, full)
+	finally:
+		palette.end_frame()
+	return editor
+
+
+def _paint(editor, canvas, full):
 	cap = editor.cap or caps.detect()
-	editorviews.clear(canvas)
+	previous = getattr(editor, "_overlay_rect", None)
+	if full:
+		editorviews.clear(canvas)
+	elif previous is not None:
+		editorviews.blank_rect(canvas, *previous)
+	editor._overlay_rect = None
 	if widgets.small_terminal(canvas.width, canvas.height):
 		editorviews.notice(canvas, cap)
 		return editor
-	editor._layout()
+	if (canvas.width, canvas.height) != getattr(editor, "_layout_size", None):
+		editor._layout()
 	_draw_title(editor, canvas, cap)
 	for index, look_id in enumerate(editorviews.LOOK_ORDER):
 		rect = editor.rects[index]
@@ -38,17 +62,18 @@ def draw(editor):
 	_draw_actions(editor, canvas, cap)
 	_draw_status(editor, canvas, cap)
 	if editor.help:
-		_draw_help(editor, canvas, cap)
+		editor._overlay_rect = _draw_help(editor, canvas, cap)
 	if editor.prompt == "save":
-		_draw_save(editor, canvas, cap)
+		editor._overlay_rect = _draw_save(editor, canvas, cap)
 	if editor.prompt == "load":
-		_draw_load(editor, canvas, cap)
+		editor._overlay_rect = _draw_load(editor, canvas, cap)
 	if editor.picker is not None:
 		# A resize swaps the editor's canvas; retarget the popup so it is
 		# painted again on the new grid instead of the discarded one.
 		editor.picker.canvas = canvas
 		editor.picker.cap = editor.cap
 		editor.picker.draw()
+		editor._overlay_rect = editor.picker.rect()
 	return editor
 
 
@@ -147,6 +172,7 @@ def _draw_help(editor, canvas, cap):
 	for row, line in enumerate(editorviews.HELP_LINES):
 		canvas.draw_text(x + 2, y + 1 + row, truncate(line, width - 4),
 						 palette.prefix(fg="fg", bg="surface", cap=cap))
+	return x, y, width, height
 
 
 def _draw_save(editor, canvas, cap):
@@ -164,6 +190,7 @@ def _draw_save(editor, canvas, cap):
 		canvas.draw_text(x + 2, y + 4, truncate(editor.save_field.error,
 												width - 4),
 						 palette.prefix(fg="error", bg="surface", cap=cap))
+	return x, y, width, height
 
 
 def _draw_load(editor, canvas, cap):
@@ -176,6 +203,7 @@ def _draw_load(editor, canvas, cap):
 	hint = "Enter loads, Esc cancels - ! marks an unreadable file"
 	canvas.draw_text(x + 2, y + height - 2, truncate(hint, width - 4),
 					 palette.prefix(fg="muted", bg="surface", cap=cap))
+	return x, y, width, height
 
 
 def _blit(canvas, x, y, styled, width):

@@ -8,6 +8,7 @@ changed-cell diff. "Terminal size" is patched, so no test needs a real terminal.
 """
 
 import io
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -173,7 +174,23 @@ class CanvasTests(unittest.TestCase):
 		canvas.render(full=False)
 		self.assertEqual(stream.getvalue(), "\033[2;3H\033[0mz\033[0m")
 
-	def test_colors_are_raw_ansi_strings(self):
+	def test_diff_render_batches_a_contiguous_run_into_one_cursor_move(self):
+		stream = FakeStream(True)
+		canvas = screen.Canvas(width=12, height=3, stream=stream)
+		canvas.render()
+		stream._buffer.seek(0)
+		stream._buffer.truncate()
+		canvas.draw_text(2, 0, "abcd", "\033[31m")
+		canvas.draw_text(0, 2, "xy")
+		canvas.render(full=False)
+		frame = stream.getvalue()
+		moves = re.findall(r"\033\[(\d+);(\d+)H", frame)
+		self.assertEqual(moves, [("1", "3"), ("3", "1")])
+		self.assertEqual(frame.count("\033[31m"), 1)
+		self.assertEqual(frame.count("abcd"), 1)
+		self.assertNotIn("\033[1;1H", frame)
+
+
 		canvas = self.make()
 		canvas.draw_char(0, 0, "q", "\033[7m")
 		self.assertEqual(canvas._colors[0][0], "\033[7m")

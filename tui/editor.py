@@ -48,6 +48,8 @@ class ThemeEditor:
 		self.entries = []
 		self.buttons = []
 		self.rects = {}
+		self._layout_size = None
+		self._overlay_rect = None
 		self.focus = 0
 		self.property_index = 0
 		self.property_offset = 0
@@ -99,6 +101,7 @@ class ThemeEditor:
 		if self.canvas is None:
 			return
 		width, height = self.canvas.width, self.canvas.height
+		self._layout_size = (width, height)
 		if widgets.small_terminal(width, height):
 			return
 		preview_h = max(6, min(12, height - 12))
@@ -311,9 +314,15 @@ class ThemeEditor:
 
 	# -- drawing ---------------------------------------------------------
 
-	def draw(self):
-		"""Paint one frame onto the injected canvas; returns `self`."""
-		editorpaint.draw(self)
+	def draw(self, full=True):
+		"""Paint one frame onto the injected canvas; returns `self`.
+
+		`full` asks for a full-screen repaint (first frame, resize, anything
+		that cleared the terminal); otherwise the painter erases only the
+		overlay a previous frame left and redraws its bands, so the caller can
+		render a changed-cell diff.
+		"""
+		editorpaint.draw(self, full=full)
 		return self
 
 	# -- real terminal wiring --------------------------------------------
@@ -334,6 +343,10 @@ class ThemeEditor:
 				try:
 					self._layout()
 					paint = True
+					# A full frame is only needed when the terminal has no
+					# previous image: the first paint, a resize, or a clear.
+					# Every later keystroke goes out as a batched diff.
+					full = True
 					reader.start()
 					while not self.closed:
 						token = reader.wait(0.1)
@@ -343,11 +356,11 @@ class ThemeEditor:
 						if self.screen.poll_resize():
 							self.canvas = screen.Canvas(stream=stream)
 							self._layout()
-							paint = True
+							paint = full = True
 						if paint and not self.closed:
-							self.draw()
-							self.canvas.render(full=True)
-							paint = False
+							self.draw(full=full)
+							self.canvas.render(full=full)
+							paint = full = False
 				finally:
 					reader.stop()
 					self.screen.exit()

@@ -196,6 +196,56 @@ class LoadTests(SeamCase):
 						 set(theme_engine.PROPERTY_VALUES))
 
 
+class CacheTests(SeamCase):
+	"""Reads are memoized by path+mtime, and a write re-opens exactly that key."""
+
+	def test_a_warm_cache_resolves_without_re_reading_or_re_validating(self):
+		self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
+						 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+		with mock.patch.object(theme_engine, "_document_for",
+							   side_effect=AssertionError("re-read")):
+			for _ in range(50):
+				self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
+								 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+				theme_engine.properties("cozypurple")
+				theme_engine.document("cozypurple")
+
+	def test_load_theme_still_hands_out_a_copy(self):
+		document = theme_engine.load_theme("cozypurple")
+		document["looks"]["default"]["bg"] = "#010203"
+		self.assertNotEqual(theme_engine.look_palette("cozypurple")["bg"],
+							"#010203")
+
+	def test_a_save_invalidates_the_document_memo(self):
+		document = theme_engine.load_theme("cozypurple")
+		self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
+						 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+		document["looks"]["default"]["bg"] = "#010203"
+		theme_engine.save_theme(document, overwrite=True)
+		self.assertEqual(theme_engine.look_palette("cozypurple")["bg"],
+						 "#010203")
+
+	def test_a_selection_write_is_visible_immediately(self):
+		self.assertEqual(theme_engine.selection(), ("cozypurple", "soft"))
+		# Same tick or not, the write drops its own memo: no stale selection.
+		theme_engine.set_selection("cozypurple", "contrast-dark")
+		self.assertEqual(theme_engine.selection(), ("cozypurple", "dark"))
+		self.assertEqual(theme_engine.resolve()[1], "contrast-dark")
+
+	def test_redirecting_the_theme_dir_is_a_different_cache_key(self):
+		self.assertEqual(theme_engine.look_palette()["bg"],
+						 theme_engine.BUILTIN_LOOKS["default"]["bg"])
+		other = self.root / "other"
+		other.mkdir()
+		document = builtin()
+		document["looks"]["default"]["bg"] = "#010203"
+		document["name"] = "cozypurple"
+		(other / "cozypurple.json").write_text(json.dumps(document),
+											   encoding="utf-8")
+		theme_engine.THEMES_DIR = other
+		self.assertEqual(theme_engine.look_palette()["bg"], "#010203")
+
+
 class SaveTests(SeamCase):
 	def test_save_normalises_and_round_trips(self):
 		document = builtin()

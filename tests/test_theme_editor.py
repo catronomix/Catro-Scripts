@@ -1,4 +1,4 @@
-# Full-screen theme editor tests
+﻿# Full-screen theme editor tests
 """
 		THEME EDITOR (HEADLESS)
 		=======================
@@ -16,8 +16,10 @@ import contextlib
 import copy
 import io
 import json
+import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -28,7 +30,8 @@ if str(REPO) not in sys.path:
 
 from types import SimpleNamespace
 
-from tui import caps, config, editor, editorviews, keys, screen, theme_engine  # noqa: E402
+from tui import (caps, config, editor, editorviews, keys, palette, screen,
+				 table, theme_engine)  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -78,6 +81,67 @@ class EditorTestCase(unittest.TestCase):
 		"""Every non-None cell colour currently on the canvas."""
 		return {colour for row in ed.canvas._colors for colour in row
 				if colour is not None}
+
+
+class RedrawBudgetTests(EditorTestCase):
+	"""Item 1: one keystroke is a small batched diff, not a full repaint."""
+
+	def setUp(self):
+		super().setUp()
+		self.stream = io.StringIO()
+		self.ed = editor.ThemeEditor(
+			canvas=screen.Canvas(90, 24, stream=self.stream),
+			cap=self.cap).open()
+		self.ed.canvas.render()
+		self.full = len(self.frame())
+
+	def frame(self):
+		"""Drain everything the last render wrote."""
+		value = self.stream.getvalue()
+		self.stream.seek(0)
+		self.stream.truncate()
+		return value
+
+	def test_an_unchanged_redraw_writes_nothing(self):
+		self.ed.draw(full=False)
+		self.ed.canvas.render(full=False)
+		self.assertEqual(self.frame(), "")
+
+	def test_one_keyframe_is_a_small_diff_of_its_own_panel_rows(self):
+		self.ed.handle("down")
+		self.ed.draw(full=False)
+		self.ed.canvas.render(full=False)
+		frame = self.frame()
+		self.assertLess(len(frame), self.full // 2)
+		moves = re.findall(r"\033\[(\d+);\d+H", frame)
+		rows = {int(row) - 1 for row in moves}
+		x, y, width, height = self.ed.rects[3]
+		self.assertTrue(rows, "the focused row move painted nothing")
+		self.assertTrue(all(y <= row < y + height for row in rows), rows)
+		self.assertLessEqual(len(rows), 4)
+
+	def test_one_event_paints_and_writes_in_under_thirty_ms(self):
+		samples = []
+		for index in range(15):
+			start = time.perf_counter()
+			self.ed.handle("down" if index % 2 == 0 else "up")
+			self.ed.draw(full=False)
+			self.ed.canvas.render(full=False)
+			samples.append((time.perf_counter() - start) * 1000)
+			self.frame()
+		samples.sort()
+		median = samples[len(samples) // 2]
+		self.assertLess(median, 30.0,
+						"median event {:.1f} ms: {}".format(median, samples))
+
+	def test_layout_runs_only_when_the_canvas_size_changes(self):
+		with mock.patch.object(self.ed, "_layout",
+							   wraps=self.ed._layout) as layout:
+			self.ed.draw(full=False)
+			layout.assert_not_called()
+			self.ed.canvas = screen.Canvas(100, 30, stream=self.stream)
+			self.ed.draw(full=True)
+			layout.assert_called_once()
 
 
 class HeadlessOpenTests(EditorTestCase):

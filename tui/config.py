@@ -33,12 +33,15 @@ DEFAULTS = {
 # Override for tests; see the module docstring.
 CONFIG_FILE = None
 
+# The project folder, resolved once (see `tui.theme_engine`).
+_PROJECT = Path(__file__).resolve().parents[1]
+
 
 def path():
 	"""Absolute path of the config file this checkout uses."""
 	if CONFIG_FILE is not None:
 		return Path(CONFIG_FILE)
-	return Path(__file__).resolve().parents[1] / "config.ini"
+	return _PROJECT / "config.ini"
 
 
 def _parser():
