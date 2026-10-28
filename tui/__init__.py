@@ -45,7 +45,8 @@ Usage:
 
 from . import canvas, caps, chrome, chrome_controls, chrome_panels, color_levels, color_math, colorpicker, colorpicker_panel, config, keys, loop, mouse, palette, pager, progress, prompts, screen, sgr, table, table_glyphs, text, widgetkit, widgets
 from .caps import Capabilities, detect, init_ansi, require_tty
-from .chrome import button, field, fill, header, menu, panel, rule, scrollbar, status
+from .chrome import (button, field, fill, header, menu, panel, rule, scrollbar,
+					 status, status_panel)
 from .color_math import (WCAG_AA, contrast_ratio, hex_to_rgb, hsv_to_rgb,
 						 luminance, rgb_to_hex, rgb_to_hsv)
 from .colorpicker import ColorPicker
@@ -74,7 +75,8 @@ __all__ = [
 	"style", "theme",
 	"display_width", "pad", "strip_ansi", "truncate", "wrap",
 	"banner", "key_values", "print_table", "render_table", "section",
-	"header", "panel", "rule", "field", "status", "fill", "menu", "button",
+	"header", "panel", "rule", "field", "status", "status_panel", "fill", "menu",
+	"button",
 	"scrollbar",
 	"Canvas", "Screen", "TerminalRenderer",
 	"decode", "disable", "enable", "parse_token", "reporting", "token",

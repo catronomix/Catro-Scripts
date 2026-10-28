@@ -244,33 +244,22 @@ def main():
 	total_size = sum(d['size'] for d in stats.values())
 	footer_label = "TOTAL (ALL LISTED)"
 
-	if cap.plain:
-		# Piped output: one TAB-separated record per line, header first.
-		print("\t".join((label, count_label, "Total Size")))
-		for row in rows:
-			print("\t".join(row))
-		print("\t".join((footer_label, str(total_count),
-						 format_size(total_size, raw=args.raw))))
-		return
-
-	# Column header and footer are chrome headings/band; the rules are the
-	# border role. The rows keep the pinned rainbow data colours.
-	print(tui.section("{:<{}} {:<{}} {:<{}}".format(
-		label, NAME_WIDTH, count_label, COUNT_WIDTH, "Total Size", SIZE_WIDTH),
-		cap=cap))
-	print(tui.rule(70, cap=cap))
-
-	for i, row in enumerate(rows):
-		print(tui.style("{:<{}} {:<{}} {:<{}}".format(
-			row[0], NAME_WIDTH, row[1], COUNT_WIDTH, row[2], SIZE_WIDTH),
-			fg=RAINBOW[i % len(RAINBOW)], cap=cap))
-
-	print(tui.rule(70, cap=cap))
-	print(tui.fill("{:<{}} {:<{}} {:<{}}".format(
-		footer_label, NAME_WIDTH, total_count, COUNT_WIDTH,
-		format_size(total_size, raw=args.raw), SIZE_WIDTH),
-		width=70, bg="bg-inside", fg="header-fg", cap=cap))
-	print()
+	# One table for both modes: a pipe gets the same TAB records it always did
+	# (header, rows, TOTAL), a terminal the boxed table. The rows keep the
+	# pinned rainbow data colours as per-cell ink and the TOTAL row is bold,
+	# so the summary reads as a footer without a second frame.
+	headers = (label, count_label, "Total Size")
+	total_row = (footer_label, str(total_count), format_size(total_size, raw=args.raw))
+	row_styles = [{"fg": RAINBOW[i % len(RAINBOW)]} for i in range(len(rows))]
+	row_styles.append({"bold": True})
+	# The fixed widths are exact, so a name longer than NAME_WIDTH must be cut
+	# by the table seam (`..`): letting it overflow would break the frame. A
+	# pipe never reaches the truncation branch, so its records stay complete.
+	print(tui.render_table(headers, rows + [total_row],
+						   widths=(NAME_WIDTH, COUNT_WIDTH, SIZE_WIDTH),
+						   row_styles=row_styles, cap=cap))
+	if not cap.plain:
+		print()
 
 if __name__ == "__main__":
 	tui.init_ansi()

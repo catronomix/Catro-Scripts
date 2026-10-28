@@ -31,6 +31,7 @@ Run with:
 import contextlib
 import io
 import json
+import ast
 import os
 import re
 import sys
@@ -55,6 +56,41 @@ setUpModule, tearDownModule = module_isolation()
 def cap16():
 	return tui.Capabilities(level="16", unicode=True, width=None,
 							isatty=True, plain=False, reason="test")
+
+
+def is_tui_call(node, name):
+	"""True for a `tui.<name>(...)` / `tui.chrome.<name>(...)` call node."""
+	if not isinstance(node, ast.Call):
+		return False
+	func = node.func
+	if not isinstance(func, ast.Attribute) or func.attr != name:
+		return False
+	owner = func.value
+	if isinstance(owner, ast.Name):
+		return owner.id == "tui"
+	return (isinstance(owner, ast.Attribute) and owner.attr == "chrome"
+			and isinstance(owner.value, ast.Name) and owner.value.id == "tui")
+
+
+class FakeTty:
+	"""A tty-able stdout: writes are captured, no file descriptor."""
+
+	def __init__(self, tty=True, encoding="utf-8"):
+		self._buffer = io.StringIO()
+		self._tty = tty
+		self.encoding = encoding
+
+	def write(self, text):
+		return self._buffer.write(text)
+
+	def flush(self):
+		pass
+
+	def isatty(self):
+		return self._tty
+
+	def getvalue(self):
+		return self._buffer.getvalue()
 
 
 class HelpIndentStylesTest(unittest.TestCase):
@@ -227,6 +263,30 @@ class ThemedOutputTest(unittest.TestCase):
 			"these scripts print without a shared chrome helper "
 			"(tui.header/panel/rule/status/field/fill/menu or the table "
 			"helpers): {}".format(", ".join(unthemed)))
+
+
+class NoNestedSectionTest(unittest.TestCase):
+	"""A section inside a panel doubles the heading.
+
+	A `tui.panel` already frames its rows, so a `tui.section` in that slot
+	paints a second heading band inside the box; the page helper there is
+	`tui.style(..., fg="header-fg", bold=True)`.
+	"""
+
+	def test_no_script_puts_a_section_inside_a_panel(self):
+		offenders = []
+		for name in NoPrivateAnsiTest.MIGRATED:
+			tree = ast.parse((REPO / name).read_text(encoding="utf-8"))
+			for node in ast.walk(tree):
+				if not is_tui_call(node, "panel"):
+					continue
+				for arg in node.args:
+					for inner in ast.walk(arg):
+						if is_tui_call(inner, "section"):
+							offenders.append("{}:{}".format(name, inner.lineno))
+		self.assertEqual(offenders, [],
+						 "tui.section nested inside tui.panel: {}".format(
+							 ", ".join(offenders)))
 
 
 class ListNoColorTest(unittest.TestCase):
@@ -434,14 +494,31 @@ class ScreensaverMenuTest(unittest.TestCase):
 		self.assertEqual(self.screensaver.menu_step(3, 1, "x"), ("move", 1))
 		self.assertEqual(self.screensaver.menu_step(3, 1, None), ("move", 1))
 
+	def test_step_digit_selects_the_row_it_labels(self):
+		self.assertEqual(self.screensaver.menu_step(3, 0, "2"), ("select", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 2, "1"), ("select", 0))
+		self.assertEqual(self.screensaver.menu_step(3, 0, "3"), ("select", 2))
+
+	def test_step_out_of_range_digit_redraws_in_place(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "4"), ("move", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 1, "0"), ("move", 1))
+
 	def test_draw_menu_marks_only_the_selected_row(self):
 		stream = self.Stream()
 		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
 		out = stream.getvalue()
-		self.assertEqual(out.count("  > "), 1)
-		self.assertIn("  > beta", out)
-		self.assertNotIn("  > alpha", out)
+		self.assertEqual(out.count("> "), 1, out)
+		self.assertIn("> 2. beta", out)
+		self.assertNotIn("> 1. alpha", out)
 		self.assertIn("Use UP/DOWN arrows", out)
+
+	def test_selected_row_uses_the_shared_menu_bar(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
+		out = stream.getvalue()
+		bar = tui.prefix(fg="fg-accent", bg="bg-inside-active", bold=True,
+						 cap=cap16())
+		self.assertIn(bar, out, "the picker lost the shared selected-row bar")
 
 	def test_menu_paints_on_cp1252(self):
 		# Regression: draw_menu hardcoded U+2500 glyphs and ignored cap.unicode,
@@ -461,7 +538,9 @@ class ScreensaverMenuTest(unittest.TestCase):
 		stream = self.Stream()
 		self.screensaver.draw_menu(stream, ["alpha"], 0, cap16())
 		out = stream.getvalue()
-		for glyph in "\u250c\u2510\u2514\u2518\u2500\u2502\u251c\u2524":
+		self.assertEqual(out.count("\u250c"), 1, out)
+		self.assertIn("SCREENSAVERS", out.splitlines()[0])
+		for glyph in "\u2500\u2502\u2514\u2518":
 			self.assertIn(glyph, out)
 
 	def test_select_returns_the_file_through_the_decoded_keys(self):
@@ -522,6 +601,154 @@ class KeygenMarkerTests(unittest.TestCase):
 	def test_stream_without_an_encoding_falls_back_to_ascii(self):
 		stream = mock.Mock(spec=["write"])
 		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+
+class HelpPanelTest(unittest.TestCase):
+	"""help.py composes its page from one `tui.panel`, not a border loop."""
+
+	DOC = "COUNT\n=====\n\nBody line\n\tIndented line\n"
+
+	def render(self, doc, cap):
+		import help as help_module
+		stream = FakeTty()
+		with contextlib.redirect_stdout(stream):
+			help_module.print_colored_docstring(doc, cap)
+		return stream.getvalue()
+
+	def test_docstring_is_one_panel_with_the_title_in_the_rule(self):
+		out = self.render(self.DOC, cap16())
+		self.assertEqual(out.count("\u250c"), 1, out)
+		self.assertEqual(out.count("\u2514"), 1, out)
+		self.assertIn("COUNT", out.splitlines()[0])
+		self.assertNotIn("=====", out, "the header underline leaked into the page")
+
+	def test_indent_colours_survive_inside_the_panel(self):
+		out = self.render(self.DOC, cap16())
+		indented = [line for line in out.splitlines() if "Indented line" in line]
+		self.assertEqual(len(indented), 1, out)
+		self.assertIn("\033[36m", indented[0], "level 1 lost its cyan ink")
+
+	def test_ascii_frame_when_unicode_is_off(self):
+		cap = tui.Capabilities(level="16", unicode=False, width=None,
+							   isatty=True, plain=False, reason="test")
+		out = self.render(self.DOC, cap)
+		self.assertIn("+", out)
+		self.assertIn("|", out)
+		self.assertNotIn("\u2500", out)
+
+	def test_plain_docstring_keeps_its_lines_and_no_frame(self):
+		cap = tui.Capabilities(level="16", unicode=True, width=None,
+							   isatty=False, plain=True, reason="test")
+		out = self.render(self.DOC, cap)
+		self.assertEqual(out, "COUNT\n\nBody line\n    Indented line\n")
+
+	def test_title_near_the_body_width_is_not_cut_off(self):
+		# The title is two cells wider than the longest body line, which is
+		# exactly the case where the panel's top-rule margin used to eat it.
+		title = "A TITLE SLIGHTLY WIDER THAN THE BODY"
+		doc = "{}\n{}\n\nBody is narrower\n".format(title, "=" * len(title))
+		out = self.render(doc, cap16())
+		top = out.splitlines()[0]
+		self.assertIn(title, top, "the frame cut the title: {!r}".format(top))
+		widths = {tui.display_width(line) for line in out.splitlines() if line}
+		self.assertEqual(len(widths), 1, "the frame is ragged: {}".format(widths))
+
+
+class CountTableTest(unittest.TestCase):
+	"""count.py renders one `render_table` with a bold TOTAL last row."""
+
+	def setUp(self):
+		import count as count_module
+		self.count = count_module
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		root = Path(self.tmp.name)
+		(root / "a.txt").write_text("x" * 10, encoding="utf-8")
+		(root / "b.py").write_text("y" * 5, encoding="utf-8")
+
+	def render(self, tty, argv=None):
+		stream = FakeTty(tty)
+		env = clean_env()
+		if tty:
+			env["FORCE_COLOR"] = "3"
+		with mock.patch.dict(os.environ, env, clear=True), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(sys, "argv",
+								  argv or ["count.py", self.tmp.name]):
+			self.count.main()
+		return stream.getvalue()
+
+	def test_total_is_the_last_row_and_is_bold(self):
+		out = self.render(tty=True)
+		lines = out.splitlines()
+		indexes = [i for i, line in enumerate(lines) if "TOTAL (ALL LISTED)" in line]
+		self.assertEqual(len(indexes), 1, out)
+		total = indexes[0]
+		self.assertIn("\033[1m", lines[total], "TOTAL lost its bold ink")
+		closing = lines[total + 1]
+		self.assertIn("\u2514", closing, "TOTAL is not the last table row")
+		self.assertNotIn("TOTAL", "".join(lines[total + 2:]))
+
+	def test_data_rows_keep_the_rainbow(self):
+		out = self.render(tty=True)
+		self.assertIn("\033[38;2;255;0;0m", out, "the first row lost its red ink")
+
+	def test_pipe_is_unchanged_tab_records(self):
+		out = self.render(tty=False)
+		self.assertNotIn("\x1b", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+		lines = [line for line in out.splitlines() if line.strip()]
+		self.assertEqual(lines[-4], "Extension\tCount\tTotal Size")
+		self.assertEqual(lines[-3], ".txt\t1\t10.00 B")
+		self.assertEqual(lines[-2], ".py\t1\t5.00 B")
+		self.assertEqual(lines[-1], "TOTAL (ALL LISTED)\t2\t15.00 B")
+
+	def test_long_label_is_truncated_and_the_box_stays_square(self):
+		long_name = "a-rather-long-directory-name-that-overflows-the-column"
+		subdir = Path(self.tmp.name) / long_name
+		subdir.mkdir()
+		(subdir / "payload.bin").write_text("z" * 3, encoding="utf-8")
+		out = self.render(tty=True, argv=["count.py", self.tmp.name, "-d"])
+		frame = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u253c"
+		boxed = [line for line in out.splitlines()
+				 if any(glyph in line for glyph in frame)]
+		self.assertTrue(boxed, out)
+		widths = {tui.display_width(line) for line in boxed}
+		self.assertEqual(len(widths), 1,
+						 "a long label broke the box: widths {}".format(widths))
+		self.assertIn("a-rather-long-directory-name", out)
+		self.assertIn("..", out, "the long label was not cut at the table seam")
+
+	def test_long_label_pipe_record_keeps_the_full_name(self):
+		long_name = "a-rather-long-directory-name-that-overflows-the-column"
+		subdir = Path(self.tmp.name) / long_name
+		subdir.mkdir()
+		(subdir / "payload.bin").write_text("z" * 3, encoding="utf-8")
+		out = self.render(tty=False, argv=["count.py", self.tmp.name, "-d"])
+		self.assertIn(long_name + "\t", out)
+
+
+class ActionResultBlockTest(unittest.TestCase):
+	"""action.py reports a saved macro in a panel (no flow change)."""
+
+	def test_saved_macro_is_reported_in_a_panel(self):
+		import action as action_module
+		with tempfile.TemporaryDirectory() as td:
+			path = os.path.join(td, "actions.json")
+			stream = FakeTty()
+			with mock.patch.object(action_module, "ACTIONS_FILE", path), \
+					mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "prompt_input_with_default",
+									  side_effect=["echo hi", "A description"]), \
+					contextlib.redirect_stdout(stream):
+				action_module.interactive_add("newmac", cap=cap16())
+		out = stream.getvalue()
+		self.assertIn("\u250c", out, out)
+		self.assertIn("ACTION SAVED", out)
+		self.assertIn("echo hi", out)
+		self.assertIn("newmac", out)
 
 
 if __name__ == "__main__":

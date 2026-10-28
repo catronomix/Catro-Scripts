@@ -12,8 +12,14 @@ from . import caps, chrome, palette
 
 
 def _label(text):
-	"""Accent pointer plus a `header-fg`-on-`bg-inside` label, once."""
+	"""Accent pointer plus a `header-fg`-on-`bg-inside` label, once.
+
+	Piped stdout keeps the plain prompt text: the pointer and the SGR are page
+	dressing, and a pipe must not see bytes it never saw before.
+	"""
 	cap = caps.detect()
+	if cap.plain:
+		return text
 	return "{} {}".format(
 		palette.style(">", fg="fg-accent", cap=cap),
 		palette.style(text, fg="header-fg", bg="bg-inside", bold=True, cap=cap))

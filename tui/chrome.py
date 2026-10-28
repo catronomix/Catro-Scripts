@@ -38,7 +38,7 @@ from .chrome_controls import (ASCII_DECORATIONS, BUTTON_DECORATIONS,  # noqa: F4
 							  scrollbar)
 from .chrome_panels import (_band, _flat, _span, frame_roles,  # noqa: F401
 							panel)
-from .text import display_width, pad, truncate as _truncate
+from .text import display_width, pad, truncate as _truncate, wrap as _wrap
 
 # A standalone rule with no width anywhere has to pick something; this is the
 # same 40-cell groove the old scripts hand-rolled.
@@ -135,6 +135,32 @@ def status(kind, text, *, width=None, cap=None, theme=None):
 	return "{} {}".format(
 		palette.style(marker, fg=colour, bold=True, cap=cap, theme=theme),
 		palette.style(text, fg="fg", cap=cap, theme=theme))
+
+
+def status_panel(rows, *, width=None, cap=None, theme=None):
+	"""A panel of `(kind, text)` outcome rows; a long message wraps, never cuts.
+
+	A line that fits renders exactly as `panel(None, [status(...)])`; a message
+	wider than the interior is word-wrapped with the marker's width as the
+	continuation indent, so an absolute path is shown whole inside the box.
+	"""
+	cap = cap or caps.detect()
+	rows = [(str(kind).strip().lower(), _flat(text)) for kind, text in rows]
+	rendered = [status(kind, text, cap=cap, theme=theme) for kind, text in rows]
+	inner = _span(width, cap)
+	if cap.plain or inner is None:
+		return panel(None, rendered, width=width, cap=cap, theme=theme)
+	cell = max(1, inner - 4)
+	body = []
+	for (kind, text), line in zip(rows, rendered):
+		if display_width(line) <= cell:
+			body.append(line)
+			continue
+		indent = display_width(STATUS_MARKERS.get(kind, STATUS_MARKERS["info"])) + 1
+		pieces = _wrap(text, max(1, cell - indent)) or [""]
+		body.append(status(kind, pieces[0], cap=cap, theme=theme))
+		body.extend(" " * indent + piece for piece in pieces[1:])
+	return panel(None, body, width=width, cap=cap, theme=theme)
 
 
 def fill(text, width=None, *, bg="bg", fg="fg", cap=None, theme=None):

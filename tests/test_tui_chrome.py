@@ -283,6 +283,72 @@ class StatusTests(unittest.TestCase):
 		self.assertTrue(out.endswith(".."))
 
 
+class StatusPanelTests(unittest.TestCase):
+	"""A boxed outcome line keeps a long value whole instead of clipping it."""
+
+	LONG = "C:/Users/catronomix/GITHUB/some-long-repo/with/a/deep/output/folder"
+
+	@staticmethod
+	def packed(out):
+		"""The page's words with frame glyphs, escapes and breaks removed."""
+		text = strip_ansi(out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518":
+			text = text.replace(glyph, "")
+		return "".join(text.split())
+
+	def test_a_short_message_renders_exactly_like_panel_of_status(self):
+		out = chrome.status_panel([("ok", "Saved to b.mp4")], cap=TRUE, width=40)
+		self.assertEqual(
+			out, chrome.panel(None, [chrome.status("ok", "Saved to b.mp4",
+												  cap=TRUE)],
+							  width=40, cap=TRUE))
+
+	def test_a_long_value_wraps_and_stays_whole(self):
+		message = "Resizing complete. Resized images are in: " + self.LONG
+		out = chrome.status_panel([("ok", message)],
+								  cap=capabilities(width=60))
+		plain = strip_ansi(out)
+		for line in plain.splitlines():
+			self.assertEqual(display_width(line), 60)
+		self.assertIn(self.LONG, self.packed(out))
+		self.assertNotIn("..", plain)
+		# The marker stays on the first row and the continuation lines align
+		# under the text, not under the marker.
+		self.assertIn("[ok] Resizing complete.", plain)
+		self.assertIn("     C:/Users/", plain)
+
+	def test_several_rows_keep_their_own_marker(self):
+		out = chrome.status_panel(
+			[("ok", "Export Complete!"), ("info", "Open " + self.LONG)],
+			cap=capabilities(width=50))
+		plain = strip_ansi(out)
+		self.assertIn("[ok] Export Complete!", plain)
+		self.assertIn("[info] Open", plain)
+		self.assertIn("       C:/Users/", plain)
+		self.assertIn(self.LONG, self.packed(out))
+
+	def test_plain_output_is_the_unwrapped_status_records(self):
+		out = chrome.status_panel([("ok", "Saved to b.mp4"),
+								   ("info", "Open " + self.LONG)], cap=PIPE)
+		self.assertEqual(
+			out,
+			"[ok] Saved to b.mp4\n[info] Open " + self.LONG)
+		self.assertNotIn("\x1b", out)
+
+	def test_level_none_keeps_the_frame_and_drops_every_escape(self):
+		out = chrome.status_panel([("ok", "Saved to b.mp4")], cap=MONO,
+								  width=30)
+		self.assertNotIn("\x1b", out)
+		self.assertEqual(display_width(out.splitlines()[0]), 30)
+
+	def test_level_16_keeps_colour_without_truecolour_pair(self):
+		out = chrome.status_panel([("ok", "Saved to b.mp4")], cap=SIXTEEN,
+								  width=30)
+		self.assertNotIn("38;2;", out)
+		self.assertNotIn("48;2;", out)
+		self.assertIn("\x1b[", out)
+
+
 class FillTests(unittest.TestCase):
 	def test_pads_with_the_background_role(self):
 		self.assertEqual(chrome.fill("hi", width=6, cap=TRUE),

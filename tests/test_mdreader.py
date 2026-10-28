@@ -364,5 +364,199 @@ class MdreaderPreflightTests(unittest.TestCase):
         self.assertNotIn("shell=True", source)
 
 
+class MdreaderColourMappingTests(unittest.TestCase):
+    """Task 0041 batch C: what the reader paints, pinned against the palette.
+
+    Each case mirrors a mismatch the 100x30 pty capture proved and fixed: the
+    reader must enter colour mode before asking for default colours, links must
+    carry the warn pair (Rich styles the visible url through `link_url`, not
+    `link`) and table borders must carry the frame colour on the surface fill.
+    """
+
+    def test_start_color_precedes_use_default_colors(self):
+        """Curses refuses use_default_colors() until start_color() ran."""
+        order = []
+
+        class _OrderCurses:
+            error = _FakeCursesError
+
+            def start_color(self):
+                order.append("start_color")
+
+            def use_default_colors(self):
+                if "start_color" not in order:
+                    raise _FakeCursesError("must call start_color() first")
+                order.append("use_default_colors")
+
+            def curs_set(self, _visibility):
+                order.append("curs_set")
+
+        stdscr = mock.Mock()
+        stdscr.keypad.side_effect = KeyboardInterrupt
+        with mock.patch.object(mdreader, "curses", _OrderCurses()), \
+                mock.patch.object(mdreader, "init_theme_colors"), \
+                mock.patch.object(mdreader, "get_directory_md_files",
+                                  return_value=(os.getcwd(), [])):
+            with self.assertRaises(KeyboardInterrupt):
+                mdreader.render_reader(stdscr, "doc.md", "# hi\n")
+        self.assertEqual(order[:2], ["start_color", "use_default_colors"])
+
+    def test_links_carry_the_warn_pair_and_underline(self):
+        """The rewritten visible url still gets the link pair in every mode."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode in range(len(mdreader.THEME_MODES)):
+            with self.subTest(mode=mode):
+                doc = mdreader.process_markdown_rich(
+                    "[site](https://example.com)", 60, mode)
+                links = [seg for line in doc for seg in line.segments
+                         if "example.com" in seg.text]
+                self.assertTrue(links, "the visible url must stay in the text")
+                for seg in links:
+                    self.assertEqual(seg.color, 3)
+                    self.assertTrue(seg.attr & mdreader.curses.A_UNDERLINE)
+
+    def test_rich_theme_styles_the_hyperlinked_url(self):
+        """Rich paints the url itself with `markdown.link_url`."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode, theme_id in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme_id)
+            style = mdreader.get_rich_theme(mode).styles["markdown.link_url"]
+            with self.subTest(mode=mode):
+                self.assertIn(colours["fg-warn"].lower(), str(style.color))
+
+    def test_table_borders_take_the_border_pair(self):
+        """Soft/contrast-dark paint borders on the surface with the frame colour.
+
+        contrast-light's border-fg *is* its fg, so there the border is pair 4 like
+        any surface text (same colour, hence visually identical).
+        """
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode, theme_id in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme_id)
+            expected = (
+                4 if colours["border-fg"].lower() == colours["fg"].lower()
+                else 10
+            )
+            with self.subTest(mode=mode):
+                doc = mdreader.process_markdown_rich(
+                    "| aa | bb |\n|----|----|\n| 11 | 22 |\n", 40, mode)
+                # Rich picks ASCII or box-drawing glyphs by terminal, so match
+                # any segment made only of border characters.
+                glyphs = set("|+-│┌┐└┘├┤┬┴┼─")
+                borders = {
+                    seg.color for line in doc for seg in line.segments
+                    if seg.text and set(seg.text) <= glyphs
+                }
+                self.assertEqual(borders, {expected})
+
+    def test_border_role_is_its_own_pair(self):
+        """Pair 10 is border-fg on bg-inside, so the pair table explains it."""
+        roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
+        self.assertEqual(roles[10], ("border-fg", "bg-inside"))
+        self.assertEqual(len(roles), len(mdreader.PAIR_ROLES),
+                         "pair numbers must stay unique")
+
+    def test_link_rewrite_leaves_fences_and_code_spans_alone(self):
+        """A document that shows link syntax must render it as written."""
+        source = (
+            "```\n[x](https://example.com/a)\n```\n\n"
+            "~~~\n[y](https://example.com/b)\n~~~\n\n"
+            "Use `[z](https://example.com/c)` here, or [site](https://example.com/d).\n"
+        )
+        rewritten = mdreader.linkify(source)
+        for literal in ("[x](https://example.com/a)",
+                        "[y](https://example.com/b)",
+                        "`[z](https://example.com/c)`"):
+            with self.subTest(literal=literal):
+                self.assertIn(literal, rewritten)
+        self.assertIn("[https://example.com/d](https://example.com/d)",
+                      rewritten)
+
+    def test_rendered_code_keeps_its_link_syntax(self):
+        """End to end: the fence and the span survive the Rich pass verbatim."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        source = ("```\n[x](https://example.com/a)\n```\n\n"
+                  "Use `[z](https://example.com/c)` here.\n")
+        doc = mdreader.process_markdown_rich(source, 80, 0)
+        text = "\n".join(seg.text for line in doc for seg in line.segments)
+        self.assertIn("[x](https://example.com/a)", text)
+        self.assertIn("[z](https://example.com/c)", text)
+        self.assertNotIn("[https://example.com/a]", text)
+        self.assertNotIn("[https://example.com/c]", text)
+
+    def test_link_rewrite_skips_indented_code_blocks(self):
+        """Four spaces or a tab start a code block: the sample stays literal."""
+        source = ("    [a](https://example.com/a)\n\n"
+                  "\t[b](https://example.com/b)\n\n"
+                  "[c](https://example.com/c)\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("    [a](https://example.com/a)", rewritten)
+        self.assertIn("\t[b](https://example.com/b)", rewritten)
+        self.assertIn("[https://example.com/c](https://example.com/c)",
+                      rewritten)
+
+    def test_link_rewrite_skips_a_fence_inside_a_blockquote(self):
+        """A quoted ``` still opens a code block, so its sample is literal."""
+        source = ("> ```md\n"
+                  "> [a](https://example.com/a)\n"
+                  "> ```\n\n"
+                  "[b](https://example.com/b)\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("> [a](https://example.com/a)", rewritten)
+        self.assertNotIn("[https://example.com/a]", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+
+    def test_link_rewrite_keeps_multi_backtick_spans(self):
+        """A span closes on a run of equal length, ticks inside and all."""
+        source = ("Use ``code with ` tick [a](https://example.com/a)`` here, "
+                  "then [b](https://example.com/b).\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("``code with ` tick [a](https://example.com/a)``",
+                      rewritten)
+        self.assertNotIn("[https://example.com/a]", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+
+    def test_link_rewrite_leaves_an_escaped_bracket_alone(self):
+        """`\\[x](url)` shows link syntax, so it is not a link."""
+        source = "\\[a](https://example.com/a) then [b](https://example.com/b)\n"
+        rewritten = mdreader.linkify(source)
+        self.assertIn("\\[a](https://example.com/a)", rewritten)
+        self.assertNotIn("[https://example.com/a]", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+
+    def test_rendered_code_samples_stay_verbatim(self):
+        """End to end: every skipped shape reaches the screen as written."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        source = ("    [a](https://example.com/a)\n\n"
+                  "> ```md\n"
+                  "> [b](https://example.com/b)\n"
+                  "> ```\n\n"
+                  "\t[c](https://example.com/c)\n\n"
+                  "``tick ` [d](https://example.com/d)``\n\n"
+                  "\\[e](https://example.com/e)\n\n"
+                  "[f](https://example.com/f)\n")
+        doc = mdreader.process_markdown_rich(source, 80, 0)
+        text = "".join(seg.text for line in doc for seg in line.segments)
+        text = "".join(text.split())
+        # Rich drops the delimiters themselves; the sample text stays as written.
+        for literal in ("[a](https://example.com/a)",
+                        "[b](https://example.com/b)",
+                        "[c](https://example.com/c)",
+                        "tick`[d](https://example.com/d)",
+                        "[e](https://example.com/e)"):
+            with self.subTest(literal=literal):
+                self.assertIn(literal, text)
+        self.assertIn("https://example.com/f", text)
+        self.assertNotIn("[f]", text)
+
+
 if __name__ == "__main__":
     unittest.main()

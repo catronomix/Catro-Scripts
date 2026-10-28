@@ -166,6 +166,7 @@ PAIR_ROLES = (
     (7, "fg", "bg-stripe"),       # shortcut bar, alternate table row
     (8, "border-fg", "bg"),       # window frame
     (9, "header-fg", "bg-inside"),  # table header row
+    (10, "border-fg", "bg-inside"),  # table borders on the surface fill
 )
 
 # The full-screen furniture of the reader, named instead of numbered so the
@@ -311,6 +312,9 @@ def get_rich_theme(theme_mode=0):
             "markdown.table.cell": colours["fg"] + " on " + colours["bg-inside"],
             "markdown.table.border": colours["border-fg"],
             "markdown.link": "underline " + colours["fg-warn"],
+            # Rich wraps hyperlinked urls in `markdown.link_url`, not
+            # `markdown.link`; without this the visible url stays body-coloured.
+            "markdown.link_url": "underline " + colours["fg-warn"],
             # The table patch below reads this for the alternate row fill.
             "mdreader.table.zebra": "on " + colours["bg-stripe"],
         }
@@ -384,6 +388,11 @@ def segment_pair(style, colours):
               or fg == colours["fg-muted"].lower())
 
     if bg or fg in (surface, zebra):
+        # The border test runs before the header test: contrast-dark's
+        # border-fg is its fg-accent, which the header set also contains, so
+        # the header test would otherwise swallow the frame-coloured borders.
+        if fg == colours["border-fg"].lower() and fg != colours["fg"].lower():
+            return 10  # table borders: the frame colour on the surface fill
         if fg in header:
             return 9   # table header: accent on the surface fill
         if bg == zebra and zebra != surface:
@@ -402,6 +411,113 @@ def segment_pair(style, colours):
     return 5 if is_dim else 1
 
 
+_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_QUOTE = re.compile(r"^(?:[ \t]*>[ ]?)+")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+
+
+def _quote_body(line):
+    # Text of a line with any leading `>` markers removed, so a fence or an
+    # indented block inside a blockquote is recognised like a top-level one.
+    match = _QUOTE.match(line)
+    return line[match.end():] if match else line
+
+
+def _closing_run(line, start, width):
+    # Index of the next backtick run exactly `width` long, or -1. A longer run
+    # is its own delimiter, so it never closes a shorter span (CommonMark).
+    index = line.find("`", start)
+    while index >= 0:
+        end = index
+        while end < len(line) and line[end] == "`":
+            end += 1
+        if end - index == width:
+            return index
+        index = line.find("`", end)
+    return -1
+
+
+def _split_code(line):
+    # (text, is_code) pairs: every run of backticks of n >= 1 closes on the
+    # next run of exactly n, so ``code with ` tick`` stays one span.
+    parts = []
+    index = 0
+    while index < len(line):
+        if line[index] != "`":
+            end = line.find("`", index)
+            if end < 0:
+                parts.append((line[index:], False))
+                break
+            parts.append((line[index:end], False))
+            index = end
+            continue
+        end = index
+        while end < len(line) and line[end] == "`":
+            end += 1
+        width = end - index
+        close = _closing_run(line, end, width)
+        if close < 0:
+            parts.append((line[index:end], False))  # unmatched: literal
+            index = end
+            continue
+        parts.append((line[index:close + width], True))
+        index = close + width
+    return parts
+
+
+def _rewrite_links(text):
+    # `[text](url)` -> `[url](url)`, except when the bracket is escaped with an
+    # odd number of backslashes: `\[x](url)` shows link syntax, not a link.
+    def swap(match):
+        index = match.start() - 1
+        backslashes = 0
+        while index >= 0 and text[index] == "\\":
+            backslashes += 1
+            index -= 1
+        if backslashes % 2:
+            return match.group(0)
+        return "[%s](%s)" % (match.group(2), match.group(2))
+
+    return _LINK.sub(swap, text)
+
+
+def linkify(raw_content):
+    """Rewrite `[text](url)` as `[url](url)` outside code; code stays verbatim.
+
+    Skipped, and therefore rendered exactly as written: indented code blocks
+    (four spaces or a tab), fenced blocks opened by ``` or ~~~ (also behind a
+    `>` quote marker), spans delimited by a run of backticks of equal length,
+    and a link whose `[` is escaped as `\\[`. Everything else - headings,
+    paragraphs, list items, table cells - has its links rewritten.
+    """
+    out = []
+    fence = None  # (character, run length) of the open fence
+    for line in raw_content.splitlines(True):
+        body = _quote_body(line)
+        if fence is not None:
+            out.append(line)
+            closing = _FENCE_CLOSE.match(body)
+            if (closing and closing.group(1)[0] == fence[0]
+                    and len(closing.group(1)) >= fence[1]):
+                fence = None
+            continue
+        opening = _FENCE.match(body)
+        if opening:
+            fence = (opening.group(1)[0], len(opening.group(1)))
+            out.append(line)
+            continue
+        if body.startswith("    ") or body.startswith("\t"):
+            out.append(line)
+            continue
+        if not body.strip():
+            out.append(line)  # blank line: nothing to rewrite
+            continue
+        out.append("".join(part if is_code else _rewrite_links(part)
+                           for part, is_code in _split_code(line)))
+    return "".join(out)
+
+
 def process_markdown_rich(raw_content, width, theme_mode=0):
     """Parses and renders Markdown text into formatted lines using Rich."""
     rich_theme = get_rich_theme(theme_mode)
@@ -410,12 +526,12 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
         width=max(10, width), force_terminal=True, color_system="256", theme=rich_theme
     )
 
-    # Pre-process links: Convert [name](url) to just the raw url
-    # We use regex to find standard markdown links and replace them with the raw URL.
-    # This ensures that Rich doesn't try to hide the URL behind an obscure hyperlink protocol,
-    # making it directly clickable in most modern terminals, and also solves table alignment
-    # since the text length directly matches the visible URL.
-    processed_content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\2", raw_content)
+    # Pre-process links: keep the raw url as the *link text*, so the visible
+    # string stays the clickable URL (the reason for the rewrite) while Rich
+    # still applies the link styles - both `markdown.link` (the text) and
+    # `markdown.link_url` (the hyperlinked url Rich emits) paint the warn
+    # colour, so the reader shows links as links instead of plain body text.
+    processed_content = linkify(raw_content)
 
     # Disable justify to prevent table columns from drifting
     md = Markdown(processed_content, justify="left")
@@ -488,6 +604,12 @@ def initial_theme_mode():
 
 def render_reader(stdscr, filepath, raw_content, cap=None):
     """Main TUI loop handling viewport rendering, input events, file switching, and status bar."""
+    # curses needs colour mode before use_default_colors() and the pair table:
+    # without this the reader aborts on the first call under ncurses/PDCurses.
+    try:
+        curses.start_color()
+    except curses.error:
+        pass
     curses.use_default_colors()
     curses.curs_set(0)
     stdscr.keypad(True)

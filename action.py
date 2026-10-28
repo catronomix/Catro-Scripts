@@ -226,8 +226,10 @@ def run_action(action_name, extra_args, cap=None):
         # Run the command in the active shell environment
         result = subprocess.run(full_command, shell=True)
         print()
-        print(tui.section(
-            f"--- MACRO FINISHED (Exit Code: {result.returncode}) ---", cap=cap))
+        print(tui.status(
+            "ok" if result.returncode == 0 else "error",
+            "Macro finished (exit code {}).".format(result.returncode),
+            cap=cap))
         print()
         sys.exit(result.returncode)
     except KeyboardInterrupt:
@@ -366,11 +368,13 @@ def interactive_add(target_name=None, cap=None):
     }
 
     if save_actions(actions, cap):
-        status = "updated" if is_edit else "added"
+        state = "updated" if is_edit else "added"
         print()
-        print(tui.status(
-            "ok",
-            f"Action '{target_name}' successfully {status}!", cap=cap))
+        print(tui.panel("ACTION SAVED", [
+            "Name:        {} ({})".format(target_name, state),
+            "Command:     {}".format(cmd),
+            "Description: {}".format(actions[target_name]["description"]),
+        ], cap=cap))
         print()
 
 
@@ -417,8 +421,9 @@ def interactive_remove(target_name=None, cap=None):
         del actions[target_name]
         if save_actions(actions):
             print()
-            print(tui.status(
-                "ok", f"Action '{target_name}' has been deleted.", cap=cap))
+            print(tui.panel("ACTION DELETED",
+                            ["Name:    {}".format(target_name),
+                             "Storage: {}".format(ACTIONS_FILE)], cap=cap))
             print()
     else:
         print("Cancelled deletion.")

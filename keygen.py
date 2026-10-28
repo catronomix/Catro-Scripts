@@ -210,12 +210,13 @@ def show_key(stream, cap, algo_idx, length):
 	stream.write("\n")
 	length_text = "{} chars{}".format(shown_len,
 									  " (fixed)" if alphabet is None else "")
-	for label, value in (
+	stream.write(tui.panel("Key details", [
+		tui.chrome.field(label, value, width=FIELD_WIDTH, cap=cap)
+		for label, value in (
 			("Algorithm", name),
 			("Length", length_text),
-			("Entropy", "~{} bits".format(int(round(bits))))):
-		stream.write(tui.chrome.field(label, value, width=FIELD_WIDTH,
-									  cap=cap) + "\n")
+			("Entropy", "~{} bits".format(int(round(bits))))
+		)], width=HEADER_WIDTH, cap=cap) + "\n")
 	stream.write("\n")
 
 	# Wrap the key across a few lines so long keys stay readable. The panel

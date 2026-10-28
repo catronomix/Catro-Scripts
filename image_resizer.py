@@ -162,9 +162,9 @@ def resize_images_in_folder(cap):
 	progress.finish()
 
 	print()
-	print(tui.status("ok",
-					 f"Resizing complete. Resized images are in: {os.path.abspath(output_path)}",
-					 cap=cap))
+	print(tui.status_panel([("ok",
+		f"Resizing complete. Resized images are in: "
+		f"{os.path.abspath(output_path)}")], cap=cap))
 
 def main():
 	# parse_args() first so --help works without pillow or a terminal.

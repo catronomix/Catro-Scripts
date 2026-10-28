@@ -305,8 +305,12 @@ def get_manual_input(iface, current_configs, cap=None):
 	if cap is None:
 		cap = tui.detect()
 	print()
-	print(tui.section("Setting up static IP for: {}".format(
-		tui.style(iface, fg="header-fg", bold=True, cap=cap)), cap=cap))
+	# The static-IP plan is one block: the interface line, boxed at the page
+	# width, ahead of the three address prompts.
+	print(tui.panel(None, [tui.style("Setting up static IP for: {}".format(
+		tui.style(iface, fg="header-fg", bold=True, cap=cap)),
+		fg="header-fg", bold=True, cap=cap)],
+		width=PAGE_WIDTH, cap=cap))
 	prev = current_configs.get(iface, {})
 	
 	ip = tui.ask_text("IP Address [{}]: ".format(prev.get('ip', '')), prev.get('ip'))

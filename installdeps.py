@@ -280,7 +280,6 @@ def main():
 			failed_packages.append(package_to_install)
 
 	print()
-	print(tui.header("INSTALLATION SUMMARY", cap=cap))
 	summary = []
 	if successful_packages:
 		summary.append((f"Successfully processed ({len(successful_packages)})",
@@ -288,16 +287,18 @@ def main():
 	if failed_packages:
 		summary.append((f"Failed to install ({len(failed_packages)})",
 						", ".join(failed_packages)))
-	if summary:
-		key_width = max(len(key) for key, _ in summary)
-		for key, value in summary:
-			print(tui.field(key, value, width=key_width, cap=cap))
+	key_width = max((len(key) for key, _ in summary), default=1)
+	body = [tui.field(key, value, width=key_width, cap=cap)
+			for key, value in summary]
 	if failed_packages:
-		print(tui.status("warn", "Continuing execution despite missing packages...",
-						 cap=cap))
+		body.append(tui.status("warn",
+							   "Continuing execution despite missing packages...",
+							   cap=cap))
 	else:
-		print(tui.status("ok", "All dependencies were processed successfully.",
-						 cap=cap))
+		body.append(tui.status("ok",
+							   "All dependencies were processed successfully.",
+							   cap=cap))
+	print(tui.panel("INSTALLATION SUMMARY", body, cap=cap))
 
 
 if __name__ == "__main__":

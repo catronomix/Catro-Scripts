@@ -26,7 +26,7 @@ MIN_COLUMN = 4
 
 
 def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
-				 widths=None, cap=None, theme=None):
+				 widths=None, row_styles=None, cap=None, theme=None):
 	"""Render a table; returns text without a trailing newline.
 
 	`box`/`zebra` default to `None` = "ask the active theme": `table_style`
@@ -35,6 +35,9 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 	column widths and skips both auto-sizing and terminal fitting, which is how
 	`list` keeps its fixed 4/25/10/50 layout (and its exact bytes); a caller with
 	its own truncation rule passes `truncate=False` and pre-truncates.
+	`row_styles` is an optional per-row `{"fg": ..., "bold": ...}` dict (empty or
+	missing entries fall back to the plain `fg` ink), so a caller can keep data
+	colours and emphasise a summary row without a second table.
 	"""
 	cap = cap or caps.detect()
 	theme = palette.theme(theme)
@@ -64,15 +67,17 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 	glyphs = glyphs_for(cap)
 	if not box:
 		return "\n".join(table_rows.bare_rows(labels, data, widths, cap, theme,
-											  zebra))
+											  zebra, row_styles))
 	if compact:
 		lines = [table_rows.bare_line(labels, widths, cap, theme,
 									  fg="header-fg", bg="bg-inside", bold=True)]
 		lines.append(table_rows.span_rule(glyphs, widths, cap, theme))
 		for index, cells in enumerate(data):
+			extra = _row_style(row_styles, index)
 			lines.append(table_rows.bare_line(
 				cells, widths, cap, theme,
-				bg=table_rows.zebra_bg(index, zebra)))
+				bg=table_rows.zebra_bg(index, zebra),
+				fg=extra.get("fg", "fg"), bold=extra.get("bold", False)))
 		lines.append(table_rows.span_rule(glyphs, widths, cap, theme))
 		return "\n".join(lines)
 
@@ -80,9 +85,12 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 	lines.append(table_rows.header_row(glyphs, widths, labels, cap, theme))
 	lines.append(table_rows.rule(glyphs, widths, "ml", "mm", "mr", cap, theme))
 	for index, cells in enumerate(data):
+		extra = _row_style(row_styles, index)
 		lines.append(table_rows.row(glyphs, widths, cells, cap, theme,
 									bg=table_rows.zebra_bg(index, zebra),
-									truncate_cells=truncate))
+									truncate_cells=truncate,
+									fg=extra.get("fg", "fg"),
+									bold=extra.get("bold", False)))
 	lines.append(table_rows.rule(glyphs, widths, "bl", "bm", "br", cap, theme))
 	return "\n".join(lines)
 
@@ -150,6 +158,13 @@ def _flat(value):
 def _normalise(row, count):
 	cells = [_flat(value) for value in list(row)[:count]]
 	return cells + [""] * (count - len(cells))
+
+
+def _row_style(row_styles, index):
+	"""One data row's extra style dict (`fg`/`bold`), or an empty one."""
+	if not row_styles or index >= len(row_styles):
+		return {}
+	return row_styles[index] or {}
 
 
 def _column_widths(labels, data):

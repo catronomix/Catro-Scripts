@@ -97,26 +97,29 @@ def print_not_installed(cap=None):
 	cap = cap or tui.detect()
 	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
 	print()
-	print(tui.header("--- OPENCODE NOT FOUND ---", cap=cap))
-	print(tui.status("error",
-					 "The `opencode` CLI is not installed or not on your PATH.",
-					 cap=cap))
-	print()
-	print(tui.field("Get it here:", "https://opencode.ai", cap=cap))
-	print(tui.field("Docs (CLI):", "https://opencode.ai/docs/cli", cap=cap))
-	print()
-	print(tui.section("Install options:", cap=cap))
-	print("  {}   (macOS/Linux)".format(
-		command("curl -fsSL https://opencode.ai/install | bash")))
-	print("  {}                              (npm, cross-platform)".format(
-		command("npm i -g opencode-ai")))
-	print("  {}                (Windows winget)".format(
-		command("winget install opencode-ai.opencode")))
-	print("  {}                             (Windows chocolatey)".format(
-		command("choco install opencode")))
-	print()
-	print("After installing, restart your shell so `opencode` is on PATH, then re-run:")
-	print("  {}\n".format(command("catro-scripts opencode")))
+	print(tui.panel("--- OPENCODE NOT FOUND ---", [
+		tui.status("error",
+				   "The `opencode` CLI is not installed or not on your PATH.",
+				   cap=cap),
+		"",
+		tui.field("Get it here:", "https://opencode.ai", cap=cap),
+		tui.field("Docs (CLI):", "https://opencode.ai/docs/cli", cap=cap),
+		"",
+		tui.style("Install options:", fg="header-fg", bold=True, cap=cap),
+		"  {}   (macOS/Linux)".format(
+			command("curl -fsSL https://opencode.ai/install | bash")),
+		"  {}                              (npm, cross-platform)".format(
+			command("npm i -g opencode-ai")),
+		"  {}                (Windows winget)".format(
+			command("winget install opencode-ai.opencode")),
+		"  {}                             (Windows chocolatey)".format(
+			command("choco install opencode")),
+		"",
+		"After installing, restart your shell so `opencode` is on PATH, "
+		"then re-run:",
+		"  {}".format(command("catro-scripts opencode")),
+		"",
+	], cap=cap))
 
 
 def normalize_instruction(raw):
@@ -133,23 +136,25 @@ def print_usage(default_model, cap=None):
 	# Short usage block printed alongside the model list.
 	cap = cap or tui.detect()
 	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
-	print()
-	print(tui.header("--- USAGE ---", cap=cap))
-	print("  {}".format(command('catro-scripts opencode "<instruction>"')))
-	print("  {}  (script joins + quotes for you)".format(
-		command("catro-scripts opencode <unbracketed words>")))
-	print("  {}".format(command(
-		'catro-scripts opencode -m <provider/model[#variant]> "<instruction>"')))
-	print("  {}  (saves default)".format(
-		command("catro-scripts opencode -m <provider/model[#variant]>")))
+	body = [
+		"  {}".format(command('catro-scripts opencode "<instruction>"')),
+		"  {}  (script joins + quotes for you)".format(
+			command("catro-scripts opencode <unbracketed words>")),
+		"  {}".format(command(
+			'catro-scripts opencode -m <provider/model[#variant]> '
+			'"<instruction>"')),
+		"  {}  (saves default)".format(
+			command("catro-scripts opencode -m <provider/model[#variant]>")),
+		"",
+	]
 	if default_model:
-		print()
-		print(tui.field("Default model:",
-						"{} (from opencode.default)".format(default_model),
-						cap=cap))
+		body.append(tui.field(
+			"Default model:",
+			"{} (from opencode.default)".format(default_model), cap=cap))
 	else:
-		print()
-		print(tui.field("Default model:", "(none saved yet)", cap=cap))
+		body.append(tui.field("Default model:", "(none saved yet)", cap=cap))
+	print()
+	print(tui.panel("--- USAGE ---", body, cap=cap))
 
 
 def list_models(opencode_bin, cap=None):

@@ -173,9 +173,11 @@ def main():
         print_success("Processed index.html for local loading.", cap)
 
     print()
-    print(tui.status("ok", "✨ Export Complete!", cap=cap))
-    print(tui.status("info", "You can now open '{}/index.html' directly in your browser.".format(
-        export_dir), cap=cap))
+    print(tui.status_panel([
+        ("ok", "✨ Export Complete!"),
+        ("info", "You can now open '{}/index.html' directly in "
+                 "your browser.".format(export_dir)),
+    ], cap=cap))
 
 if __name__ == "__main__":
     tui.init_ansi()

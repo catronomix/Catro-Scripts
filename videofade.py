@@ -100,12 +100,8 @@ def get_codec_choice(cap):
 	print()
 	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in codecs],
 				   selected=None, title="Select Output Codec", cap=cap))
-	while True:
-		choice = input(f"\nChoose (1-{len(codecs)}) [1]: ").strip()
-		if not choice: return codecs[0][0]
-		if choice.isdigit() and 1 <= int(choice) <= len(codecs):
-			return codecs[int(choice)-1][0]
-		print(tui.status("error", "Invalid choice.", cap=cap))
+	choice = tui.ask_int("Choose", 1, len(codecs), default=1)
+	return codecs[(choice or 1) - 1][0]
 
 def get_curve_choice(cap):
 	curves = [
@@ -119,12 +115,8 @@ def get_curve_choice(cap):
 	print()
 	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in curves],
 				   selected=None, title="Select Fade Interpolation", cap=cap))
-	while True:
-		choice = input(f"\nChoose (1-{len(curves)}) [1]: ").strip()
-		if not choice: return curves[0][0]
-		if choice.isdigit() and 1 <= int(choice) <= len(curves):
-			return curves[int(choice)-1][0]
-		print(tui.status("error", "Invalid choice.", cap=cap))
+	choice = tui.ask_int("Choose", 1, len(curves), default=1)
+	return curves[(choice or 1) - 1][0]
 
 def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffix, supports_curve, cap):
 	if not check_ffmpeg():
@@ -238,13 +230,14 @@ def main():
 	selected_curve = get_curve_choice(cap) if args.interpolation else "esin"
 
 	print()
-	print(tui.header("FADE SETTINGS", cap=cap))
-	for key, value in (
+	print(tui.panel("FADE SETTINGS", [
+		tui.field(key, value, width=10, cap=cap)
+		for key, value in (
 			("Fade In", f"{args.fadein}s"),
 			("Fade Out", f"{args.fadeout}s"),
 			("Mode", "Append" if args.append else "Standard"),
-			("Curve", selected_curve)):
-		print(tui.field(key, value, width=10, cap=cap))
+			("Curve", selected_curve))
+	], cap=cap))
 	print()
 
 	for f in sorted(files):

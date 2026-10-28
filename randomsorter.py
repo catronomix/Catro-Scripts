@@ -162,9 +162,10 @@ def main():
 		# closed stdin with the shared preflight instead of letting input()
 		# raise EOFError in the middle of a destructive run.
 		tui.require_tty("randomsorter --all")
-		print(tui.status("error",
-			"WARNING: You are using the --all flag. This will process system files and scripts.",
-			cap=cap))
+		print(tui.panel("Confirm", [
+			tui.status("error", "You are using the --all flag.", cap=cap),
+			"This will process system files and scripts.",
+		], cap=cap))
 		confirm = tui.ask_text("Are you sure? (y/n): ")
 		if confirm.lower() != 'y':
 			print(tui.status("info", "Operation cancelled.", cap=cap))

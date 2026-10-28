@@ -45,15 +45,18 @@ def header_row(glyphs, widths, labels, cap, theme):
 			+ body + glyphs["v"] + reset(cap))
 
 
-def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
+def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False,
+		fg="fg", bold=False):
 	"""Zebra data row, composed exactly like the old `list.py` row.
 
 	Each cell re-asserts its own colours after the border (`border | cell-style
 	text`), and only the closing border is preceded by a reset, so the row
 	carries the same escapes in the same order as the hand-built table did.
+	`fg`/`bold` are the per-row ink a caller keeps as data (`count`'s rainbow)
+	or uses to emphasise a summary row; they never touch the ground.
 	"""
 	border = palette.prefix(fg="border-fg", cap=cap, theme=theme)
-	cell_style = palette.prefix(fg="fg", bg=bg, cap=cap, theme=theme)
+	cell_style = palette.prefix(fg=fg, bg=bg, bold=bold, cap=cap, theme=theme)
 	tail = reset(cap)
 	parts = []
 	for index, width in enumerate(widths):
@@ -66,13 +69,17 @@ def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
 	return "".join(parts)
 
 
-def bare_rows(labels, data, widths, cap, theme, zebra):
+def bare_rows(labels, data, widths, cap, theme, zebra, row_styles=None):
 	"""Borderless variant: padded columns separated by two spaces."""
 	lines = [bare_line(labels, widths, cap, theme, fg="header-fg",
 					   bg="bg-inside", bold=True)]
 	for index, cells in enumerate(data):
+		extra = (row_styles[index] if row_styles and index < len(row_styles)
+				 else None) or {}
 		lines.append(bare_line(cells, widths, cap, theme,
-							   bg=zebra_bg(index, zebra)))
+							   bg=zebra_bg(index, zebra),
+							   fg=extra.get("fg", "fg"),
+							   bold=extra.get("bold", False)))
 	return lines
 
 

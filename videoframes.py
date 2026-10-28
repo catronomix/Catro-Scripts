@@ -136,7 +136,8 @@ def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=
 			img = Image.fromarray(frame)
 			output_name = f"{base_name}_frame_{target_idx}.png"
 			img.save(output_name)
-			print(tui.status("ok", f"Frame saved as: {output_name}", cap=cap))
+			print(tui.panel(None, [tui.status(
+				"ok", f"Frame saved as: {output_name}", cap=cap)], cap=cap))
 
 		# Case 2: Interval-based extraction
 		elif interval is not None:
@@ -150,7 +151,9 @@ def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=
 				img.save(output_name)
 				print(tui.status("info", f"Saved: {output_name}", cap=cap))
 			
-			print(tui.status("ok", f"Successfully extracted {len(target_indices)} frames.", cap=cap))
+			print(tui.panel(None, [tui.status(
+				"ok", f"Successfully extracted {len(target_indices)} frames.",
+				cap=cap)], cap=cap))
 
 		# Case 3: Total evenly spread extraction
 		elif total is not None:
@@ -174,7 +177,9 @@ def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=
 				img.save(output_name)
 				print(tui.status("info", f"Saved: {output_name}", cap=cap))
 
-			print(tui.status("ok", f"Successfully extracted {len(target_indices)} frames.", cap=cap))
+			print(tui.panel(None, [tui.status(
+				"ok", f"Successfully extracted {len(target_indices)} frames.",
+				cap=cap)], cap=cap))
 
 	except Exception as e:
 		print(tui.status("error", f"An error occurred during extraction: {e}", cap=cap))

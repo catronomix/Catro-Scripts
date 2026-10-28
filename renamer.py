@@ -722,11 +722,14 @@ if __name__ == "__main__":
         # closed stdin with the shared one-line preflight instead of letting
         # input() raise EOFError halfway through a destructive run.
         tui.require_tty("renamer --all")
-        print(tui.status(
-            "error",
-            "WARNING: You are using the --all flag. This will process system files and scripts.",
-            cap=get_cap(),
-        ))
+        print(tui.panel("Confirm", [
+            tui.status(
+                "error",
+                "You are using the --all flag.",
+                cap=get_cap(),
+            ),
+            "This will process system files and scripts.",
+        ], cap=get_cap()))
         confirm = tui.ask_text("Are you sure? (y/n): ")
         if confirm.lower() != "y":
             print("Operation cancelled.")
