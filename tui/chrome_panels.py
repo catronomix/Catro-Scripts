@@ -84,7 +84,12 @@ def panel(title, body, *, width=None, padding=1, cap=None, theme=None,
 							   cap=cap, theme=theme))
 	return "\n".join(lines)
 def _top_frame(glyphs, inner, title, cap, theme, active=False):
-	"""Top border with the title cut into it, or a plain rule when untitled."""
+	"""Top border with the title cut into it, or a plain rule when untitled.
+
+	The title is a heading band: `border-fg` as its background and `border-bg`
+	as its text, bold as before. `header_align` places it inside the top rule,
+	so a panel and the masthead follow the document's alignment together.
+	"""
 	edge_fg, edge_bg = frame_roles(active)
 	if not title:
 		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
@@ -97,12 +102,16 @@ def _top_frame(glyphs, inner, title, cap, theme, active=False):
 		return palette.style(glyphs["tl"] + glyphs["h"] * (inner - 2)
 							 + glyphs["tr"], fg=edge_fg, bg=edge_bg,
 							 cap=cap, theme=theme)
-	rest = max(0, inner - 5 - display_width(label))
+	align = str(palette.properties(theme).get("header_align", "left"))
+	room = max(0, inner - 5 - display_width(label))
+	left = room if align == "right" else room // 2 if align == "center" else 0
+	rest = room - left
+	heading = palette.prefix(fg=edge_bg, bg=edge_fg, bold=True, cap=cap,
+							 theme=theme)
 	return (palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
 			+ glyphs["tl"] + glyphs["h"]
-			+ palette.prefix(fg="header-fg", bg=edge_bg, bold=True,
-							 cap=cap, theme=theme)
-			+ " " + label + " "
+			+ heading
+			+ " " + " " * left + label + " "
 			+ palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
 			+ glyphs["h"] * rest + glyphs["tr"] + _reset(cap))
 def _band(text, width, *, fg, bold=False, align="left", cap, theme):

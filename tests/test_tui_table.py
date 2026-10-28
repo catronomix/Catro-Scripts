@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -25,7 +26,7 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 setUpModule, tearDownModule = module_isolation()
 
 from tui import caps, palette, table, table_glyphs  # noqa: E402  (import after sys.path setup)
-from tui.text import display_width  # noqa: E402
+from tui.text import display_width, strip_ansi  # noqa: E402
 
 # soft's truecolor codes, pinned literally: `list.py` itself renders through
 # `tui` now, so scraping its source would only ever prove that the library
@@ -38,6 +39,10 @@ BG = "\033[48;2;27;23;38m"
 # stripe is the separate #352B49 band.
 SURFACE = "\033[48;2;41;34;56m"
 STRIPE = "\033[48;2;53;43;73m"
+# A box heading is the framed look: `border-fg` as the ground, `border-bg` as
+# the ink (soft's border-fg #A392C0, border-bg #292238).
+HEADING_BG = "\033[48;2;163;146;192m"
+HEADING_FG = "\033[38;2;41;34;56m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -137,9 +142,10 @@ class GoldenBytesTests(unittest.TestCase):
 		out = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE, theme="soft")
 		header = out.split("\n")[1]
 		# Border colour and ground, leading border, then the inside ground and
-		# bold: one span, one reset.
+		# bold; the closing border re-asserts the frame pair.
 		expected = (BORDER + SURFACE + "\u2502" + HEADER + SURFACE + BOLD
-					+ " A    \u2502 B    \u2502" + RESET)
+					+ " A    \u2502 B    "
+					+ BORDER + SURFACE + "\u2502" + RESET)
 		self.assertEqual(header, expected)
 
 	def test_zebra_rows_match_list_py(self):
@@ -149,9 +155,9 @@ class GoldenBytesTests(unittest.TestCase):
 		def expected(first, second, background):
 			cell = FG + background
 			return "".join([
-				BORDER, "\u2502", cell, " " + first.ljust(4) + " ",
-				BORDER, "\u2502", cell, " " + second.ljust(4) + " ",
-				RESET, BORDER, "\u2502", RESET,
+				BORDER + SURFACE, "\u2502", cell, " " + first.ljust(4) + " ",
+				BORDER + SURFACE, "\u2502", cell, " " + second.ljust(4) + " ",
+				RESET, BORDER + SURFACE, "\u2502", RESET,
 			])
 
 		lines = out.split("\n")
@@ -190,6 +196,64 @@ class GoldenBytesTests(unittest.TestCase):
 		self.assertTrue(lines[-1].startswith(BORDER + SURFACE + "\u2514"))
 		self.assertIn("\u253c", lines[2])
 		self.assertIn("\u2534", lines[-1])
+
+
+class GroundAndAlignTests(unittest.TestCase):
+	"""Issue 42: table grounds on every cell, frame dividers, aligned headers."""
+
+	PROPS = {"table_style": "box", "table_zebra": True, "header_align": "left"}
+
+	def render(self, **kw):
+		kw.setdefault("cap", TRUE)
+		kw.setdefault("theme", "soft")
+		with mock.patch.object(palette, "properties",
+							   return_value=dict(self.PROPS)):
+			return table.render_table(["A", "B"], [["x", "y"]], **kw)
+
+	def test_zebra_off_paints_the_inside_ground_on_every_body_row(self):
+		props = dict(self.PROPS, table_zebra=False)
+		with mock.patch.object(palette, "properties", return_value=props):
+			rows = table.render_table(["A", "B"], [["x", "y"], ["z", "w"]],
+									  cap=TRUE, theme="soft").split("\n")[3:5]
+		for row in rows:
+			self.assertIn(FG + SURFACE, row)
+			self.assertNotIn(FG + BG, row)
+			self.assertNotIn(STRIPE, row)
+
+	def test_zebra_off_borderless_rows_keep_the_inside_ground(self):
+		props = dict(self.PROPS, table_style="borderless", table_zebra=False)
+		with mock.patch.object(palette, "properties", return_value=props):
+			body = table.render_table(["A"], [["b"]], cap=TRUE,
+									  theme="soft").split("\n")[1]
+		self.assertTrue(body.startswith(FG + SURFACE), body)
+		self.assertNotIn(BG, body)
+
+	def test_every_data_row_divider_carries_the_frame_ground(self):
+		row = self.render().split("\n")[3]
+		self.assertEqual(row.count(BORDER + SURFACE + "\u2502"), 3)
+
+	def test_the_closing_header_edge_is_the_frame_pair(self):
+		header = self.render().split("\n")[1]
+		self.assertTrue(
+			header.endswith(BORDER + SURFACE + "\u2502" + RESET), header)
+		self.assertNotIn(HEADER + SURFACE + "\u2502" + RESET, header)
+
+	def test_header_align_reaches_the_box_header_labels(self):
+		props = dict(self.PROPS, header_align="right")
+		with mock.patch.object(palette, "properties", return_value=props):
+			header = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE,
+										theme="soft").split("\n")[1]
+		self.assertIn("    A \u2502    B ", header)
+
+	def test_header_align_reaches_borderless_and_compact_headers(self):
+		for style in ("borderless", "compact"):
+			props = dict(self.PROPS, table_style=style, header_align="right")
+			with self.subTest(style=style), mock.patch.object(
+					palette, "properties", return_value=props):
+				header = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE,
+											theme="soft").split("\n")[0]
+			self.assertIn("   A", header)
+			self.assertTrue(strip_ansi(header).endswith("   B"), header)
 
 
 class ForcedWidthTests(unittest.TestCase):

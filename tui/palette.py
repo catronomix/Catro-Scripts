@@ -161,9 +161,18 @@ def document():
 	return theme_engine.document()
 
 
-def properties():
-	"""Copy of the active theme's rendering properties."""
-	return dict(_memo("properties", theme_engine.properties))
+def properties(theme=None):
+	"""Copy of the rendering properties for `theme=` or the active selection.
+
+	`theme=` keeps the same meaning it has for `palette()`: a look spelling
+	selects that look of the theme `theme.ini` names. Properties belong to the
+	document, so an explicit look never falls back to another document's
+	properties; the document is always the selected one (or the built-in default
+	when it cannot be read).
+	"""
+	name, _look = _active(theme)
+	key = ("properties", name)
+	return dict(_memo(key, lambda: theme_engine.properties(name)))
 
 
 def palette(theme=None, cap=None):

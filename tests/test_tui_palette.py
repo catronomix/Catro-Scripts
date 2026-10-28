@@ -354,6 +354,44 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 			self.assertEqual(palette.properties()["border_style"], "rounded")
 
 
+class PropertyDocumentTests(unittest.TestCase):
+	"""`properties(theme=...)` follows the document, not a built-in default."""
+
+	def setUp(self):
+		self._temp = tempfile.TemporaryDirectory()
+		root = Path(self._temp.name)
+		themes = root / "themes"
+		themes.mkdir()
+		themes.joinpath("cozypurple.json").write_bytes(SHIPPED.read_bytes())
+		theme_engine.THEMES_DIR = themes
+		theme_engine.THEME_FILE = root / "theme.ini"
+		theme_engine._CACHE.clear()
+
+	def tearDown(self):
+		theme_engine.THEMES_DIR = None
+		theme_engine.THEME_FILE = None
+		theme_engine._CACHE.clear()
+		self._temp.cleanup()
+
+	def test_an_explicit_look_reads_the_selected_document(self):
+		document = theme_engine.load_theme("cozypurple")
+		document["properties"]["header_align"] = "right"
+		theme_engine.save_theme(document, overwrite=True)
+		self.assertEqual(palette.properties("light")["header_align"], "right")
+		self.assertEqual(palette.properties("soft")["header_align"], "right")
+
+	def test_the_document_name_is_forwarded(self):
+		with mock.patch.object(theme_engine, "properties",
+							   return_value={"header_align": "center"}) as props:
+			self.assertEqual(palette.properties("soft")["header_align"],
+							 "center")
+		props.assert_called_once_with("cozypurple")
+
+	def test_the_result_is_still_a_copy(self):
+		palette.properties("soft")["header_align"] = "right"
+		self.assertNotEqual(palette.properties("soft")["header_align"], "right")
+
+
 def _luminance(colour):
 	"""WCAG 2.x relative luminance for a #rrggbb colour."""
 	def channel(value):

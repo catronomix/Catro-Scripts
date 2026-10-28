@@ -201,11 +201,12 @@ class TableStyleTests(PropertyCase):
 		self.assertIn(BG, self.render())
 		self.set_properties(table_zebra=False)
 		out = self.render()
-		# The header and every rule still sit on the inside ground; only the
-		# data rows lose the zebra pair.
+		# The header and every rule still sit on the inside ground; the data
+		# rows lose the zebra pair but keep that same inside ground.
 		data = out.split("\n")[3:5]
 		for row in data:
-			self.assertNotIn(BG, row)
+			self.assertIn(FG + SURFACE, row)
+			self.assertNotIn(FG + BG, row)
 			self.assertNotIn(STRIPE, row)
 		self.assertNotIn(STRIPE, out)
 		self.assertIn(SURFACE, out)

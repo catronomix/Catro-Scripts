@@ -227,6 +227,17 @@ class PreviewFrameTests(EditorTestCase):
 		# Right aligns the label's trailing space against the closing corner.
 		self.assertEqual(column(right) + len(title), 27)
 
+	def test_the_framed_title_is_a_border_pair_heading(self):
+		# A preview title is a real panel heading: border-fg as the ground and
+		# border-bg as the ink, not the frame's own pair.
+		canvas, document, band = self.preview("rounded")
+		look = document["looks"]["default"]
+		title = editorviews.preview_title(document, "default")
+		column = band[0].index(title) + 1
+		heading = palette.prefix(fg=look["border-bg"], bg=look["border-fg"],
+								 bold=True, cap=self.cap)
+		self.assertEqual(canvas._colors[2][column], heading)
+
 	def test_the_90x24_preview_shows_a_table_header_and_the_modal(self):
 		ed = self.make()
 		x, y, width, height = ed.rects[0]

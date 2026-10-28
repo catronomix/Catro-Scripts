@@ -13,7 +13,7 @@ still gets plain text and a themed terminal gets the palette's own escapes.
 """
 
 from . import palette
-from .text import pad, truncate as _truncate
+from .text import display_width, pad, truncate as _truncate
 
 
 def reset(cap):
@@ -28,34 +28,52 @@ def rule(glyphs, widths, left, middle, right, cap, theme):
 
 
 def header_row(glyphs, widths, labels, cap, theme):
-	"""One span over the whole row: border, then the first border, then bold.
+	"""One span over the whole row: frame, then the first border, then bold.
 
-	This keeps the pre-migration `list.py` escape order (border colour and
-	ground once, the leading `|` inside it, then one styled span for the rest):
-	only the header ink and its ground are new. The header's body sits on
-	`bg-inside` in `header-fg`, so the band has no terminal-coloured hole
-	between its inner borders and matches the editor preview's `thead` row.
+	The header body sits on `bg-inside` in `header-fg`, so the band has no
+	terminal-coloured hole between its inner borders and matches the editor
+	preview's `thead` row. The closing border re-asserts the frame ink and
+	ground, so the last vertical glyph never inherits `header-bg`.
 	"""
-	body = glyphs["v"].join(" " + pad(cell, width) + " "
+	align = str(palette.properties(theme).get("header_align", "left"))
+	body = glyphs["v"].join(" " + _aligned(cell, width, align) + " "
 							for cell, width in zip(labels, widths))
 	return (palette.prefix(fg="border-fg", bg="border-bg", cap=cap,
 						   theme=theme) + glyphs["v"]
 			+ palette.prefix(fg="header-fg", bg="bg-inside", bold=True,
 							 cap=cap, theme=theme)
-			+ body + glyphs["v"] + reset(cap))
+			+ body
+			+ palette.prefix(fg="border-fg", bg="border-bg", cap=cap,
+							 theme=theme)
+			+ glyphs["v"] + reset(cap))
+
+
+def _aligned(cell, width, align):
+	"""`cell` padded to `width` cells, placed by `header_align`."""
+	cell = str(cell)
+	slack = max(0, width - display_width(cell))
+	if align == "right":
+		return " " * slack + cell
+	if align == "center":
+		left = slack // 2
+		return " " * left + cell + " " * (slack - left)
+	return cell + " " * slack
 
 
 def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False,
 		fg="fg", bold=False):
 	"""Zebra data row, composed exactly like the old `list.py` row.
 
-	Each cell re-asserts its own colours after the border (`border | cell-style
-	text`), and only the closing border is preceded by a reset, so the row
-	carries the same escapes in the same order as the hand-built table did.
-	`fg`/`bold` are the per-row ink a caller keeps as data (`count`'s rainbow)
-	or uses to emphasise a summary row; they never touch the ground.
+	Every vertical border glyph carries the frame ink and ground
+	(`border-fg`/`border-bg`), and each cell re-asserts its own colours after it
+	(`border | cell-style text`); only the closing border is preceded by a
+	reset, so the row carries the same escapes in the same order as the
+	hand-built table did. `fg`/`bold` are the per-row ink a caller keeps as data
+	(`count`'s rainbow) or uses to emphasise a summary row; they never touch the
+	ground.
 	"""
-	border = palette.prefix(fg="border-fg", cap=cap, theme=theme)
+	border = palette.prefix(fg="border-fg", bg="border-bg", cap=cap,
+							theme=theme)
 	cell_style = palette.prefix(fg=fg, bg=bg, bold=bold, cap=cap, theme=theme)
 	tail = reset(cap)
 	parts = []
@@ -71,8 +89,9 @@ def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False,
 
 def bare_rows(labels, data, widths, cap, theme, zebra, row_styles=None):
 	"""Borderless variant: padded columns separated by two spaces."""
+	align = str(palette.properties(theme).get("header_align", "left"))
 	lines = [bare_line(labels, widths, cap, theme, fg="header-fg",
-					   bg="bg-inside", bold=True)]
+					   bg="bg-inside", bold=True, align=align)]
 	for index, cells in enumerate(data):
 		extra = (row_styles[index] if row_styles and index < len(row_styles)
 				 else None) or {}
@@ -84,9 +103,13 @@ def bare_rows(labels, data, widths, cap, theme, zebra, row_styles=None):
 
 
 def zebra_bg(index, zebra):
-	"""Palette key for row `index`, or None when zebra shading is off."""
+	"""Palette key for row `index`: the zebra pair, else the inside ground.
+
+	Turning shading off must not expose the terminal default, so every data row
+	then sits on `bg-inside` (the same ground the panel interior uses).
+	"""
 	if not zebra:
-		return None
+		return "bg-inside"
 	return "bg" if index % 2 == 0 else "bg-stripe"
 
 
@@ -97,7 +120,9 @@ def span_rule(glyphs, widths, cap, theme):
 						 bg="border-bg", cap=cap, theme=theme)
 
 
-def bare_line(cells, widths, cap, theme, fg="fg", bg=None, bold=False):
-	cells = [_truncate(cell, width) for cell, width in zip(cells, widths)]
-	body = "  ".join(pad(cell, width) for cell, width in zip(cells, widths))
+def bare_line(cells, widths, cap, theme, fg="fg", bg=None, bold=False,
+			  align="left"):
+	cells = [_aligned(_truncate(cell, width), width, align)
+			 for cell, width in zip(cells, widths)]
+	body = "  ".join(cells)
 	return palette.style(body, fg=fg, bg=bg, bold=bold, cap=cap, theme=theme)

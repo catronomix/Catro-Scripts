@@ -35,16 +35,30 @@ def framed(glyphs):
 	return glyphs is not table.SPACE_GLYPHS
 
 
-def draw(canvas, x, y, width, height, glyphs, title=None, colour=None):
-	"""Draw one preview frame, the space family included, on every edge."""
+def draw(canvas, x, y, width, height, glyphs, title=None, colour=None,
+		 heading=None):
+	"""Draw one preview frame, the space family included, on every edge.
+
+	`title` sits in the top rule. When `heading` is given, the label cells are
+	redrawn with it after the rule, so a preview's box heading carries the same
+	`border-fg` ground / `border-bg` ink pair a real panel uses.
+	"""
 	if width < 2 or height < 2:
 		return None
 	top = glyphs["tl"] + glyphs["h"] * (width - 2) + glyphs["tr"]
 	label = " {} ".format(title) if title else ""
+	placed = False
 	if label and len(label) <= width - 2:
 		top = (glyphs["tl"] + glyphs["h"] + label
 			   + glyphs["h"] * (width - 3 - len(label)) + glyphs["tr"])
+		placed = True
 	canvas.draw_text(x, y, top[:width], colour)
+	if placed and heading:
+		text = str(title).strip()
+		start = top.index(text) - 1
+		if start >= 1:
+			canvas.draw_text(x + start, y, (" " + text + " ")[:width - start],
+							 heading)
 	for row in range(1, height - 1):
 		canvas.draw_char(x, y + row, glyphs["v"], colour)
 		canvas.draw_char(x + width - 1, y + row, glyphs["v"], colour)
@@ -58,3 +72,10 @@ def edge(colours, cap=None):
 	fg = colours.get(palette.role("border-fg"), "border-fg")
 	bg = colours.get(palette.role("border-bg"), "border-bg")
 	return palette.prefix(fg=fg, bg=bg, cap=cap)
+
+
+def heading(colours, cap=None):
+	"""The SGR prefix for a preview box heading: frame ground, inside ink."""
+	bg = colours.get(palette.role("border-fg"), "border-fg")
+	fg = colours.get(palette.role("border-bg"), "border-bg")
+	return palette.prefix(fg=fg, bg=bg, bold=True, cap=cap)

@@ -41,7 +41,7 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 	"""
 	cap = cap or caps.detect()
 	theme = palette.theme(theme)
-	props = palette.properties()
+	props = palette.properties(theme)
 	table_style = props.get("table_style", "box")
 	compact = box is None and table_style == "compact"
 	if box is None:
@@ -69,8 +69,10 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 		return "\n".join(table_rows.bare_rows(labels, data, widths, cap, theme,
 											  zebra, row_styles))
 	if compact:
+		align = str(props.get("header_align", "left"))
 		lines = [table_rows.bare_line(labels, widths, cap, theme,
-									  fg="header-fg", bg="bg-inside", bold=True)]
+									  fg="header-fg", bg="bg-inside",
+									  bold=True, align=align)]
 		lines.append(table_rows.span_rule(glyphs, widths, cap, theme))
 		for index, cells in enumerate(data):
 			extra = _row_style(row_styles, index)
