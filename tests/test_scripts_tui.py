@@ -57,6 +57,27 @@ def cap16():
 							isatty=True, plain=False, reason="test")
 
 
+class FakeTty:
+	"""A tty-able stdout: writes are captured, no file descriptor."""
+
+	def __init__(self, tty=True, encoding="utf-8"):
+		self._buffer = io.StringIO()
+		self._tty = tty
+		self.encoding = encoding
+
+	def write(self, text):
+		return self._buffer.write(text)
+
+	def flush(self):
+		pass
+
+	def isatty(self):
+		return self._tty
+
+	def getvalue(self):
+		return self._buffer.getvalue()
+
+
 class HelpIndentStylesTest(unittest.TestCase):
 	"""help.py's indentation mapping is data passed to tui.style()."""
 
@@ -522,6 +543,46 @@ class KeygenMarkerTests(unittest.TestCase):
 	def test_stream_without_an_encoding_falls_back_to_ascii(self):
 		stream = mock.Mock(spec=["write"])
 		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+
+class HelpPanelTest(unittest.TestCase):
+	"""help.py composes its page from one `tui.panel`, not a border loop."""
+
+	DOC = "COUNT\n=====\n\nBody line\n\tIndented line\n"
+
+	def render(self, doc, cap):
+		import help as help_module
+		stream = FakeTty()
+		with contextlib.redirect_stdout(stream):
+			help_module.print_colored_docstring(doc, cap)
+		return stream.getvalue()
+
+	def test_docstring_is_one_panel_with_the_title_in_the_rule(self):
+		out = self.render(self.DOC, cap16())
+		self.assertEqual(out.count("\u250c"), 1, out)
+		self.assertEqual(out.count("\u2514"), 1, out)
+		self.assertIn("COUNT", out.splitlines()[0])
+		self.assertNotIn("=====", out, "the header underline leaked into the page")
+
+	def test_indent_colours_survive_inside_the_panel(self):
+		out = self.render(self.DOC, cap16())
+		indented = [line for line in out.splitlines() if "Indented line" in line]
+		self.assertEqual(len(indented), 1, out)
+		self.assertIn("\033[36m", indented[0], "level 1 lost its cyan ink")
+
+	def test_ascii_frame_when_unicode_is_off(self):
+		cap = tui.Capabilities(level="16", unicode=False, width=None,
+							   isatty=True, plain=False, reason="test")
+		out = self.render(self.DOC, cap)
+		self.assertIn("+", out)
+		self.assertIn("|", out)
+		self.assertNotIn("\u2500", out)
+
+	def test_plain_docstring_keeps_its_lines_and_no_frame(self):
+		cap = tui.Capabilities(level="16", unicode=True, width=None,
+							   isatty=False, plain=True, reason="test")
+		out = self.render(self.DOC, cap)
+		self.assertEqual(out, "COUNT\n\nBody line\n    Indented line\n")
 
 
 if __name__ == "__main__":

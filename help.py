@@ -69,7 +69,6 @@ def print_colored_docstring(docstring, cap=None):
 	# Prints the docstring with colors based on indentation depth.
 	# Assumes scripts use tab characters (\t) for indentation as requested.
 	cap = cap or tui.detect()
-	glyphs = tui.table.glyphs_for(cap)
 
 	if not docstring:
 		message = "No intro text (docstring) found in this script."
@@ -118,13 +117,12 @@ def print_colored_docstring(docstring, cap=None):
 
 	content_lines = raw_lines[start_index:]
 
-	# Calculate box width
+	# Calculate the widest display line; the panel adds the frame and gutter.
 	check_widths = [len(line.replace('\t', '    ')) for line in content_lines]
 	if has_header:
 		check_widths.append(len(header_text))
 
 	max_w = max(check_widths) if check_widths else BOX_WIDTH_FLOOR
-	box_width = max_w + 2
 
 	if cap.plain:
 		# Piped output: text only, one line per document line, no box and no
@@ -136,22 +134,11 @@ def print_colored_docstring(docstring, cap=None):
 			print(line.replace('\t', '    '))
 		return
 
-	tl, tr, bl, br = glyphs["tl"], glyphs["tr"], glyphs["bl"], glyphs["br"]
-	h, v, l_join, r_join = glyphs["h"], glyphs["v"], glyphs["ml"], glyphs["mr"]
-
-	# Top Border
-	print(tui.style(tl + h * box_width + tr, fg="border-fg", cap=cap))
-
-	if has_header:
-		# Header Row: the docstring title as a themed section heading, framed by
-		# the box borders. No per-script yellow-on-purple any more.
-		centered_header = header_text.center(box_width)
-		print(tui.style(v, fg="border-fg", cap=cap)
-			  + tui.section(centered_header, cap=cap)
-			  + tui.style(v, fg="border-fg", cap=cap))
-		# Divider Row replacing the equal signs
-		print(tui.style(l_join + h * box_width + r_join, fg="border-fg", cap=cap))
-
+	# One tui.panel box for the whole page. Each body line is pre-padded to the
+	# interior width and carries its indent colour plus the panel's own ground,
+	# with no reset of its own: the panel closes the row, so the right gutter
+	# keeps the interior background.
+	body = []
 	for line in content_lines:
 		# Count leading tabs for coloring
 		indent_level = 0
@@ -164,16 +151,13 @@ def print_colored_docstring(docstring, cap=None):
 		# Select style based on depth
 		indent_style = INDENT_STYLES[indent_level % len(INDENT_STYLES)]
 
-		# Expand tabs and calculate padding for alignment
+		# Expand tabs and pad the line to the widest body line.
 		display_line = line.replace('\t', '    ')
-		padding = " " * (max_w - len(display_line))
+		body.append(tui.prefix(bg="bg-inside", cap=cap, **indent_style)
+					+ tui.pad(display_line, max_w))
 
-		print(tui.style(v, fg="border-fg", cap=cap) + " "
-			  + tui.style(display_line + padding, cap=cap, **indent_style) + " "
-			  + tui.style(v, fg="border-fg", cap=cap))
-
-	# Bottom Border
-	print(tui.style(bl + h * box_width + br, fg="border-fg", cap=cap))
+	print(tui.panel(header_text if has_header else None, body,
+					width=max_w + 4, cap=cap))
 
 
 def main():
