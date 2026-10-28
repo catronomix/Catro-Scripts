@@ -48,7 +48,36 @@ def capture(render, cap, theme="soft"):
 	with mock.patch.dict(os.environ, {"CATRO_THEME": theme}), \
 			mock.patch.object(tui, "detect", lambda: cap), \
 			contextlib.redirect_stdout(buffer):
-		render(cap)
+		try:
+			render(cap)
+		except SystemExit:
+			pass
+	return buffer.getvalue()
+
+
+def run_as_main(script, argv, cap, answers=()):
+	"""Execute a `__main__`-guarded script in-process with its prompts stubbed.
+
+	The scripts in this group keep their flow under `if __name__ ==
+	"__main__"`, so the only way to reach the block is to run them; the prompts
+	are answered from `answers`, and `SystemExit` ends the run as usual.
+	"""
+	import runpy
+
+	buffer = io.StringIO()
+	answers = list(answers)
+	with mock.patch.dict(os.environ, {"CATRO_THEME": "soft"}), \
+			mock.patch.object(tui, "detect", lambda: cap), \
+			mock.patch.object(tui, "init_ansi"), \
+			mock.patch.object(tui, "require_tty"), \
+			mock.patch.object(tui, "ask_text",
+							   side_effect=lambda *a, **k: answers.pop(0)), \
+			mock.patch.object(sys, "argv", [script] + list(argv)), \
+			contextlib.redirect_stdout(buffer):
+		try:
+			runpy.run_path(str(REPO / script), run_name="__main__")
+		except SystemExit:
+			pass
 	return buffer.getvalue()
 
 
@@ -85,6 +114,32 @@ class NetconfigPlanPanelTest(unittest.TestCase):
 		self.assertEqual("\nSetting up static IP for: eth0\n", out)
 		for glyph in BOX_GLYPHS:
 			self.assertNotIn(glyph, out)
+
+
+class RenamerConfirmPanelTest(unittest.TestCase):
+	"""The `--all` confirmation is a panel; the result lines stay inline."""
+
+	def test_true_colour_frames_the_confirmation(self):
+		out = run_as_main("renamer.py", ["--all"], TTY_TRUE, answers=["n"])
+		self.assertIn(FRAME, out, out)
+		plain = tui.strip_ansi(out)
+		self.assertIn("You are using the --all flag", plain, out)
+		self.assertIn("process system files and scripts", plain, out)
+		self.assertIn("\x1b[38;2;", out)
+
+	def test_level_16_and_none_degrade_cleanly(self):
+		out16 = run_as_main("renamer.py", ["--all"], TTY_16, answers=["n"])
+		self.assertIn(FRAME, out16)
+		self.assertNotIn("38;2;", out16)
+		out = run_as_main("renamer.py", ["--all"], TTY_NONE, answers=["n"])
+		self.assertIn(FRAME, out, out)
+		self.assertNotIn("\x1b", out)
+
+	def test_pipe_keeps_the_lines_without_the_frame(self):
+		out = run_as_main("renamer.py", ["--all"], PIPE, answers=["n"])
+		self.assertNotIn(FRAME, out)
+		self.assertNotIn("\x1b", out)
+		self.assertIn("You are using the --all flag", out)
 
 
 if __name__ == "__main__":
