@@ -60,7 +60,7 @@ def parse_duration(duration_str):
 	found = False
 	
 	for unit, multiplier in patterns.items():
-		match = re.search(f'(\d+){unit}', duration_str)
+		match = re.search(rf'(\d+){unit}', duration_str)
 		if match:
 			total_seconds += int(match.group(1)) * multiplier
 			found = True
