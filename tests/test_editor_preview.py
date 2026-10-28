@@ -224,6 +224,28 @@ class PreviewFrameTests(EditorTestCase):
 		# Right aligns the label's trailing space against the closing corner.
 		self.assertEqual(column(right) + len(title), 27)
 
+	def test_the_90x24_preview_shows_a_table_header_and_the_modal(self):
+		ed = self.make()
+		x, y, width, height = ed.rects[0]
+		lines = self.lines(ed)
+		band = "\n".join(row[x:x + width] for row in lines[y:y + height])
+		self.assertEqual((y, height), (2, 13))
+		self.assertIn("NAME", band)
+		self.assertIn("dialog - overwrite?", band)
+		self.assertIn("[ Cancel ]", band)
+		self.assertIn("60%", band)
+
+	def test_the_taller_preview_keeps_the_90x24_frame_inside_the_canvas(self):
+		ed = self.make()
+		lines = self.lines(ed)
+		x, y, width, height = ed.rects[5]
+		self.assertEqual((y, height), (16, 6))
+		self.assertLessEqual(y + height, 22)
+		# The Actions frame closes above the two status rows, unharmed.
+		self.assertEqual(lines[y + height - 1][x], "\u2514")
+		self.assertIn("Tab panel", lines[22])
+		self.assertIn("Tab panel", lines[23])
+
 	def test_a_filled_preview_button_paints_the_button_tokens(self):
 		document = copy.deepcopy(self.make().document)
 		look = document["looks"]["default"]

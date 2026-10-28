@@ -107,7 +107,7 @@ class ThemeEditor(EditorKeys):
 		self._layout_size = (width, height)
 		if widgets.small_terminal(width, height):
 			return
-		preview_h = max(6, min(12, height - 12))
+		preview_h = max(6, min(13, height - 11))
 		# One blank column between (and around) the three live previews.
 		column = max(8, (width - 4) // 3)
 		for index in range(3):
@@ -121,11 +121,14 @@ class ThemeEditor(EditorKeys):
 		action_x = 3 + prop_w + colour_w
 		self.rects[5] = (action_x, panel_y, max(10, width - action_x - 1),
 						 panel_h)
-		# One blank row under the title, two between buttons: the top and bottom
-		# rules stay visible even in the smallest supported terminal (90x24).
+		# One blank row under the title, two between buttons, clamped to the
+		# last inner row: the top and bottom rules stay visible even in the
+		# smallest supported terminal (90x24) where the bar has no headroom.
 		for index, label in enumerate(BUTTONS):
 			self.buttons.append(widgets.Button(
-				action_x + 2, panel_y + 1 + 2 * index, label, cap=self.cap))
+				action_x + 2,
+				min(panel_y + 1 + 2 * index, panel_y + panel_h - 2), label,
+				cap=self.cap))
 
 	def _visible(self, panel):
 		rect = self.rects.get(panel)

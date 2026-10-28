@@ -291,8 +291,8 @@ class NavigationTests(EditorTestCase):
 	def test_wheel_scrolls_the_hovered_panel(self):
 		ed = self.make()
 		# Column 2 is inside the Properties panel; the preview band is not.
-		ed.handle("mouse:wheel-down:2:16")
-		ed.handle("mouse:wheel-down:2:16")
+		ed.handle("mouse:wheel-down:2:17")
+		ed.handle("mouse:wheel-down:2:17")
 		# The wheel moves the selection; the window follows only when the row
 		# would leave the visible band (5 of 9 rows at 90x24).
 		self.assertGreater(ed.property_index, 0)
@@ -304,7 +304,7 @@ class NavigationTests(EditorTestCase):
 		# Colours panel: PageDown and the wheel both only move its window.
 		ed.pump(["tab", "pagedown"])
 		self.assertGreater(ed.colour_index, 0)
-		ed.handle("mouse:wheel-down:45:16")  # column inside the Colours panel
+		ed.handle("mouse:wheel-down:45:17")  # column inside the Colours panel
 		self.assertGreater(ed.colour_offset, 0)
 		self.assertEqual(ed.document, before)
 		self.assertFalse(ed.dirty)
@@ -314,7 +314,7 @@ class NavigationTests(EditorTestCase):
 		ed.handle("enter")
 		key = editorviews.PROPERTY_KEYS[0]
 		before = ed.document["properties"][key]
-		ed.pump(["pagedown", "pageup", "mouse:wheel-down:2:16"])
+		ed.pump(["pagedown", "pageup", "mouse:wheel-down:2:17"])
 		self.assertIsNotNone(ed.edit, "scrolling committed or cancelled the draft")
 		self.assertEqual(ed.document["properties"][key], before)
 		self.assertFalse(ed.dirty)
@@ -327,7 +327,7 @@ class WheelScrollTests(EditorTestCase):
 		ed = self.make()  # 90x24: Colours shows 5 of 16 keys
 		ed.handle("tab")  # focus Colours
 		for _ in range(6):
-			ed.handle("mouse:wheel-down:45:16")
+			ed.handle("mouse:wheel-down:45:17")
 		ed.draw()
 		self.assertGreater(ed.colour_offset, 0)
 		self.assertEqual(ed.colour_index, len(theme_engine.PALETTE_KEYS) - 1)
@@ -339,7 +339,7 @@ class WheelScrollTests(EditorTestCase):
 
 	def test_wheel_up_at_the_top_keeps_the_property_window_at_zero(self):
 		ed = self.make()
-		ed.handle("mouse:wheel-up:2:16")
+		ed.handle("mouse:wheel-up:2:17")
 		self.assertEqual((ed.property_index, ed.property_offset), (0, 0))
 
 	def test_an_overflowing_pane_draws_a_marker_on_its_right_edge(self):
@@ -393,19 +393,19 @@ class DoubleClickTests(EditorTestCase):
 		# picker; a second identical press lands in the open picker and must
 		# not replace it (the key path routes it to `picker_key`).
 		ed = self.make()
-		ed.handle("mouse:press:45:16")  # inside the Colours panel
+		ed.handle("mouse:press:45:17")  # inside the Colours panel
 		self.assertEqual(ed.focus, 1)
 		picker = ed.picker
 		self.assertIsNotNone(picker)
-		ed.handle("mouse:press:45:16")
+		ed.handle("mouse:press:45:17")
 		self.assertIs(ed.picker, picker)
 		self.assertEqual(ed.focus, 1)
 
 	def test_a_double_press_on_a_property_row_opens_its_draft(self):
 		ed = self.make()
-		ed.handle("mouse:press:2:16")  # inside the Properties panel
+		ed.handle("mouse:press:2:17")  # inside the Properties panel
 		self.assertIsNone(ed.edit)
-		ed.handle("mouse:press:2:16")
+		ed.handle("mouse:press:2:17")
 		self.assertEqual(ed.focus, 0)
 		self.assertIsNotNone(ed.edit)
 		self.assertEqual(ed.edit["key"], editorviews.PROPERTY_KEYS[0])
@@ -420,9 +420,9 @@ class DoubleClickTests(EditorTestCase):
 
 	def test_a_double_press_on_an_action_button_presses_it(self):
 		ed = self.make()
-		ed.handle("mouse:press:75:16")  # the Save button
+		ed.handle("mouse:press:75:17")  # the Save button
 		self.assertEqual(ed.prompt, "save")
-		ed.handle("mouse:press:75:16")
+		ed.handle("mouse:press:75:17")
 		self.assertEqual(ed.prompt, "save")
 		self.assertFalse(ed.closed)
 
@@ -518,24 +518,24 @@ class ScrolledPaneTests(EditorTestCase):
 	def test_a_press_on_the_first_visible_colour_row_opens_that_key(self):
 		ed = self.make()  # 90x24: Colours shows 5 of 16 keys
 		ed.colour_offset = 1
-		ed.handle("mouse:press:45:16")
+		ed.handle("mouse:press:45:17")
 		self.assertEqual((ed.focus, ed.colour_index), (1, 1))
 		self.assertIsNotNone(ed.picker)
 
 	def test_a_double_press_on_a_scrolled_property_row_drafts_that_key(self):
 		ed = self.make()  # 90x24: Properties shows 5 of 9 keys
 		ed.property_offset = 1
-		ed.handle("mouse:press:2:16")
+		ed.handle("mouse:press:2:17")
 		self.assertEqual((ed.focus, ed.property_index), (0, 1))
 		self.assertIsNone(ed.edit)
-		ed.handle("mouse:press:2:16")
+		ed.handle("mouse:press:2:17")
 		self.assertIsNotNone(ed.edit)
 		self.assertEqual(ed.edit["key"], editorviews.PROPERTY_KEYS[1])
 
 	def test_a_stale_offset_cannot_select_past_the_last_colour_key(self):
 		ed = self.make()
 		ed.colour_offset = 99
-		ed.handle("mouse:press:45:16")
+		ed.handle("mouse:press:45:17")
 		self.assertEqual(ed.colour_index, len(theme_engine.PALETTE_KEYS) - 1)
 
 

@@ -149,7 +149,6 @@ def _draw_actions(editor, canvas, cap):
 	editorviews.frame(canvas, rect[0], rect[1], rect[2], rect[3],
 					  "Actions", cap, active=editor.focus == 2)
 	for index, button in enumerate(editor.buttons):
-		button.x, button.y = rect[0] + 2, rect[1] + 1 + 2 * index
 		button.cap = editor.cap
 		button.draw(canvas, focused=editor.focus == 2
 					and index == editor.button_index)
