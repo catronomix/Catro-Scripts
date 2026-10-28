@@ -488,6 +488,75 @@ class MdreaderColourMappingTests(unittest.TestCase):
         self.assertNotIn("[https://example.com/a]", text)
         self.assertNotIn("[https://example.com/c]", text)
 
+    def test_link_rewrite_skips_indented_code_blocks(self):
+        """Four spaces or a tab start a code block: the sample stays literal."""
+        source = ("    [a](https://example.com/a)\n\n"
+                  "\t[b](https://example.com/b)\n\n"
+                  "[c](https://example.com/c)\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("    [a](https://example.com/a)", rewritten)
+        self.assertIn("\t[b](https://example.com/b)", rewritten)
+        self.assertIn("[https://example.com/c](https://example.com/c)",
+                      rewritten)
+
+    def test_link_rewrite_skips_a_fence_inside_a_blockquote(self):
+        """A quoted ``` still opens a code block, so its sample is literal."""
+        source = ("> ```md\n"
+                  "> [a](https://example.com/a)\n"
+                  "> ```\n\n"
+                  "[b](https://example.com/b)\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("> [a](https://example.com/a)", rewritten)
+        self.assertNotIn("[https://example.com/a]", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+
+    def test_link_rewrite_keeps_multi_backtick_spans(self):
+        """A span closes on a run of equal length, ticks inside and all."""
+        source = ("Use ``code with ` tick [a](https://example.com/a)`` here, "
+                  "then [b](https://example.com/b).\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("``code with ` tick [a](https://example.com/a)``",
+                      rewritten)
+        self.assertNotIn("[https://example.com/a]", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+
+    def test_link_rewrite_leaves_an_escaped_bracket_alone(self):
+        """`\\[x](url)` shows link syntax, so it is not a link."""
+        source = "\\[a](https://example.com/a) then [b](https://example.com/b)\n"
+        rewritten = mdreader.linkify(source)
+        self.assertIn("\\[a](https://example.com/a)", rewritten)
+        self.assertNotIn("[https://example.com/a]", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+
+    def test_rendered_code_samples_stay_verbatim(self):
+        """End to end: every skipped shape reaches the screen as written."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        source = ("    [a](https://example.com/a)\n\n"
+                  "> ```md\n"
+                  "> [b](https://example.com/b)\n"
+                  "> ```\n\n"
+                  "\t[c](https://example.com/c)\n\n"
+                  "``tick ` [d](https://example.com/d)``\n\n"
+                  "\\[e](https://example.com/e)\n\n"
+                  "[f](https://example.com/f)\n")
+        doc = mdreader.process_markdown_rich(source, 80, 0)
+        text = "".join(seg.text for line in doc for seg in line.segments)
+        text = "".join(text.split())
+        # Rich drops the delimiters themselves; the sample text stays as written.
+        for literal in ("[a](https://example.com/a)",
+                        "[b](https://example.com/b)",
+                        "[c](https://example.com/c)",
+                        "tick`[d](https://example.com/d)",
+                        "[e](https://example.com/e)"):
+            with self.subTest(literal=literal):
+                self.assertIn(literal, text)
+        self.assertIn("https://example.com/f", text)
+        self.assertNotIn("[f]", text)
+
 
 if __name__ == "__main__":
     unittest.main()
