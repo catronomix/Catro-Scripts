@@ -136,9 +136,10 @@ def generate_colored_images(cap):
 		print(f"Created {file_path} | Timestamp: {target_dt.strftime('%H:%M:%S')}")
 
 	print()
-	print(tui.status("ok",
-					 f"Process complete. Files are in: {os.path.abspath(folder_name)}",
-					 cap=cap))
+	print(tui.panel(None, [tui.status(
+		"ok",
+		f"Process complete. Files are in: {os.path.abspath(folder_name)}",
+		cap=cap)], cap=cap))
 
 def main():
 	# parse_args() first so --help works without pillow or a terminal.
