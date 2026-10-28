@@ -126,7 +126,7 @@ def _autodetect(env, isatty, stream=None):
 	mingw = "MINGW" in str(env.get("MSYSTEM", "")).upper()
 	if ("mintty" in str(env.get("TERM_PROGRAM", "")).lower()
 			or (term.startswith("xterm") and (cygwin or mingw))):
-		return "256", "mintty"  # Git Bash ships TERM=xterm, never 256color.
+		return "256", "mintty"  # Probe-less fallback: msys python; Git Bash probes true.
 	if env.get("SSH_TTY") or env.get("SSH_CLIENT"):
 		return "256", "ssh"  # Capped remotely unless COLORTERM/TERM said more.
 	if _IS_WINDOWS:

@@ -219,11 +219,18 @@ class CapabilityTests(unittest.TestCase):
 		self.probe.assert_not_called()
 
 	def test_mintty_xterm_is_256(self):
-		# Git for Windows ships mintty with TERM=xterm, so the 256color branch
-		# never matches and mintty needs its own conservative rule.
+		# Probe-less fallback: msys python (os.name != "nt") never probes and
+		# only has mintty's TERM=xterm, so the conservative answer is 256.
 		cap = self.detect({"TERM": "xterm", "TERM_PROGRAM": "mintty",
 						   "MSYSTEM": "MINGW64"}, windows=True)
 		self.assertEqual((cap.level, cap.reason), ("256", "mintty"))
+
+	def test_mintty_with_vt_probe_is_true(self):
+		# Native Git Bash python writes to a console handle whose VT flag is
+		# already set, so the probe wins and mintty never caps it at 256.
+		cap = self.detect({"TERM": "xterm", "TERM_PROGRAM": "mintty",
+						   "MSYSTEM": "MINGW64"}, windows=True, vt=True)
+		self.assertEqual((cap.level, cap.reason), ("true", "vt-console"))
 
 	def test_mintty_truecolor_opt_in(self):
 		cap = self.detect({"TERM": "xterm", "TERM_PROGRAM": "mintty",
@@ -320,8 +327,59 @@ class CapabilityTests(unittest.TestCase):
 		system.assert_called_once_with("")
 
 
+class FakeKernel:
+	"""Records what the probe asks kernel32 to do, in call order."""
+
+	def __init__(self, mode=3, applied=None, enable=1, raise_on_read=False):
+		self.mode = mode
+		self.applied = mode | 0x4 if applied is None else applied
+		self.enable = enable
+		self.raise_on_read = raise_on_read
+		self.gets = 0
+		self.sets = []
+
+	def GetConsoleMode(self, handle, ref):
+		self.gets += 1
+		if self.gets > 1 and self.raise_on_read:
+			raise RuntimeError("read-back failed")
+		ref._obj.value = self.mode if self.gets == 1 else self.applied
+		return 1
+
+	def SetConsoleMode(self, handle, value):
+		self.sets.append(value)
+		return self.enable if value & 0x4 else 1
+
+
 class ConsoleVtProbeTests(unittest.TestCase):
 	"""tui.console_vt.can_vt is inert off Windows and never raises."""
+
+	def run_probe(self, kernel):
+		from tui import console_vt
+		with mock.patch.object(console_vt, "_IS_WINDOWS", True), \
+				mock.patch.object(console_vt, "_handle", return_value=7), \
+				mock.patch.object(console_vt, "_kernel", return_value=kernel):
+			return console_vt.can_vt()
+
+	def test_probe_enables_then_restores_the_original_mode(self):
+		kernel = FakeKernel(mode=3)
+		self.assertTrue(self.run_probe(kernel))
+		self.assertEqual(kernel.sets, [3 | 0x4, 3])
+
+	def test_failed_enable_returns_false_without_a_restore(self):
+		kernel = FakeKernel(mode=3, enable=0)
+		self.assertFalse(self.run_probe(kernel))
+		self.assertEqual(kernel.sets, [3 | 0x4])
+
+	def test_failed_mode_read_never_calls_set_console_mode(self):
+		kernel = FakeKernel()
+		kernel.GetConsoleMode = lambda handle, ref: 0
+		self.assertFalse(self.run_probe(kernel))
+		self.assertEqual(kernel.sets, [])
+
+	def test_exception_after_enable_still_restores(self):
+		kernel = FakeKernel(mode=3, raise_on_read=True)
+		self.assertFalse(self.run_probe(kernel))
+		self.assertEqual(kernel.sets, [3 | 0x4, 3])
 
 	def test_can_vt_is_false_off_windows(self):
 		from tui import console_vt

@@ -8,9 +8,9 @@ variable, yet modern builds accept ANSI escapes once
 by toggling that flag on the output handle and restoring the previous mode
 immediately, so the probe leaves no trace behind.
 
-Stdlib only, and `ctypes`/`msvcrt` stay inside the call so `import tui` never
-touches a terminal. Every failure (no console, redirected handle, odd host)
-degrades to False, leaving the caller its conservative 16-colour answer.
+Stdlib only, `ctypes`/`msvcrt` imported inside the call so `import tui` never
+touches a terminal; every failure degrades to False, leaving its caller the
+conservative 16-colour answer.
 """
 
 import os
@@ -28,17 +28,26 @@ def can_vt(stream=None):
 		return False
 	try:
 		import ctypes
-		kernel32 = ctypes.windll.kernel32
+		kernel32 = _kernel()
 		handle = _handle(stream)
 		mode = ctypes.c_uint32()
 		if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
 			return False
 		if not kernel32.SetConsoleMode(handle, mode.value | _ENABLE_VT):
 			return False
-		kernel32.SetConsoleMode(handle, mode.value)  # restore, no side effect
-		return True
+		try:
+			applied = ctypes.c_uint32()
+			kernel32.GetConsoleMode(handle, ctypes.byref(applied))  # took effect?
+			return bool(applied.value & _ENABLE_VT)
+		finally:
+			kernel32.SetConsoleMode(handle, mode.value)  # restore, always
 	except Exception:
 		return False
+
+
+def _kernel():  # a seam: tests substitute a recorder for the kernel32 table
+	import ctypes
+	return ctypes.windll.kernel32
 
 
 def _handle(stream=None):
@@ -48,5 +57,4 @@ def _handle(stream=None):
 		return msvcrt.get_osfhandle(stream.fileno())
 	except Exception:
 		pass
-	import ctypes
-	return ctypes.windll.kernel32.GetStdHandle(_STD_OUTPUT_HANDLE)
+	return _kernel().GetStdHandle(_STD_OUTPUT_HANDLE)
