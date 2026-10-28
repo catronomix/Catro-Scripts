@@ -166,6 +166,7 @@ PAIR_ROLES = (
     (7, "fg", "bg-stripe"),       # shortcut bar, alternate table row
     (8, "border-fg", "bg"),       # window frame
     (9, "header-fg", "bg-inside"),  # table header row
+    (10, "border-fg", "bg-inside"),  # table borders on the surface fill
 )
 
 # The full-screen furniture of the reader, named instead of numbered so the
@@ -311,6 +312,9 @@ def get_rich_theme(theme_mode=0):
             "markdown.table.cell": colours["fg"] + " on " + colours["bg-inside"],
             "markdown.table.border": colours["border-fg"],
             "markdown.link": "underline " + colours["fg-warn"],
+            # Rich wraps hyperlinked urls in `markdown.link_url`, not
+            # `markdown.link`; without this the visible url stays body-coloured.
+            "markdown.link_url": "underline " + colours["fg-warn"],
             # The table patch below reads this for the alternate row fill.
             "mdreader.table.zebra": "on " + colours["bg-stripe"],
         }
@@ -384,6 +388,11 @@ def segment_pair(style, colours):
               or fg == colours["fg-muted"].lower())
 
     if bg or fg in (surface, zebra):
+        # The border test runs before the header test: contrast-dark's
+        # border-fg is its fg-accent, which the header set also contains, so
+        # the header test would otherwise swallow the frame-coloured borders.
+        if fg == colours["border-fg"].lower() and fg != colours["fg"].lower():
+            return 10  # table borders: the frame colour on the surface fill
         if fg in header:
             return 9   # table header: accent on the surface fill
         if bg == zebra and zebra != surface:
@@ -410,12 +419,12 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
         width=max(10, width), force_terminal=True, color_system="256", theme=rich_theme
     )
 
-    # Pre-process links: Convert [name](url) to just the raw url
-    # We use regex to find standard markdown links and replace them with the raw URL.
-    # This ensures that Rich doesn't try to hide the URL behind an obscure hyperlink protocol,
-    # making it directly clickable in most modern terminals, and also solves table alignment
-    # since the text length directly matches the visible URL.
-    processed_content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\2", raw_content)
+    # Pre-process links: keep the raw url as the *link text*, so the visible
+    # string stays the clickable URL (the reason for the rewrite) while Rich
+    # still applies the link styles - both `markdown.link` (the text) and
+    # `markdown.link_url` (the hyperlinked url Rich emits) paint the warn
+    # colour, so the reader shows links as links instead of plain body text.
+    processed_content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"[\2](\2)", raw_content)
 
     # Disable justify to prevent table columns from drifting
     md = Markdown(processed_content, justify="left")
@@ -488,6 +497,12 @@ def initial_theme_mode():
 
 def render_reader(stdscr, filepath, raw_content, cap=None):
     """Main TUI loop handling viewport rendering, input events, file switching, and status bar."""
+    # curses needs colour mode before use_default_colors() and the pair table:
+    # without this the reader aborts on the first call under ncurses/PDCurses.
+    try:
+        curses.start_color()
+    except curses.error:
+        pass
     curses.use_default_colors()
     curses.curs_set(0)
     stdscr.keypad(True)

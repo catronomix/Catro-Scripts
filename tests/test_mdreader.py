@@ -364,5 +364,101 @@ class MdreaderPreflightTests(unittest.TestCase):
         self.assertNotIn("shell=True", source)
 
 
+class MdreaderColourMappingTests(unittest.TestCase):
+    """Task 0041 batch C: what the reader paints, pinned against the palette.
+
+    Each case mirrors a mismatch the 100x30 pty capture proved and fixed: the
+    reader must enter colour mode before asking for default colours, links must
+    carry the warn pair (Rich styles the visible url through `link_url`, not
+    `link`) and table borders must carry the frame colour on the surface fill.
+    """
+
+    def test_start_color_precedes_use_default_colors(self):
+        """Curses refuses use_default_colors() until start_color() ran."""
+        order = []
+
+        class _OrderCurses:
+            error = _FakeCursesError
+
+            def start_color(self):
+                order.append("start_color")
+
+            def use_default_colors(self):
+                if "start_color" not in order:
+                    raise _FakeCursesError("must call start_color() first")
+                order.append("use_default_colors")
+
+            def curs_set(self, _visibility):
+                order.append("curs_set")
+
+        stdscr = mock.Mock()
+        stdscr.keypad.side_effect = KeyboardInterrupt
+        with mock.patch.object(mdreader, "curses", _OrderCurses()), \
+                mock.patch.object(mdreader, "init_theme_colors"), \
+                mock.patch.object(mdreader, "get_directory_md_files",
+                                  return_value=(os.getcwd(), [])):
+            with self.assertRaises(KeyboardInterrupt):
+                mdreader.render_reader(stdscr, "doc.md", "# hi\n")
+        self.assertEqual(order[:2], ["start_color", "use_default_colors"])
+
+    def test_links_carry_the_warn_pair_and_underline(self):
+        """The rewritten visible url still gets the link pair in every mode."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode in range(len(mdreader.THEME_MODES)):
+            with self.subTest(mode=mode):
+                doc = mdreader.process_markdown_rich(
+                    "[site](https://example.com)", 60, mode)
+                links = [seg for line in doc for seg in line.segments
+                         if "example.com" in seg.text]
+                self.assertTrue(links, "the visible url must stay in the text")
+                for seg in links:
+                    self.assertEqual(seg.color, 3)
+                    self.assertTrue(seg.attr & mdreader.curses.A_UNDERLINE)
+
+    def test_rich_theme_styles_the_hyperlinked_url(self):
+        """Rich paints the url itself with `markdown.link_url`."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode, theme_id in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme_id)
+            style = mdreader.get_rich_theme(mode).styles["markdown.link_url"]
+            with self.subTest(mode=mode):
+                self.assertIn(colours["fg-warn"].lower(), str(style.color))
+
+    def test_table_borders_take_the_border_pair(self):
+        """Soft/contrast-dark paint borders on the surface with the frame colour.
+
+        contrast-light's border-fg *is* its fg, so there the border is pair 4 like
+        any surface text (same colour, hence visually identical).
+        """
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode, theme_id in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme_id)
+            expected = (
+                4 if colours["border-fg"].lower() == colours["fg"].lower()
+                else 10
+            )
+            with self.subTest(mode=mode):
+                doc = mdreader.process_markdown_rich(
+                    "| aa | bb |\n|----|----|\n| 11 | 22 |\n", 40, mode)
+                # Rich picks ASCII or box-drawing glyphs by terminal, so match
+                # any segment made only of border characters.
+                glyphs = set("|+-│┌┐└┘├┤┬┴┼─")
+                borders = {
+                    seg.color for line in doc for seg in line.segments
+                    if seg.text and set(seg.text) <= glyphs
+                }
+                self.assertEqual(borders, {expected})
+
+    def test_border_role_is_its_own_pair(self):
+        """Pair 10 is border-fg on bg-inside, so the pair table explains it."""
+        roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
+        self.assertEqual(roles[10], ("border-fg", "bg-inside"))
+        self.assertEqual(len(roles), len(mdreader.PAIR_ROLES),
+                         "pair numbers must stay unique")
+
+
 if __name__ == "__main__":
     unittest.main()
