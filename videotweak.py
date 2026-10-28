@@ -378,8 +378,7 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 	result = subprocess.run(cmd, capture_output=True, text=True)
 	
 	if result.returncode == 0:
-		print(tui.panel(None, [tui.status(
-			"ok", f"Saved to {output_path}", cap=cap)], cap=cap))
+		print(tui.status_panel([("ok", f"Saved to {output_path}")], cap=cap))
 	else:
 		print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
 

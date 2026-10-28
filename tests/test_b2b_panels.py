@@ -237,6 +237,33 @@ class ImageResizerResultPanelTest(unittest.TestCase):
 		self.assertIn("\n[ok] Resizing complete. Resized images are in: ", out)
 		no_frame(self, out)
 
+	def test_a_long_output_path_wraps_instead_of_truncating(self):
+		"""The result path is the payload: it must not become `C:/Users/..`."""
+		import image_resizer
+
+		with _TemporaryCwd(self) as folder:
+			deep = (folder.path / "first-very-long-directory-name"
+					/ "second-very-long-directory-name" / "resized")
+			deep.mkdir(parents=True)
+			os.chdir(deep)
+			(deep / "a.png").write_text("x", encoding="utf-8")
+			with mock.patch.object(tui, "ask_int", return_value=64), \
+					mock.patch.object(tui, "ask_choice", return_value=0), \
+					mock.patch.object(image_resizer, "Image",
+									  mock.Mock(NEAREST=0, BILINEAR=1,
+												BICUBIC=2, LANCZOS=3)), \
+					mock.patch.object(image_resizer, "resize_and_fit_image",
+									  return_value=True):
+				out = capture(
+					lambda cap: image_resizer.resize_images_in_folder(cap),
+					TTY_TRUE)
+		plain = tui.strip_ansi(out)
+		for glyph in BOX_GLYPHS:
+			plain = plain.replace(glyph, "")
+		self.assertIn(str(deep.resolve()).replace(os.sep, "/"),
+					  "".join(plain.split()).replace("\\", "/"))
+		self.assertNotIn("..", plain)
+
 
 # --- installdeps -------------------------------------------------------------
 

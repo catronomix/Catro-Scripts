@@ -324,9 +324,8 @@ class venvreplicator:
         ]
         with open("venv_info.txt", "w", encoding='utf-8') as f:
             f.write("\n".join(report) + "\n")
-        print(tui.panel(None, [tui.status(
-            "ok", "VENV information saved to: venv_info.txt", cap=cap)],
-            cap=cap))
+        print(tui.status_panel([
+            ("ok", "VENV information saved to: venv_info.txt")], cap=cap))
 
     def generate_restore_script(self, output_path="recreate_venv.py"):
         cap = self.cap
@@ -471,9 +470,9 @@ if __name__ == "__main__":
 '''
         with open(output_path, "w", encoding='utf-8') as f:
             f.write(script_template.strip())
-        print(tui.panel(None, [tui.status(
-            "ok", "Restoration script generated: {}".format(output_path),
-            cap=cap)], cap=cap))
+        print(tui.status_panel([
+            ("ok", "Restoration script generated: {}".format(output_path))],
+            cap=cap))
 
 if __name__ == "__main__":
     tui.init_ansi()
