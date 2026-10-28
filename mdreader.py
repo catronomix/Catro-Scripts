@@ -82,8 +82,11 @@ if _orig_table_console is not None:
                 "on {}".format(_colour_name(cell.bgcolor)),
                 "on {}".format(_colour_name(zebra.bgcolor)),
             ]
+            # The border carries the theme's own ground (`border-bg`), so a
+            # table frame reads like a panel frame instead of borrowing the
+            # cell fill.
             kwargs["border_style"] = "{} on {}".format(
-                _colour_name(border.color), _colour_name(cell.bgcolor)
+                _colour_name(border.color), _colour_name(border.bgcolor)
             )
             kwargs["header_style"] = "bold {} on {}".format(
                 _colour_name(header.color), _colour_name(cell.bgcolor)
@@ -157,27 +160,29 @@ THEME_MODES = ("soft", "contrast-light", "contrast-dark")
 # color_pair(); because the roles are semantic, switching mode recolours the
 # content and the frame together.
 PAIR_ROLES = (
-    (1, "fg", "bg"),              # body text
-    (2, "header-fg", "bg"),       # headings, bullets, numbers
-    (3, "fg-warn", "bg"),         # links and secondary emphasis
-    (4, "fg", "bg-inside"),       # code spans, table cells
-    (5, "fg-muted", "bg"),        # dimmed text
-    (6, "header-fg", "bg-inside"),  # status bar
-    (7, "fg", "bg-stripe"),       # shortcut bar, alternate table row
-    (8, "border-fg", "bg"),       # window frame
-    (9, "header-fg", "bg-inside"),  # table header row
-    (10, "border-fg", "bg-inside"),  # table borders on the surface fill
+    (1, "fg", "bg"),                              # body text
+    (2, "button-bg-active", "bg"),                # headings, bullets, numbers
+    (3, "fg-warn", "bg"),                         # links and secondary emphasis
+    (4, "fg", "bg-inside"),                       # table cells
+    (5, "fg-muted", "bg"),                        # dimmed text
+    (6, "border-bg", "border-fg"),                # status line, scroll thumb
+    (7, "fg", "bg-stripe"),                       # shortcut bar, alternate row
+    (8, "border-fg", "border-bg"),                # window frame band
+    (9, "button-bg-active", "bg-inside"),         # table header row
+    (10, "border-fg", "border-bg"),               # table borders
+    (11, "fg-accent", "bg-inside"),               # code spans and fenced code
 )
 
 # The full-screen furniture of the reader, named instead of numbered so the
 # frame and the bars cannot drift away from the palette roles: the window is
-# painted `bg`, the frame `border-fg`, and the header/footer bars sit on
-# `bg-inside` and `bg-stripe` exactly like a chrome.header/field page.
+# painted `bg`, the frame glyphs `border-fg` on the `border-bg` band, the
+# status line/thumb read as a chip (`border-bg` ink on a `border-fg` band) and
+# the shortcut bar stays `fg` on `bg-stripe`, exactly like a chrome page.
 CHROME_PAIRS = {
     "window": 1,     # fg on bg: the whole-screen background fill
-    "frame": 8,      # border-fg on bg: viewport frame and scroll track
-    "thumb": 6,      # header-fg on bg-inside: scroll thumb, like the status bar
-    "status": 6,     # header-fg on bg-inside: status bar
+    "frame": 8,      # border-fg on border-bg: viewport frame and scroll track
+    "thumb": 6,      # border-bg on border-fg: scroll thumb, like the status bar
+    "status": 6,     # border-bg on border-fg: the info line above the bar
     "shortcuts": 7,  # fg on bg-stripe: shortcut bar
 }
 
@@ -295,22 +300,29 @@ def init_theme_colors(theme_mode=0, cap=None):
 def get_rich_theme(theme_mode=0):
     """Generates a custom Rich Theme from the shared palette of the active mode."""
     colours = tui.palette.palette(theme_id(theme_mode))
+    heading = "bold " + colours["button-bg-active"]
     return Theme(
         {
-            "markdown.h1": "bold " + colours["header-fg"],
-            "markdown.h2": "bold " + colours["fg-warn"],
-            "markdown.h3": "bold " + colours["header-fg"],
+            "markdown.h1": heading,
+            "markdown.h2": heading,
+            "markdown.h3": heading,
             "markdown.h4": "bold " + colours["fg-muted"],
-            "markdown.code": colours["fg"] + " on " + colours["bg-inside"],
-            "markdown.code_block": colours["fg"] + " on " + colours["bg-inside"],
+            # Code was the text that never followed the theme (Rich used to
+            # paint it with a fixed green); it now takes the accent ink on the
+            # surface fill.
+            "markdown.code": (colours["fg-accent"] + " on "
+                              + colours["bg-inside"]),
+            "markdown.code_block": (colours["fg-accent"] + " on "
+                                    + colours["bg-inside"]),
             "markdown.block_quote": colours["fg-muted"] + " italic",
-            "markdown.item.bullet": "bold " + colours["header-fg"],
-            "markdown.item.number": "bold " + colours["header-fg"],
+            "markdown.item.bullet": heading,
+            "markdown.item.number": heading,
             "markdown.hr": colours["fg-muted"],
-            "markdown.table.header": ("bold " + colours["header-fg"] + " on "
-                                      + colours["bg-inside"]),
+            "markdown.table.header": ("bold " + colours["button-bg-active"]
+                                      + " on " + colours["bg-inside"]),
             "markdown.table.cell": colours["fg"] + " on " + colours["bg-inside"],
-            "markdown.table.border": colours["border-fg"],
+            "markdown.table.border": (colours["border-fg"] + " on "
+                                      + colours["border-bg"]),
             "markdown.link": "underline " + colours["fg-warn"],
             # Rich wraps hyperlinked urls in `markdown.link_url`, not
             # `markdown.link`; without this the visible url stays body-coloured.
@@ -372,8 +384,8 @@ def segment_pair(style, colours):
     """Curses pair number for a Rich segment style, chosen by palette role.
 
     Roles come from `colours`, so the same classification works in all three
-    modes: body text, heading/accent, warn, code/table cell, muted and the
-    zebra row.
+    modes: body text, headings, links, code/table cell, muted and the zebra
+    row.
     """
     if style is None:
         return 1
@@ -382,29 +394,39 @@ def segment_pair(style, colours):
     bg = _colour_name(style.bgcolor)
     surface = colours["bg-inside"].lower()
     zebra = colours["bg-stripe"].lower()
-    header = {colours["header-fg"].lower(), colours["fg-accent"].lower()}
-    warn = colours["fg-warn"].lower()
-    is_dim = (bool(style.dim) or "gray" in fg or "grey" in fg
-              or fg == colours["fg-muted"].lower())
+    heading = colours["button-bg-active"].lower()
+    link = colours["fg-warn"].lower()
+    muted = colours["fg-muted"].lower()
+    is_dim = bool(style.dim) or fg == muted
 
     if bg or fg in (surface, zebra):
-        # The border test runs before the header test: contrast-dark's
-        # border-fg is its fg-accent, which the header set also contains, so
-        # the header test would otherwise swallow the frame-coloured borders.
+        # The border test runs before the accent test: contrast-dark's
+        # border-fg is its button-bg-active on the same ground, so the accent
+        # test would otherwise swallow the frame-coloured borders. The cost is
+        # that contrast-dark classifies a table header as a border too; the
+        # two roles are the same pixels there.
         if fg == colours["border-fg"].lower() and fg != colours["fg"].lower():
-            return 10  # table borders: the frame colour on the surface fill
-        if fg in header:
-            return 9   # table header: accent on the surface fill
+            return 10  # table borders: the frame colour on the border ground
+        if fg == heading:
+            return 9   # table header: the heading ink on the surface fill
+        if fg == colours["fg-accent"].lower():
+            return 11  # inline code: the accent ink on the surface fill
+        if bg not in (surface, zebra):
+            # Rich paints fenced code with its own syntax theme (monokai's
+            # fixed greens and blues) on its own ground. That foreign ink is
+            # exactly what "always dark green" meant, so the whole block takes
+            # the code pair instead of leaking the syntax palette.
+            return 11
         if bg == zebra and zebra != surface:
             return 7   # alternate table row: body text on the zebra fill
-        return 4       # code spans and themed table chrome on the surface fill
+        return 4       # table cells on the surface fill
     if fg:
-        # In contrast-dark `header` and `warn` are the same yellow; links are
-        # the underlined ones, so they keep their own pair.
-        if fg in header and not (style.underline and fg == warn):
-            return 2
-        if fg == warn:
-            return 3
+        if style.underline and fg == link:
+            return 3   # links: the warn ink, underlined
+        if fg == heading:
+            return 2   # headings, bullets and numbers
+        if fg == link:
+            return 3   # secondary emphasis keeps the warn ink
         if is_dim:
             return 5
         return 1
