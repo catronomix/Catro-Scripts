@@ -313,7 +313,12 @@ class TsExportResultPanelTest(unittest.TestCase):
 		with _TemporaryCwd(self) as folder:
 			bin_dir = folder.path / "node_modules" / ".bin"
 			bin_dir.mkdir(parents=True)
+			# The compiler probe looks for `tsc.cmd` on Windows and a bare
+			# `tsc` elsewhere, so place both: the clean-compile branch must be
+			# the one under test on every platform (the container images have
+			# neither npm installed nor the Windows shim).
 			(bin_dir / "tsc.cmd").write_text("", encoding="utf-8")
+			(bin_dir / "tsc").write_text("", encoding="utf-8")
 			(folder.path / "tsconfig.json").write_text("{}", encoding="utf-8")
 			(folder.path / "index.html").write_text(
 				'<script type="module" src="./main.ts"></script>',
@@ -340,6 +345,11 @@ class TsExportResultPanelTest(unittest.TestCase):
 
 	def test_plain_bytes_are_the_pre_sweep_bytes(self):
 		out = capture(self.render, PIPE)
+		# Pin the clean-compile path itself: the panel is only drawn after the
+		# local compiler is found, so a missing-binary run must not satisfy the
+		# byte pin instead of the panel under test.
+		self.assertIn("esbuild not found, falling back to standard tsc...\n"
+					  "[ok] Compiled JavaScript successfully.\n", out)
 		self.assertTrue(out.endswith(
 			"Copying styles and assets...\n"
 			"[ok] Processed index.html for local loading.\n"
