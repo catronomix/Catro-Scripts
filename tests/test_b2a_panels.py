@@ -247,5 +247,54 @@ class NoBareInputTest(unittest.TestCase):
 								 "{} still calls input() directly".format(name))
 
 
+class _Stream:
+	"""Minimal keygen page target: write/flush plus the `Screen` paint calls."""
+
+	def __init__(self):
+		self.text = ""
+
+	def write(self, value):
+		self.text += value
+
+	def flush(self):
+		pass
+
+	def clear(self):
+		self.text = ""
+
+	def fill(self):
+		self.text = ""
+
+	def getvalue(self):
+		return self.text
+
+
+class KeygenDetailsPanelTest(unittest.TestCase):
+	"""`keygen.show_key` boxes its facts block, next to the key panel."""
+
+	def render(self, cap):
+		import keygen
+
+		stream = _Stream()
+		with mock.patch.object(keygen, "read_key", return_value="q"):
+			keygen.show_key(stream, cap, 0, 8)
+		return stream.getvalue()
+
+	def test_true_colour_draws_both_panels(self):
+		out = self.render(TTY_TRUE)
+		self.assertEqual(2, out.count(FRAME), out)
+		self.assertIn("Key details", tui.strip_ansi(out), out)
+		self.assertIn("Algorithm", tui.strip_ansi(out), out)
+		self.assertIn("\x1b[38;2;", out)
+
+	def test_level_16_and_none_degrade_cleanly(self):
+		out16 = self.render(TTY_16)
+		self.assertEqual(2, out16.count(FRAME))
+		self.assertNotIn("38;2;", out16)
+		out = self.render(TTY_NONE)
+		self.assertEqual(2, out.count(FRAME), out)
+		self.assertNotIn("\x1b", out)
+
+
 if __name__ == "__main__":
 	unittest.main()
