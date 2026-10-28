@@ -47,7 +47,7 @@ if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
 import tui  # noqa: E402  (import after sys.path setup)
-from support import module_isolation  # noqa: E402  (test helper, not production)
+from support import allow_repo_writes, module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
 
@@ -172,12 +172,16 @@ def regenerate():
 	EXPECTED.mkdir(parents=True, exist_ok=True)
 	with tempfile.TemporaryDirectory(prefix="list-golden-") as temp:
 		script_dir = materialise(temp)
-		for name, environ in CASES.items():
-			text = render(environ, script_dir)
-			with open(EXPECTED / name, "w", encoding="utf-8",
-					  newline="\n") as handle:
-				handle.write(text)
-			print("wrote", EXPECTED / name)
+		# The suite guard refuses writes inside the checkout; regenerating the
+		# committed fixtures is the one deliberate exception, and it is scoped
+		# to `expected/` alone.
+		with allow_repo_writes(EXPECTED):
+			for name, environ in CASES.items():
+				text = render(environ, script_dir)
+				with open(EXPECTED / name, "w", encoding="utf-8",
+						  newline="\n") as handle:
+					handle.write(text)
+				print("wrote", EXPECTED / name)
 
 
 if __name__ == "__main__":

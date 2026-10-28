@@ -11,22 +11,34 @@ layout tests fail for a reason that has nothing to do with the code.
 Build child environments through `clean_env()`; the names below are the ones a
 shell can set that change colour, theme or glyph decisions.
 
+Test seams: assign `THEME_FILE` / `THEMES_DIR` / `CONFIG_FILE` to redirect reads
+and writes (tests never touch the repository); `None` restores the project
+folder. `isolate_checkout_config()` redirects all three at a seeded temp
+checkout, so a palette test reads the shipped documents without pointing a
+write seam at the checkout.
+
 The checkout itself is another environment input: `tui.config` and
 `tui.theme_engine` read `config.ini`/`theme.ini` from the project folder, so an
 operator who selects contrast-light there would change the bytes every default
-look test pins. `isolate_checkout_config()` redirects those two seams at empty
-files in a temp folder for the duration of a test module, so the suite describes
-the code, not the checkout.
+look test pins. `install_repo_write_guard()` is the net under that:
+`tests/conftest.py` installs it for the whole pytest run, so any write a test
+funnels into the checkout - through a seam left at `None` or through a raw
+`Path.write_text`/`open(..., "w")` - raises `AssertionError` naming the target
+instead of changing the working tree. Plain `unittest` runs install the same
+guard with `install_test_guard()`.
 
 `SgrTerminal`/`replay()`/`repaint_errors()` are the repaint oracle: they replay
 a canvas frame through an independent SGR state machine, so a regression can
 assert each cell's *effective* style instead of the bytes a painter emitted.
 """
 
+import contextlib
+import hashlib
 import os
 import re
 import shutil
 import tempfile
+import unittest
 from pathlib import Path
 
 SCRUBBED = (
@@ -43,28 +55,45 @@ def clean_env(**overrides):
 	return env
 
 
-def isolate_checkout_config():
-	"""Point the checkout config seams at empty files in a temp folder.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
-	`tui.config.CONFIG_FILE` and `tui.theme_engine.THEME_FILE` are the supported
-	test seams (see their module docstrings); the built-in theme documents are
-	left alone, so palette/table tests keep reading the shipped themes. Returns
-	a callable that puts the previous seam values back and removes the temp
-	folder, so a module can restore the developer's checkout in tearDown.
+
+def isolate_checkout_config():
+	"""Point all three checkout seams at a seeded temp folder; returns restore.
+
+	`tui.config.CONFIG_FILE`, `tui.theme_engine.THEME_FILE` and
+	`theme_engine.THEMES_DIR` are the supported seams (see their docstrings).
+	The temp folder gets copies of the shipped `themes/*.json`, so palette tests
+	keep reading the same documents while nothing can reach the checkout. The
+	returned callable is idempotent, so module cleanups may call it twice.
 	"""
 	from tui import config, theme_engine
 
-	previous = (config.CONFIG_FILE, theme_engine.THEME_FILE)
+	previous = (config.CONFIG_FILE, theme_engine.THEME_FILE,
+				theme_engine.THEMES_DIR)
 	directory = tempfile.mkdtemp(prefix="catro-config-")
-	config.CONFIG_FILE = Path(directory) / "config.ini"
-	theme_engine.THEME_FILE = Path(directory) / "theme.ini"
-	theme_engine._CACHE.clear()
+	themes = Path(directory) / "themes"
+	themes.mkdir()
+	for source in sorted((REPO_ROOT / "themes").glob("*.json")):
+		shutil.copyfile(source, themes / source.name)
 
 	def restore():
-		config.CONFIG_FILE, theme_engine.THEME_FILE = previous
+		if state.pop("done", None):
+			return
+		(config.CONFIG_FILE, theme_engine.THEME_FILE,
+		 theme_engine.THEMES_DIR) = previous
 		theme_engine._CACHE.clear()
 		shutil.rmtree(directory, ignore_errors=True)
 
+	state = {}
+	try:
+		config.CONFIG_FILE = Path(directory) / "config.ini"
+		theme_engine.THEME_FILE = Path(directory) / "theme.ini"
+		theme_engine.THEMES_DIR = themes
+		theme_engine._CACHE.clear()
+	except BaseException:
+		restore()  # a half-applied seam is worse than none
+		raise
 	return restore
 
 
@@ -73,7 +102,11 @@ def module_isolation():
 	state = {}
 
 	def setUpModule():
-		state["restore"] = isolate_checkout_config()
+		restore = isolate_checkout_config()
+		state["restore"] = restore
+		# Module cleanups run even if this hook raises, so a broken isolation
+		# cannot leak a repo-pointing or deleted-temp seam into the next module.
+		unittest.addModuleCleanup(restore)
 
 	def tearDownModule():
 		restore = state.pop("restore", None)
@@ -81,6 +114,158 @@ def module_isolation():
 			restore()
 
 	return setUpModule, tearDownModule
+
+
+# -- repository write guard ---------------------------------------------------
+#
+# Issue #39: THEMES_DIR / THEME_FILE / CONFIG_FILE default to None, which means
+# the tracked checkout, and tests write through whatever path they resolve to.
+# A leaked seam therefore writes themes/*.json, theme.ini or config.ini into the
+# developer's tree. The guard makes that impossible inside the test process:
+# every writer a test can reach checks its resolved target and raises
+# AssertionError naming it. Production runs never install it, so a real
+# `cs theme ...` still writes the project's own files.
+
+# Tool-managed caches are not checkout content: pytest and the import system
+# write them during any run. Everything else inside the repository is refused
+# unless a scoped `allow_repo_writes()` says otherwise.
+CACHE_DIRS = ("__pycache__", ".pytest_cache", ".git")
+
+_ALLOWED = []
+_UNINSTALL = None
+
+
+class RepositoryWriteError(AssertionError):
+	"""A test process tried to write inside the checkout."""
+
+
+def _is_write_mode(mode):
+	return any(flag in str(mode) for flag in "wax+")
+
+
+def check_repo_write(target):
+	"""Raise unless `target` may be written: temp paths and cache dirs only."""
+	try:
+		resolved = Path(os.fsdecode(target)).resolve()
+		relative = resolved.relative_to(REPO_ROOT)
+	except (TypeError, ValueError, OSError):
+		return target
+	allowed = (relative.parts and relative.parts[0] in CACHE_DIRS) or any(
+		prefix == Path(".") or relative == prefix or prefix in relative.parents
+		for prefix in _ALLOWED)
+	if not allowed:
+		raise RepositoryWriteError(
+			"the test process must not write the checkout: {}".format(resolved))
+	return target
+
+
+@contextlib.contextmanager
+def allow_repo_writes(path):
+	"""Permit writes under one checkout subtree (fixture regeneration only)."""
+	resolved = Path(path).resolve()
+	_ALLOWED.append(resolved.relative_to(REPO_ROOT))
+	try:
+		yield
+	finally:
+		_ALLOWED.pop()
+
+
+def install_repo_write_guard():
+	"""Refuse in-process writes into the checkout; returns the uninstall."""
+	global _UNINSTALL
+	if _UNINSTALL is not None:
+		return _UNINSTALL
+	import builtins
+	import pathlib
+
+	from tui import theme_engine
+
+	# `Path.write_text`/`write_bytes` go through `self.open`, so wrapping these
+	# three entry points covers every writer the suite uses, including the
+	# engine's atomic save and `config.set`.
+	saved = (builtins.open, pathlib.Path.open, theme_engine._atomic_write)
+
+	def open_hook(file, mode="r", *args, **kwargs):
+		if _is_write_mode(mode):
+			check_repo_write(file)
+		return saved[0](file, mode, *args, **kwargs)
+
+	def path_open_hook(self, mode="r", *args, **kwargs):
+		if _is_write_mode(mode):
+			check_repo_write(self)
+		return saved[1](self, mode, *args, **kwargs)
+
+	def atomic_hook(target, text, make_dir=False):
+		check_repo_write(target)
+		return saved[2](target, text, make_dir)
+
+	def uninstall():
+		global _UNINSTALL
+		if _UNINSTALL is None:
+			return
+		_UNINSTALL = None
+		builtins.open, pathlib.Path.open, theme_engine._atomic_write = saved
+
+	builtins.open, pathlib.Path.open, theme_engine._atomic_write = (
+		open_hook, path_open_hook, atomic_hook)
+	_UNINSTALL = uninstall
+	return uninstall
+
+
+def guard_installed():
+	"""True while `install_repo_write_guard()` is in force."""
+	return _UNINSTALL is not None
+
+
+# Checkout data the suite must leave as found: theme documents, the two
+# per-checkout selection/config files and every committed fixture.
+GUARDED_GLOBS = ("themes/*.json", "theme.ini", "config.ini",
+				 "tests/fixtures/*", "tests/fixtures/**/*")
+
+
+def snapshot_checkout(root=None):
+	"""{path: (sha256, mtime_ns)} for the checkout data files.
+
+	Absent `theme.ini`/`config.ini` are recorded as `None`, so creating one is a
+	change too. `root` lets the checker itself be tested on a temp tree.
+	"""
+	root = Path(root) if root is not None else REPO_ROOT
+	state = {name: None for name in ("theme.ini", "config.ini")}
+	for pattern in GUARDED_GLOBS:
+		for entry in root.glob(pattern):
+			if entry.is_file():
+				state[entry.relative_to(root).as_posix()] = (
+					hashlib.sha256(entry.read_bytes()).hexdigest(),
+					entry.stat().st_mtime_ns)
+	return state
+
+
+def assert_checkout_unchanged(before, root=None):
+	"""Raise listing every checkout data file that is not as it was found."""
+	after = snapshot_checkout(root)
+	changed = sorted(name for name in set(before) | set(after)
+					 if before.get(name) != after.get(name))
+	if changed:
+		raise AssertionError(
+			"the suite changed the checkout: {}".format(", ".join(changed)))
+	return after
+
+
+def install_test_guard():
+	"""Guard + as-found check for plain `unittest` runs (`check()` last).
+
+	`python -m unittest` has no session hook, so a module run that way installs
+	this in `setUpModule` and calls `check()` in `tearDownModule`; pytest users
+	get it from `tests/conftest.py`.
+	"""
+	before = snapshot_checkout()
+	uninstall = install_repo_write_guard()
+
+	def check():
+		uninstall()
+		assert_checkout_unchanged(before)
+
+	return check
 
 
 # -- repaint oracle -----------------------------------------------------------

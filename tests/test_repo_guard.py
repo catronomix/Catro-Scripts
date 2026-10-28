@@ -26,6 +26,7 @@ suite-wide rather than pytest-function-only.
 """
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -69,6 +70,30 @@ class GuardInstallationTests(unittest.TestCase):
 			self.assertTrue(target.is_file())
 			with open(target, "w", encoding="utf-8") as handle:
 				handle.write("{}\n")
+
+
+class PlainUnittestPathTests(unittest.TestCase):
+	"""`python -m unittest` has no conftest: the installer must stand alone."""
+
+	def test_install_test_guard_guards_a_process_without_pytest(self):
+		script = "\n".join([
+			"import sys",
+			"sys.path[:0] = [{!r}, {!r}]".format(str(TESTS), str(REPO)),
+			"import support",
+			"from pathlib import Path",
+			"target = Path({!r}) / 'themes' / 'cozypurple.json'".format(str(REPO)),
+			"check = support.install_test_guard()",
+			"try:",
+			"    target.write_text('{}', encoding='utf-8')",
+			"except AssertionError as exc:",
+			"    assert 'cozypurple.json' in str(exc), exc",
+			"else:",
+			"    raise SystemExit('the guard did not fire')",
+			"check()",
+		])
+		done = subprocess.run([sys.executable, "-c", script], cwd=str(REPO),
+							  capture_output=True, text=True, timeout=60)
+		self.assertEqual(done.returncode, 0, done.stderr)
 
 
 class LeakedSeamTests(unittest.TestCase):

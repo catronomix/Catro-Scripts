@@ -90,10 +90,19 @@ class ShippedDocumentTests(SeamCase):
 		self.assertEqual(list(document["properties"])[-1], "corner-char")
 		self.assertNotIn("selection_style", document["properties"])
 
-	def test_the_shipped_file_round_trips_byte_identically(self):
+	def test_the_shipped_file_round_trips_ignoring_line_endings(self):
+		"""A canonical save reproduces the shipped document byte for byte.
+
+		The writer always emits LF; the working-tree copy is CRLF on Windows
+		(`text=auto` plus `core.eol=native`) while the committed blob is LF.
+		Only line endings may differ, so both sides are normalised first - a
+		structural difference still fails, a checkout EOL difference does not.
+		"""
 		path = theme_engine.save_theme(theme_engine.load_theme("cozypurple"),
 									   overwrite=True)
-		self.assertEqual(Path(path).read_bytes(), SHIPPED.read_bytes())
+		written = Path(path).read_bytes().replace(b"\r\n", b"\n")
+		shipped = SHIPPED.read_bytes().replace(b"\r\n", b"\n")
+		self.assertEqual(written, shipped)
 
 	def test_load_preserves_the_file_spelling(self):
 		theme_engine.THEMES_DIR = REPO / "themes"
