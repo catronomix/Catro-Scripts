@@ -5,12 +5,14 @@
 The mouse half of `tui.editor`: a press selects the preview, row or Action
 button under the pointer; the wheel scrolls the hovered pane. A second press on
 the same cell is a `double` and opens what the press selected: picker, draft or
-theme (`tui.editor_keys` dispatches both, Load included, and the Load rows live
-in `tui.editor_load_mouse`).
+theme (`tui.editor_keys` dispatches both). The Load rows live in
+`tui.editor_load_mouse` and the wheel's selection/scrollbar model in
+`tui.editor_scroll`; both are re-exported here.
 """
 
 from . import editoractions, editorviews, theme_engine
 from .editor_load_mouse import load_mouse  # noqa: F401  (re-exported seam)
+from .editor_scroll import scroll  # noqa: F401  (re-exported seam)
 from .mouse import DOUBLE
 
 
@@ -55,15 +57,6 @@ def press(editor, x, y):
 			editor.focus, editor.button_index = 2, index
 			return editor._activate()
 	return False
-
-
-def scroll(editor, panel, delta):
-	"""Scroll the Properties (3) or Colours (4) window by `delta` rows."""
-	keys = editorviews.PROPERTY_KEYS if panel == 3 else theme_engine.PALETTE_KEYS
-	visible = editor._visible(panel)
-	attr = "property_offset" if panel == 3 else "colour_offset"
-	offset = getattr(editor, attr)
-	setattr(editor, attr, max(0, min(len(keys) - visible, offset + delta)))
 
 
 def _select_row(editor, panel, y):

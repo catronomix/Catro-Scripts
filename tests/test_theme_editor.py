@@ -292,6 +292,10 @@ class NavigationTests(EditorTestCase):
 		ed = self.make()
 		# Column 2 is inside the Properties panel; the preview band is not.
 		ed.handle("mouse:wheel-down:2:16")
+		ed.handle("mouse:wheel-down:2:16")
+		# The wheel moves the selection; the window follows only when the row
+		# would leave the visible band (5 of 9 rows at 90x24).
+		self.assertGreater(ed.property_index, 0)
 		self.assertGreater(ed.property_offset, 0)
 
 	def test_pagekeys_and_wheel_scroll_the_panel_not_the_document(self):
@@ -314,6 +318,40 @@ class NavigationTests(EditorTestCase):
 		self.assertIsNotNone(ed.edit, "scrolling committed or cancelled the draft")
 		self.assertEqual(ed.document["properties"][key], before)
 		self.assertFalse(ed.dirty)
+
+
+class WheelScrollTests(EditorTestCase):
+	"""Issue #38 item 8: the wheel moves the selection, not a lost offset."""
+
+	def test_wheel_moves_the_colour_selection_and_survives_the_next_paint(self):
+		ed = self.make()  # 90x24: Colours shows 5 of 16 keys
+		ed.handle("tab")  # focus Colours
+		for _ in range(6):
+			ed.handle("mouse:wheel-down:45:16")
+		ed.draw()
+		self.assertGreater(ed.colour_offset, 0)
+		self.assertEqual(ed.colour_index, len(theme_engine.PALETTE_KEYS) - 1)
+		x, y, width, height = ed.rects[4]
+		rows = self.lines(ed)
+		last = theme_engine.PALETTE_KEYS[-1]
+		self.assertTrue(any(last in row[x:x + width]
+							for row in rows[y:y + height]), last)
+
+	def test_wheel_up_at_the_top_keeps_the_property_window_at_zero(self):
+		ed = self.make()
+		ed.handle("mouse:wheel-up:2:16")
+		self.assertEqual((ed.property_index, ed.property_offset), (0, 0))
+
+	def test_an_overflowing_pane_draws_a_marker_on_its_right_edge(self):
+		ed = self.make()
+		ed.draw()
+		rows = self.lines(ed)
+		for panel in (3, 4):
+			x, y, width, height = ed.rects[panel]
+			self.assertGreater(len(ed._rows(panel)), ed._visible(panel))
+			column = [row[x + width - 2]
+					  for row in rows[y + 1:y + height - 1]]
+			self.assertTrue(all(cell != " " for cell in column), panel)
 
 
 class SchemaTwoDocumentTests(EditorTestCase):

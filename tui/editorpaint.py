@@ -17,7 +17,7 @@ All colour comes from `palette.prefix()`/`chrome.status()`, so the editor emits
 no private ANSI; the preview shell itself lives in `tui.editorviews`.
 """
 
-from . import caps, chrome, editorviews, palette, theme_engine, widgets
+from . import caps, chrome, editor_scroll, editorviews, palette, theme_engine, widgets
 from .editor_overlays import (_draw_help, _draw_load, _draw_save,  # noqa: F401
 							  _overlay)
 from .text import pad, truncate
@@ -115,6 +115,7 @@ def _draw_properties(editor, canvas, cap):
 		field.x, field.y = x + 2 + editorviews.PROPERTY_WIDTH, top
 		field.width = max(4, width - editorviews.PROPERTY_WIDTH - 4)
 		field.draw(canvas, focused=focused)
+	editor_scroll.mark_overflow(canvas, editor, 3, cap)
 
 
 def _draw_colours(editor, canvas, cap):
@@ -139,6 +140,8 @@ def _draw_colours(editor, canvas, cap):
 			   or palette.prefix(fg="fg", cap=cap))
 		text = pad(key, editorviews.COLOUR_WIDTH) + " " + str(colours.get(key, ""))
 		canvas.draw_text(x + 5, top, truncate(text, max(1, width - 7)), ink)
+	editor_scroll.mark_overflow(canvas, editor, 4, cap)
+
 
 
 def _draw_actions(editor, canvas, cap):
