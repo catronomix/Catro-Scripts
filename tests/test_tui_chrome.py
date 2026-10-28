@@ -45,6 +45,9 @@ BG = "\033[48;2;27;23;38m"
 SURFACE = "\033[48;2;41;34;56m"
 # bg-inside-active derives from zebra_bg in the shipped look.
 SURFACE_ACTIVE = "\033[48;2;53;43;73m"
+# A box heading is the frame pair inverted: border-fg ground, border-bg ink.
+HEADING_BG = "\033[48;2;163;146;192m"
+HEADING_FG = "\033[38;2;41;34;56m"
 SUCCESS = "\033[38;2;127;209;160m"
 WARN = "\033[38;2;224;159;103m"
 ERROR = "\033[38;2;255;107;107m"
@@ -94,12 +97,12 @@ class HeaderTests(unittest.TestCase):
 		self.assertEqual(lines[0],
 						 HEADER + SURFACE + BOLD + " TITLE" + " " * 18 + RESET)
 		self.assertEqual(lines[1], BORDER + SURFACE + " subtitle" + " " * 15 + RESET)
-		self.assertEqual(lines[2], BORDER + "\u2500" * 24 + RESET)
+		self.assertEqual(lines[2], BORDER + SURFACE + "\u2500" * 24 + RESET)
 
 	def test_without_a_subtitle_there_are_two_lines(self):
 		lines = chrome.header("T", width=10, cap=TRUE).split("\n")
 		self.assertEqual(len(lines), 2)
-		self.assertEqual(lines[1], BORDER + "\u2500" * 10 + RESET)
+		self.assertEqual(lines[1], BORDER + SURFACE + "\u2500" * 10 + RESET)
 
 	def test_ascii_degrades_the_rule_and_keeps_the_surface_bands(self):
 		out = chrome.header("T", width=6, cap=ASCII)
@@ -131,16 +134,18 @@ class HeaderTests(unittest.TestCase):
 
 class RuleTests(unittest.TestCase):
 	def test_true_is_a_border_run(self):
-		self.assertEqual(chrome.rule(7, cap=TRUE), BORDER + "\u2500" * 7 + RESET)
+		self.assertEqual(chrome.rule(7, cap=TRUE),
+						 BORDER + SURFACE + "\u2500" * 7 + RESET)
 
 	def test_default_width_and_custom_char(self):
 		out = chrome.rule(cap=TRUE)
 		self.assertEqual(display_width(strip_ansi(out)), chrome.DEFAULT_RULE_WIDTH)
 		self.assertEqual(chrome.rule(4, char="=", cap=TRUE),
-						 BORDER + "====" + RESET)
+						 BORDER + SURFACE + "====" + RESET)
 
 	def test_ascii_none_and_plain(self):
-		self.assertEqual(chrome.rule(5, cap=ASCII), BORDER + "-----" + RESET)
+		self.assertEqual(chrome.rule(5, cap=ASCII),
+						 BORDER + SURFACE + "-----" + RESET)
 		self.assertEqual(chrome.rule(5, cap=MONO), "\u2500" * 5)
 		self.assertEqual(chrome.rule(5, cap=PIPE), "")
 
@@ -156,7 +161,7 @@ class PanelTests(unittest.TestCase):
 						   theme="soft").split("\n")
 		self.assertEqual(len(lines), 4)
 		self.assertTrue(lines[0].startswith(BORDER + SURFACE + "\u250c\u2500"))
-		self.assertIn(HEADER + SURFACE + BOLD + " Info ", lines[0])
+		self.assertIn(HEADING_FG + HEADING_BG + BOLD + " Info ", lines[0])
 		self.assertTrue(lines[0].endswith("\u2510" + RESET))
 		self.assertIn(SURFACE, lines[1])
 		self.assertIn(" first", strip_ansi(lines[1]))
@@ -176,7 +181,7 @@ class PanelTests(unittest.TestCase):
 							 theme="soft").split("\n")
 		self.assertTrue(lines[0].startswith(
 			BORDER + SURFACE + "\u250c\u2500"), lines[0])
-		self.assertIn(HEADER + SURFACE + BOLD + " T ", lines[0])
+		self.assertIn(HEADING_FG + HEADING_BG + BOLD + " T ", lines[0])
 		self.assertTrue(lines[1].startswith(BORDER + SURFACE + "\u2502"), lines[1])
 		self.assertIn(FG + SURFACE, lines[1])
 		self.assertNotIn(SURFACE_ACTIVE, "\n".join(lines))
@@ -229,7 +234,8 @@ class PanelTests(unittest.TestCase):
 class FieldTests(unittest.TestCase):
 	def test_muted_key_and_fg_value(self):
 		self.assertEqual(chrome.field("key", "value", width=6, cap=TRUE),
-						 BORDER + "key   " + RESET + "  " + FG + "value" + RESET)
+						 BORDER + BG + "key     " + RESET
+						 + FG + BG + "value" + RESET)
 
 	def test_key_column_defaults_to_the_key_width(self):
 		self.assertEqual(strip_ansi(chrome.field("key", "v", cap=TRUE)), "key  v")
@@ -255,10 +261,10 @@ class StatusTests(unittest.TestCase):
 		cases = (("ok", SUCCESS), ("warn", WARN), ("error", ERROR), ("info", HEADER))
 		for kind, colour in cases:
 			out = chrome.status(kind, "text", cap=TRUE)
-			self.assertTrue(out.startswith(colour + BOLD
+			self.assertTrue(out.startswith(colour + BG + BOLD
 										   + chrome.STATUS_MARKERS[kind] + RESET),
 							kind)
-			self.assertIn(FG + "text" + RESET, out)
+			self.assertIn(FG + BG + " text" + RESET, out)
 
 	def test_unknown_kind_degrades_to_info_and_never_raises(self):
 		out = chrome.status("exploded", "text", cap=TRUE)
@@ -512,6 +518,67 @@ class NewTokenTests(unittest.TestCase):
 		self.assertEqual(chrome_panels.frame_roles(True),
 						 ("border-fg-active", "border-bg-active"))
 		self.assertIs(chrome.frame_roles, chrome_panels.frame_roles)
+
+
+class HeadingAndGroundTests(unittest.TestCase):
+	"""Issue 42: page grounds, the box-heading pair and `header_align`."""
+
+	def properties(self, **overrides):
+		values = {"header_align": "left"}
+		values.update(overrides)
+		return values
+
+	def test_rule_field_and_status_carry_a_ground(self):
+		self.assertIn(SURFACE, chrome.rule(5, cap=TRUE, theme="soft"))
+		self.assertIn(BG, chrome.field("k", "v", cap=TRUE, theme="soft"))
+		self.assertIn(BG, chrome.status("ok", "v", cap=TRUE, theme="soft"))
+
+	def test_the_panel_title_is_a_border_pair_heading(self):
+		top = chrome.panel("Info", ["body"], width=16, cap=TRUE,
+						   theme="soft").split("\n")[0]
+		self.assertIn(HEADING_FG + HEADING_BG + BOLD + " Info ", top)
+		self.assertNotIn(HEADER, top)
+
+	def test_the_masthead_keeps_the_header_pair(self):
+		top = chrome.header("T", width=10, cap=TRUE,
+							theme="soft").split("\n")[0]
+		self.assertTrue(top.startswith(HEADER + SURFACE + BOLD), top)
+		self.assertNotIn(HEADING_FG + HEADING_BG, top)
+
+	def test_panel_title_follows_header_align_from_the_given_theme(self):
+		def top(align):
+			with mock.patch.object(palette, "properties",
+								   return_value=self.properties(
+									   header_align=align)) as properties:
+				line = chrome.panel("Info", ["body"], width=20, cap=TRUE,
+									theme="light").split("\n")[0]
+			properties.assert_called_with("light")
+			return line
+
+		left, center, right = top("left"), top("center"), top("right")
+		self.assertLess(strip_ansi(left).index("Info"),
+						strip_ansi(center).index("Info"))
+		self.assertLess(strip_ansi(center).index("Info"),
+						strip_ansi(right).index("Info"))
+		for line in (left, center, right):
+			self.assertEqual(display_width(strip_ansi(line)), 20)
+
+		# The ground is a chip around the label, not a strip from the left
+		# edge: the rule glyphs come first, in the frame pair, and the
+		# heading prefix starts only where the label band begins.
+		for align, line, left_glyphs in (("center", center, 5),
+										 ("right", right, 11)):
+			with self.subTest(align=align):
+				lead = "\u250c" + "\u2500" * (1 + left_glyphs)
+				self.assertTrue(strip_ansi(line).startswith(lead + " Info "),
+								strip_ansi(line))
+				heading = palette.prefix(fg="border-bg", bg="border-fg",
+										 bold=True, cap=TRUE, theme="light")
+				cut = line.index(heading)
+				self.assertEqual(
+					display_width(strip_ansi(line[:cut])),
+					2 + left_glyphs)
+				self.assertEqual(line.count(heading), 1, line)
 
 
 class ButtonTokenTests(unittest.TestCase):

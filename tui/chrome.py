@@ -69,7 +69,7 @@ def header(title, subtitle=None, *, width=None, cap=None, theme=None):
 		if subtitle:
 			lines.append(subtitle)
 		return "\n".join(lines)
-	align = str(palette.properties().get("header_align", "left"))
+	align = str(palette.properties(theme).get("header_align", "left"))
 	inner = _span(width, cap)
 	if inner is None:
 		inner = max(display_width(title), display_width(subtitle or "")) + 2
@@ -92,8 +92,8 @@ def rule(width=None, *, char=None, cap=None, theme=None):
 	span = _span(width, cap)
 	if span is None:
 		span = DEFAULT_RULE_WIDTH
-	return palette.style(glyph * max(1, int(span)), fg="border-fg", cap=cap,
-						 theme=theme)
+	return palette.style(glyph * max(1, int(span)), fg="border-fg",
+						 bg="border-bg", cap=cap, theme=theme)
 
 
 def field(key, value, *, width=None, cap=None, theme=None):
@@ -110,9 +110,9 @@ def field(key, value, *, width=None, cap=None, theme=None):
 	column = max(1, int(width)) if width is not None else display_width(key)
 	if display_width(key) > column:
 		key = _truncate(key, column)
-	return "{}  {}".format(
-		palette.style(pad(key, column), fg="fg-muted", cap=cap, theme=theme),
-		palette.style(value, fg="fg", cap=cap, theme=theme))
+	return (palette.style(pad(key, column) + "  ", fg="fg-muted", bg="bg",
+						  cap=cap, theme=theme)
+			+ palette.style(value, fg="fg", bg="bg", cap=cap, theme=theme))
 
 
 def status(kind, text, *, width=None, cap=None, theme=None):
@@ -132,9 +132,10 @@ def status(kind, text, *, width=None, cap=None, theme=None):
 		return "{} {}".format(marker, text)
 	if width is not None:
 		text = _truncate(text, max(0, int(width) - display_width(marker) - 1))
-	return "{} {}".format(
-		palette.style(marker, fg=colour, bold=True, cap=cap, theme=theme),
-		palette.style(text, fg="fg", cap=cap, theme=theme))
+	return (palette.style(marker, fg=colour, bg="bg", bold=True, cap=cap,
+						  theme=theme)
+			+ palette.style(" " + text, fg="fg", bg="bg", cap=cap,
+							theme=theme))
 
 
 def status_panel(rows, *, width=None, cap=None, theme=None):

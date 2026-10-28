@@ -76,7 +76,8 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 		editorframe.draw(canvas, x, y, width, height, glyphs,
 						 title_label(preview_title(document, look_id), width,
 									 properties),
-						 editorframe.edge(colours, cap))
+						 editorframe.edge(colours, cap),
+						 heading=editorframe.heading(colours, cap))
 		inner_x, inner_y = x + 1, y + 1
 		inner_w, inner_h = width - 2, height - 2
 
