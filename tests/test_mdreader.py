@@ -203,15 +203,16 @@ class MdreaderPreflightTests(unittest.TestCase):
         """Background, frame and both bars come from the shared palette keys.
 
         The reader keeps its own curses renderer, so the gate is the pair map:
-        the window fill is `bg`, the frame `border-fg`, the status bar
-        `header-fg`-on-`bg-inside` and the shortcut bar `fg`-on-`bg-stripe`,
-        which is the vocabulary `tui.chrome` uses for a page.
+        the window fill is `bg`, the frame `border-fg` on the `border-bg` band,
+        the status line/thumb a `border-bg` chip on `border-fg`, and the
+        shortcut bar `fg`-on-`bg-stripe`, which is the vocabulary `tui.chrome`
+        uses for a page.
         """
         expected = {
             "window": ("fg", "bg"),
-            "frame": ("border-fg", "bg"),
-            "thumb": ("header-fg", "bg-inside"),
-            "status": ("header-fg", "bg-inside"),
+            "frame": ("border-fg", "border-bg"),
+            "thumb": ("border-bg", "border-fg"),
+            "status": ("border-bg", "border-fg"),
             "shortcuts": ("fg", "bg-stripe"),
         }
         roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
@@ -225,6 +226,10 @@ class MdreaderPreflightTests(unittest.TestCase):
                 with self.subTest(theme=theme, fg=fg, bg=bg):
                     self.assertIn(fg, colours)
                     self.assertIn(bg, colours)
+            for _pair, fg, bg in mdreader.PAIR_ROLES:
+                with self.subTest(theme=theme, pair=(fg, bg)):
+                    self.assertIn(fg, colours, "every pair is a palette role")
+                    self.assertIn(bg, colours, "every pair is a palette role")
 
     def test_each_mode_paints_its_own_palette(self):
         fake = _FakeCurses()
@@ -246,10 +251,11 @@ class MdreaderPreflightTests(unittest.TestCase):
         for mode, theme in enumerate(mdreader.THEME_MODES):
             colours = mdreader.tui.palette.palette(theme)
             cases = (
-                ("heading", Style(color=colours["header-fg"], bold=True), 2),
+                ("heading", Style(color=colours["button-bg-active"], bold=True),
+                 2),
                 ("link", Style(color=colours["fg-warn"], underline=True), 3),
-                ("code", Style(color=colours["fg"],
-                               bgcolor=colours["bg-inside"]), 4),
+                ("table cell", Style(color=colours["fg"],
+                                     bgcolor=colours["bg-inside"]), 4),
                 ("quote", Style(color=colours["fg-muted"], italic=True), 5),
                 # contrast-light uses the same fill for surface and zebra, so a
                 # zebra row is indistinguishable from a normal cell there.
@@ -257,8 +263,26 @@ class MdreaderPreflightTests(unittest.TestCase):
                                 bgcolor=colours["bg-stripe"]),
                  7 if colours["bg-stripe"].lower() != colours["bg-inside"].lower()
                  else 4),
-                ("table header", Style(color=colours["header-fg"],
-                                       bgcolor=colours["bg-inside"]), 9),
+                ("table header", Style(color=colours["button-bg-active"],
+                                       bgcolor=colours["bg-inside"]),
+                 # contrast-dark's border-fg is its button-bg-active, and both
+                 # grounds are the same hex there, so the border rule claims the
+                 # header cells too; the pixels are identical.
+                 10 if colours["border-fg"].lower()
+                 == colours["button-bg-active"].lower() else 9),
+                # Inline code: the accent ink on the surface fill. Shipped looks
+                # repeat `fg-accent` in `button-bg-active`, so it lands on the
+                # heading/header pair (identical pixels) instead of pair 11.
+                ("inline code", Style(color=colours["fg-accent"],
+                                      bgcolor=colours["bg-inside"]),
+                 10 if colours["border-fg"].lower()
+                 == colours["fg-accent"].lower() != colours["fg"].lower()
+                 else 9 if colours["fg-accent"].lower()
+                 == colours["button-bg-active"].lower() else 11),
+                # Fenced code carries Rich's own syntax theme (monokai's fixed
+                # greens on their own ground); it must take the code pair, not
+                # leak the syntax palette.
+                ("fenced code", Style(color="#a6e22e", bgcolor="#272822"), 11),
             )
             for role, style, expected in cases:
                 with self.subTest(mode=mode, role=role):
@@ -288,15 +312,30 @@ class MdreaderPreflightTests(unittest.TestCase):
         for mode, theme_id in enumerate(mdreader.THEME_MODES):
             colours = mdreader.tui.palette.palette(theme_id)
             styles = mdreader.get_rich_theme(mode).styles
-            for spec, key in (("markdown.h1", "header-fg"),
-                              ("markdown.table.border", "border-fg"),
-                              ("markdown.block_quote", "fg-muted")):
+            for spec, key in (("markdown.h1", "button-bg-active"),
+                              ("markdown.h2", "button-bg-active"),
+                              ("markdown.h3", "button-bg-active"),
+                              ("markdown.h4", "fg-muted"),
+                              ("markdown.item.bullet", "button-bg-active"),
+                              ("markdown.item.number", "button-bg-active"),
+                              ("markdown.table.header", "button-bg-active"),
+                              ("markdown.block_quote", "fg-muted"),
+                              ("markdown.link", "fg-warn"),
+                              ("markdown.link_url", "fg-warn")):
                 with self.subTest(mode=mode, style=spec):
                     self.assertIn(colours[key].lower(), str(styles[spec].color))
-            with self.subTest(mode=mode, style="markdown.code"):
-                self.assertIn(colours["fg"].lower(), str(styles["markdown.code"].color))
-                self.assertIn(colours["bg-inside"].lower(),
-                              str(styles["markdown.code"].bgcolor))
+            for spec in ("markdown.code", "markdown.code_block"):
+                with self.subTest(mode=mode, style=spec):
+                    # Inline and fenced code: the accent ink on the surface
+                    # fill, never the fixed green of Rich's syntax theme.
+                    self.assertIn(colours["fg-accent"].lower(),
+                                  str(styles[spec].color))
+                    self.assertIn(colours["bg-inside"].lower(),
+                                  str(styles[spec].bgcolor))
+            with self.subTest(mode=mode, style="markdown.table.border"):
+                border = styles["markdown.table.border"]
+                self.assertIn(colours["border-fg"].lower(), str(border.color))
+                self.assertIn(colours["border-bg"].lower(), str(border.bgcolor))
             headers.append(str(styles["markdown.h1"].color))
         self.assertEqual(len(set(headers)), 3, "the three modes must differ")
 
@@ -370,7 +409,8 @@ class MdreaderColourMappingTests(unittest.TestCase):
     Each case mirrors a mismatch the 100x30 pty capture proved and fixed: the
     reader must enter colour mode before asking for default colours, links must
     carry the warn pair (Rich styles the visible url through `link_url`, not
-    `link`) and table borders must carry the frame colour on the surface fill.
+    `link`) and table borders must carry the frame colour on the `border-bg`
+    band.
     """
 
     def test_start_color_precedes_use_default_colors(self):
@@ -427,10 +467,11 @@ class MdreaderColourMappingTests(unittest.TestCase):
                 self.assertIn(colours["fg-warn"].lower(), str(style.color))
 
     def test_table_borders_take_the_border_pair(self):
-        """Soft/contrast-dark paint borders on the surface with the frame colour.
+        """Borders sit on the `border-bg` band with the frame colour.
 
-        contrast-light's border-fg *is* its fg, so there the border is pair 4 like
-        any surface text (same colour, hence visually identical).
+        contrast-light's border-fg *is* its fg (and its border-bg is its
+        bg-inside), so there the border is pair 4 like any surface text (same
+        colours, hence visually identical).
         """
         if mdreader.Theme is None:
             self.skipTest("rich is not installed")
@@ -453,9 +494,15 @@ class MdreaderColourMappingTests(unittest.TestCase):
                 self.assertEqual(borders, {expected})
 
     def test_border_role_is_its_own_pair(self):
-        """Pair 10 is border-fg on bg-inside, so the pair table explains it."""
+        """Pair 10 is border-fg on border-bg, so the pair table explains it."""
         roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
-        self.assertEqual(roles[10], ("border-fg", "bg-inside"))
+        self.assertEqual(roles[10], ("border-fg", "border-bg"))
+        self.assertEqual(roles[8], ("border-fg", "border-bg"))
+        self.assertEqual(roles[6], ("border-bg", "border-fg"))
+        self.assertEqual(roles[2], ("button-bg-active", "bg"))
+        self.assertEqual(roles[3], ("fg-warn", "bg"))
+        self.assertEqual(roles[9], ("button-bg-active", "bg-inside"))
+        self.assertEqual(roles[11], ("fg-accent", "bg-inside"))
         self.assertEqual(len(roles), len(mdreader.PAIR_ROLES),
                          "pair numbers must stay unique")
 
