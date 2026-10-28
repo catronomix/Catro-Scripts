@@ -55,7 +55,6 @@ def draw(canvas, x, y, width, height, glyphs, title=None, colour=None):
 
 def edge(colours, cap=None):
 	"""The SGR prefix for a preview frame: the look's own border hexes."""
-	return palette.prefix(fg=colours.get(palette.role("border-fg"),
-										 "border-fg"),
-						  bg=colours.get(palette.role("border-bg"),
-										 "border-bg"), cap=cap)
+	fg = colours.get(palette.role("border-fg"), "border-fg")
+	bg = colours.get(palette.role("border-bg"), "border-bg")
+	return palette.prefix(fg=fg, bg=bg, cap=cap)
