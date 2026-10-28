@@ -646,55 +646,25 @@ class CountTableTest(unittest.TestCase):
 		self.assertEqual(lines[-1], "TOTAL (ALL LISTED)\t2\t15.00 B")
 
 
-class CountTableTest(unittest.TestCase):
-	"""count.py renders one `render_table` with a bold TOTAL last row."""
+class ActionResultBlockTest(unittest.TestCase):
+	"""action.py reports a saved macro in a panel (no flow change)."""
 
-	def setUp(self):
-		import count as count_module
-		self.count = count_module
-		self.tmp = tempfile.TemporaryDirectory()
-		self.addCleanup(self.tmp.cleanup)
-		root = Path(self.tmp.name)
-		(root / "a.txt").write_text("x" * 10, encoding="utf-8")
-		(root / "b.py").write_text("y" * 5, encoding="utf-8")
-
-	def render(self, tty):
-		stream = FakeTty(tty)
-		env = clean_env()
-		if tty:
-			env["FORCE_COLOR"] = "3"
-		with mock.patch.dict(os.environ, env, clear=True), \
-				mock.patch.object(tui, "init_ansi"), \
-				mock.patch.object(sys, "stdout", stream), \
-				mock.patch.object(sys, "argv", ["count.py", self.tmp.name]):
-			self.count.main()
-		return stream.getvalue()
-
-	def test_total_is_the_last_row_and_is_bold(self):
-		out = self.render(tty=True)
-		lines = out.splitlines()
-		indexes = [i for i, line in enumerate(lines) if "TOTAL (ALL LISTED)" in line]
-		self.assertEqual(len(indexes), 1, out)
-		total = indexes[0]
-		self.assertIn("\033[1m", lines[total], "TOTAL lost its bold ink")
-		closing = lines[total + 1]
-		self.assertIn("\u2514", closing, "TOTAL is not the last table row")
-		self.assertNotIn("TOTAL", "".join(lines[total + 2:]))
-
-	def test_data_rows_keep_the_rainbow(self):
-		out = self.render(tty=True)
-		self.assertIn("\033[38;2;255;0;0m", out, "the first row lost its red ink")
-
-	def test_pipe_is_unchanged_tab_records(self):
-		out = self.render(tty=False)
-		self.assertNotIn("\x1b", out)
-		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
-			self.assertNotIn(glyph, out)
-		lines = [line for line in out.splitlines() if line.strip()]
-		self.assertEqual(lines[-4], "Extension\tCount\tTotal Size")
-		self.assertEqual(lines[-3], ".txt\t1\t10.00 B")
-		self.assertEqual(lines[-2], ".py\t1\t5.00 B")
-		self.assertEqual(lines[-1], "TOTAL (ALL LISTED)\t2\t15.00 B")
+	def test_saved_macro_is_reported_in_a_panel(self):
+		import action as action_module
+		with tempfile.TemporaryDirectory() as td:
+			path = os.path.join(td, "actions.json")
+			stream = FakeTty()
+			with mock.patch.object(action_module, "ACTIONS_FILE", path), \
+					mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "prompt_input_with_default",
+									  side_effect=["echo hi", "A description"]), \
+					contextlib.redirect_stdout(stream):
+				action_module.interactive_add("newmac", cap=cap16())
+		out = stream.getvalue()
+		self.assertIn("\u250c", out, out)
+		self.assertIn("ACTION SAVED", out)
+		self.assertIn("echo hi", out)
+		self.assertIn("newmac", out)
 
 
 if __name__ == "__main__":
