@@ -142,6 +142,14 @@ class LabelTests(unittest.TestCase):
 		with mock.patch.object(prompts.caps, "detect", return_value=cap):
 			self.assertEqual(prompts._label("Name"), "> Name")
 
+	def test_piped_label_is_the_bare_prompt(self):
+		# Regression (0041): the shared label must not add its pointer or SGR to
+		# piped stdout, so a script's plain prompt bytes stay as they were.
+		cap = prompts.caps.Capabilities(level="none", unicode=False, width=None,
+										isatty=False, plain=True, reason="pipe")
+		with mock.patch.object(prompts.caps, "detect", return_value=cap):
+			self.assertEqual(prompts._label("Name"), "Name")
+
 
 class AskChoiceTests(unittest.TestCase):
 	def ask(self, answers):
