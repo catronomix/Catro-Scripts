@@ -254,12 +254,13 @@ class venvreplicator:
             ("System Packages:", config.get('include-system-site-packages', 'false'))
         ]
 
-        # The console block is the shared page chrome: a masthead plus aligned
-        # fields. venv_info.txt keeps the same pairs as plain records.
-        print(tui.header("VENV SOURCE INFORMATION", cap=cap))
+        # The console block is the shared page chrome: a titled panel around
+        # aligned fields. venv_info.txt keeps the same pairs as plain records.
         key_width = max(len(key) for key, _ in meta_data)
-        for key, value in meta_data:
-            print(tui.field(key, value, width=key_width, cap=cap))
+        print(tui.panel("VENV SOURCE INFORMATION", [
+            tui.field(key, value, width=key_width, cap=cap)
+            for key, value in meta_data
+        ], cap=cap))
 
         print(tui.status("info", "Gathering package details...", cap=cap))
         
@@ -323,7 +324,9 @@ class venvreplicator:
         ]
         with open("venv_info.txt", "w", encoding='utf-8') as f:
             f.write("\n".join(report) + "\n")
-        print(tui.status("ok", "VENV information saved to: venv_info.txt", cap=cap))
+        print(tui.panel(None, [tui.status(
+            "ok", "VENV information saved to: venv_info.txt", cap=cap)],
+            cap=cap))
 
     def generate_restore_script(self, output_path="recreate_venv.py"):
         cap = self.cap
@@ -468,8 +471,9 @@ if __name__ == "__main__":
 '''
         with open(output_path, "w", encoding='utf-8') as f:
             f.write(script_template.strip())
-        print(tui.status("ok", "Restoration script generated: {}".format(output_path),
-                         cap=cap))
+        print(tui.panel(None, [tui.status(
+            "ok", "Restoration script generated: {}".format(output_path),
+            cap=cap)], cap=cap))
 
 if __name__ == "__main__":
     tui.init_ansi()
