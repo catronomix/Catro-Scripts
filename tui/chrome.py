@@ -195,7 +195,7 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 									   bold=True, cap=cap, theme=theme))
 		else:
 			lines.append(palette.style("  " + pad(label, cell), fg="fg",
-									   cap=cap, theme=theme))
+									   bg="bg-inside", cap=cap, theme=theme))
 	return "\n".join(lines)
 
 

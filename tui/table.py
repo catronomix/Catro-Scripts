@@ -67,7 +67,7 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 											  zebra))
 	if compact:
 		lines = [table_rows.bare_line(labels, widths, cap, theme,
-									  fg="header-fg", bold=True)]
+									  fg="header-fg", bg="bg-inside", bold=True)]
 		lines.append(table_rows.span_rule(glyphs, widths, cap, theme))
 		for index, cells in enumerate(data):
 			lines.append(table_rows.bare_line(

@@ -24,7 +24,7 @@ def reset(cap):
 def rule(glyphs, widths, left, middle, right, cap, theme):
 	body = glyphs[middle].join(glyphs["h"] * (width + 2) for width in widths)
 	return palette.style(glyphs[left] + body + glyphs[right], fg="border-fg",
-						 cap=cap, theme=theme)
+						 bg="border-bg", cap=cap, theme=theme)
 
 
 def header_row(glyphs, widths, labels, cap, theme):
@@ -33,12 +33,15 @@ def header_row(glyphs, widths, labels, cap, theme):
 	This is the pre-migration `list.py` header byte for byte: the border colour
 	is emitted once, the leading `|` is inside it, and only then does bold begin,
 	so the rest of the row (inner borders included) is bold until the reset.
+	The header's body sits on `bg-inside`, so the band has no terminal-coloured
+	hole between its inner borders.
 	"""
 	body = glyphs["v"].join(" " + pad(cell, width) + " "
 							for cell, width in zip(labels, widths))
-	return (palette.prefix(fg="border-fg", cap=cap, theme=theme) + glyphs["v"]
-			+ palette.prefix(bold=True, cap=cap, theme=theme) + body + glyphs["v"]
-			+ reset(cap))
+	return (palette.prefix(fg="border-fg", bg="border-bg", cap=cap,
+						   theme=theme) + glyphs["v"]
+			+ palette.prefix(bg="bg-inside", bold=True, cap=cap, theme=theme)
+			+ body + glyphs["v"] + reset(cap))
 
 
 def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
@@ -64,7 +67,8 @@ def row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
 
 def bare_rows(labels, data, widths, cap, theme, zebra):
 	"""Borderless variant: padded columns separated by two spaces."""
-	lines = [bare_line(labels, widths, cap, theme, fg="header-fg", bold=True)]
+	lines = [bare_line(labels, widths, cap, theme, fg="header-fg",
+					   bg="bg-inside", bold=True)]
 	for index, cells in enumerate(data):
 		lines.append(bare_line(cells, widths, cap, theme,
 							   bg=zebra_bg(index, zebra)))
@@ -75,14 +79,14 @@ def zebra_bg(index, zebra):
 	"""Palette key for row `index`, or None when zebra shading is off."""
 	if not zebra:
 		return None
-	return "bg" if index % 2 == 0 else "bg-inside"
+	return "bg" if index % 2 == 0 else "bg-stripe"
 
 
 def span_rule(glyphs, widths, cap, theme):
 	"""One rule as wide as the borderless row (`compact`'s top/bottom edge)."""
 	span = sum(widths) + 2 * max(0, len(widths) - 1)
-	return palette.style(glyphs["h"] * max(1, span), fg="border-fg", cap=cap,
-						 theme=theme)
+	return palette.style(glyphs["h"] * max(1, span), fg="border-fg",
+						 bg="border-bg", cap=cap, theme=theme)
 
 
 def bare_line(cells, widths, cap, theme, fg="fg", bg=None, bold=False):

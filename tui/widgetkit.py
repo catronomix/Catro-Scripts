@@ -62,7 +62,7 @@ class Widget:
 		"""The prefix for this widget's own row, focused or not."""
 		cap = self.cap or caps.detect()
 		return (focus_prefix(focused, cap, fg=fg)
-				or palette.prefix(fg=fg, cap=cap) or None)
+				or palette.prefix(fg=fg, bg="bg-inside", cap=cap) or None)
 	def draw(self, canvas, focused=False):
 		raise NotImplementedError
 	def key(self, token):

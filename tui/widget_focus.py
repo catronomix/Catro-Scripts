@@ -15,7 +15,7 @@ inherit whatever ground the previously drawn cell left behind.
 from . import caps, palette
 
 
-def focus_prefix(focused, cap=None, *, fg="fg", bg="bg"):
+def focus_prefix(focused, cap=None, *, fg="fg", bg="bg-inside-active"):
 	"""A self-contained focus-visible cell colour, or None when not focused.
 
 	The theme's `focus_style` picks the attribute (`reverse` by default,
