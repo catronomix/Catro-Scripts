@@ -28,6 +28,9 @@ ALT_SCREEN_OFF = "\033[?1049l"
 CURSOR_HIDE = "\033[?25l"
 CURSOR_SHOW = "\033[?25h"
 CLEAR_HOME = "\033[2J\033[H"
+# Erase the row above (the line a masked prompt left behind) and park the
+# cursor at its start, so a transient prompt does not linger in scrollback.
+ERASE_ROW_UP = "\033[1A\r\033[2K"
 
 
 def _isatty(stream):
