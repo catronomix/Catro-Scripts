@@ -39,6 +39,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 import action
 import netconfig
+import tui
 from support import clean_env  # noqa: E402  (test helper, not production)
 
 
@@ -180,6 +181,36 @@ class NetconfigPlatformTests(unittest.TestCase):
 		for mask, expected in cases.items():
 			with self.subTest(mask=mask):
 				self.assertEqual(netconfig.mask_to_prefix(mask), expected)
+
+
+class NetconfigPageFrameTests(unittest.TestCase):
+	"""Issue #43: both netconfig pages are one framed page, not bare rows."""
+
+	def cap(self, plain=False):
+		return tui.Capabilities(level="none", unicode=False, width=None,
+								isatty=not plain, plain=plain, reason="test")
+
+	def test_page_frame_wraps_title_subtitle_and_menu(self):
+		cap = self.cap()
+		glyphs = tui.table.glyphs_for(cap)
+		lines = netconfig.page("Available Interfaces", "Select adapter number",
+							   ["eth0", "Quit"], cap=cap).splitlines()
+		self.assertTrue(lines[0].startswith(glyphs["tl"]),
+						"page must open on a box top edge: {!r}".format(lines[0]))
+		self.assertTrue(lines[-1].startswith(glyphs["bl"]))
+		self.assertIn("Available Interfaces", lines[0])
+		self.assertIn("Select adapter number", lines[1])
+		for label in ("1. eth0", "2. Quit"):
+			row = next(line for line in lines if label in line)
+			self.assertTrue(row.startswith(glyphs["v"]) and row.endswith(glyphs["v"]),
+							"menu row is outside the frame: {!r}".format(row))
+
+	def test_pipe_page_drops_the_frame(self):
+		page = netconfig.page("Managing: eth0", "Network adapter menu",
+							  ["Show Network Info", "Exit"], cap=self.cap(plain=True))
+		self.assertEqual(page.splitlines(),
+						 ["Managing: eth0", "Network adapter menu",
+						  "1. Show Network Info", "2. Exit"])
 
 
 class ActionsFileTests(unittest.TestCase):

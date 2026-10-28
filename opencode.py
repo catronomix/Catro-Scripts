@@ -6,13 +6,15 @@ Wraps the `opencode` CLI for non-interactive runs (`opencode run "<instruction>"
 
 Features:
 	- Checks whether `opencode` is installed and shows install instructions when missing.
-	- Lists available models and variants when called without arguments.
+	- Shows the usage summary (plus the saved default model) when called without arguments.
+	- Lists available models and variants only through the `models` subcommand.
 	- Runs an instruction, optionally with a model override via `-m <model>`.
 	- Persists a default model in a sidecar file (`opencode.default`).
 	- Accepts bracketed/quoted or unbracketed instructions (joins and passes as one arg).
 
 Usage:
 	catro-scripts opencode
+	catro-scripts opencode models
 	catro-scripts opencode -m <provider/model[#variant]> "<instruction>"
 	catro-scripts opencode -m <provider/model[#variant]>
 	catro-scripts opencode "<instruction>"
@@ -20,6 +22,7 @@ Usage:
 
 Examples:
 	catro-scripts opencode
+	catro-scripts opencode models
 	catro-scripts opencode -m anthropic/claude-sonnet-4-5 "Explain this repository"
 	catro-scripts opencode -m openai/gpt-5.2#high Review the current changes
 	catro-scripts opencode Fix the failing tests in this folder
@@ -133,7 +136,7 @@ def normalize_instruction(raw):
 
 
 def print_usage(default_model, cap=None):
-	# Short usage block printed alongside the model list.
+	# The page shown on a bare run: how to call the wrapper, then the saved default.
 	cap = cap or tui.detect()
 	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
 	body = [
@@ -145,6 +148,8 @@ def print_usage(default_model, cap=None):
 			'"<instruction>"')),
 		"  {}  (saves default)".format(
 			command("catro-scripts opencode -m <provider/model[#variant]>")),
+		"  {}  (lists models)".format(
+			command("catro-scripts opencode models")),
 		"",
 	]
 	if default_model:
@@ -158,7 +163,7 @@ def print_usage(default_model, cap=None):
 
 
 def list_models(opencode_bin, cap=None):
-	# No-instruction path: show default + delegate to `opencode models`.
+	# `models` subcommand only: show default + delegate to `opencode models`.
 	cap = cap or tui.detect()
 	default_model = read_default_model()
 	print()
@@ -167,13 +172,15 @@ def list_models(opencode_bin, cap=None):
 		print(tui.field("Default:", default_model, cap=cap))
 	try:
 		result = run_opencode(opencode_bin, ['models'])
-		sys.exit(result.returncode)
+		exit_code = result.returncode
 	except OSError as e:
 		print(tui.status("error", f"Failed to run `opencode models`: {e}",
 						 cap=cap))
-		sys.exit(1)
-	finally:
-		print_usage(read_default_model(), cap)
+		exit_code = 1
+	# The usage summary always follows the list, so the `models` page replaces
+	# nothing the bare run shows.
+	print_usage(read_default_model(), cap)
+	sys.exit(exit_code)
 
 
 def run_instruction(opencode_bin, model, instruction, cap=None):
@@ -222,7 +229,7 @@ def parse_args(argv):
 
 
 def main():
-	# Entrypoint: install check -> parse flags -> list models / save default / run.
+	# Entrypoint: install check -> parse flags -> models / save default / usage / run.
 	tui.init_ansi()
 	cap = tui.detect()
 	opencode_bin = find_opencode()
@@ -232,6 +239,11 @@ def main():
 
 	model, instruction = parse_args(sys.argv[1:])
 
+	if not model and instruction == 'models':
+		# `models` subcommand: the only path that dumps the model list.
+		list_models(opencode_bin, cap)
+		return
+
 	if model and not instruction:
 		# `-m <model>` alone persists the default model for future runs.
 		write_default_model(model)
@@ -240,8 +252,8 @@ def main():
 		return
 
 	if not instruction:
-		# No instruction at all: list available models and variants.
-		list_models(opencode_bin, cap)
+		# Bare run: usage panel only, never a model dump.
+		print_usage(read_default_model(), cap)
 		return
 
 	effective_model = model or read_default_model()

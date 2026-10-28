@@ -11,7 +11,9 @@ paints the theme background, every frame, menu and field comes from
 `tui.chrome`, the palette decides the colours for the active theme and colour
 level, `tui.keys` decodes the keystrokes (EOF reads as cancel), and
 `tui.Screen` owns the alternate screen and the cursor. No escape sequence and
-no palette of its own lives here.
+no palette of its own lives here. Every screen is one outer panel sized to its
+content and centred in the terminal (`draw_page`); the details and key blocks
+are plain rows inside it, never panels of their own.
 
 Features:
 	- Starts immediately with a default ALPHANUMERIC 32-character key.
@@ -51,8 +53,8 @@ MAX_LENGTH = 4096
 
 CANCEL_KEYS = ("esc", "q", "ctrl-c", None)
 
-# Page widths: the masthead bands, and the picker/panel frame.
-HEADER_WIDTH = 60
+# Page widths: the floor the app box grows from, and the picker menu.
+PAGE_WIDTH = 60
 MENU_WIDTH = 46
 FIELD_WIDTH = 10
 
@@ -90,10 +92,32 @@ def marker_for(stream, cap):
 	return "\u25b6"
 
 
-def draw_header(stream, cap, subtitle=None):
-	"""House masthead: themed bands and border rule, `HEADER_WIDTH` wide."""
-	stream.write(tui.chrome.header("KEYGEN", subtitle, width=HEADER_WIDTH,
-								   cap=cap) + "\n")
+def draw_page(cap, subtitle, rows):
+	"""The whole app as one outer box, fit to the content and centred.
+
+	`rows` are already-rendered page rows (masthead content excluded). The
+	masthead is rebuilt at the box's interior width so the title band and the
+	divider line up with the frame, then the panel pads every row to that
+	width. One frame only: the details and key blocks are plain rows, not
+	panels of their own.
+
+	The frame starts at `(terminal width - box width) // 2` on every line;
+	without a terminal width the box simply starts at column 0. Piped output
+	keeps its plain lines (a pipe has no frame and no centring to do).
+	"""
+	page = max([tui.display_width(row) for row in rows] + [PAGE_WIDTH])
+	if cap.width:
+		# Keep the frame plus its two padding columns on screen.
+		page = max(4, min(page, int(cap.width) - 4))
+	lines = tui.chrome.header("KEYGEN", subtitle, width=page,
+							  cap=cap).splitlines() + list(rows)
+	if cap.plain:
+		return "\n".join(lines)
+	box = tui.chrome.panel(None, lines, width=page + 4, padding=1,
+						   cap=cap).splitlines()
+	width = max(tui.display_width(line) for line in box)
+	margin = " " * max(0, ((cap.width or width) - width) // 2)
+	return "\n".join(margin + line for line in box)
 
 
 def repaint(stream, cap):
@@ -109,12 +133,6 @@ def repaint(stream, cap):
 		stream.fill()
 
 
-def draw_menu(stream, items, selected, title, cap):
-	"""One chrome menu: numbered rows with the accent bar on `selected`."""
-	stream.write(tui.chrome.menu(items, selected=selected, title=title,
-								 width=MENU_WIDTH, cap=cap) + "\n")
-
-
 def choose_algorithm(stream, cap, selected_idx):
 	"""Render the algorithm picker and return the chosen index, or None if cancelled."""
 	items = ["{:<16} {}".format(name, desc) for name, desc, _ in ALGORITHMS]
@@ -122,15 +140,18 @@ def choose_algorithm(stream, cap, selected_idx):
 		# fill() clears and repaints the page with the theme background, so the
 		# whole screen (not just the frame) carries the active theme.
 		repaint(stream, cap)
-		draw_header(stream, cap, "Choose the character set")
-		stream.write("\n")
-		draw_menu(stream, items, selected_idx, "Select an algorithm", cap)
-		stream.write(tui.chrome.field(
-			"current", marker_for(stream, cap) + " "
-			+ ALGORITHMS[selected_idx][0], cap=cap) + "\n")
-		stream.write(tui.chrome.status(
-			"info", "UP/DOWN to move, ENTER to confirm, ESC/Q to quit",
-			cap=cap) + "\n")
+		rows = [""]
+		rows.extend(tui.chrome.menu(items, selected=selected_idx,
+									title="Select an algorithm",
+									width=MENU_WIDTH, cap=cap).splitlines())
+		rows.extend([
+			tui.chrome.field("current", marker_for(stream, cap) + " "
+							 + ALGORITHMS[selected_idx][0], cap=cap),
+			tui.chrome.status(
+				"info", "UP/DOWN to move, ENTER to confirm, ESC/Q to quit",
+				cap=cap),
+		])
+		stream.write(draw_page(cap, "Choose the character set", rows) + "\n")
 		stream.flush()
 
 		key = read_key()
@@ -154,13 +175,15 @@ def prompt_length(stream, cap, default=DEFAULT_LENGTH):
 	buffer = ""
 	while True:
 		repaint(stream, cap)
-		draw_header(stream, cap, "Key length")
-		stream.write("\n")
-		stream.write(tui.chrome.field("length", buffer or str(default),
-									  width=FIELD_WIDTH, cap=cap) + "\n")
-		stream.write(tui.chrome.status(
-			"info", "digits, ENTER to confirm, ESC/Q to cancel",
-			cap=cap) + "\n")
+		rows = [
+			"",
+			tui.chrome.field("length", buffer or str(default),
+							 width=FIELD_WIDTH, cap=cap),
+			tui.chrome.status(
+				"info", "digits, ENTER to confirm, ESC/Q to cancel",
+				cap=cap),
+		]
+		stream.write(draw_page(cap, "Key length", rows) + "\n")
 		stream.flush()
 
 		key = read_key()
@@ -206,37 +229,35 @@ def show_key(stream, cap, algo_idx, length):
 		shown_len = length
 
 	repaint(stream, cap)
-	draw_header(stream, cap, "{} / {}".format(name, length))
-	stream.write("\n")
 	length_text = "{} chars{}".format(shown_len,
 									  " (fixed)" if alphabet is None else "")
-	stream.write(tui.panel("Key details", [
-		tui.chrome.field(label, value, width=FIELD_WIDTH, cap=cap)
-		for label, value in (
-			("Algorithm", name),
-			("Length", length_text),
-			("Entropy", "~{} bits".format(int(round(bits))))
-		)], width=HEADER_WIDTH, cap=cap) + "\n")
-	stream.write("\n")
+	rows = [""]
+	rows.extend(tui.chrome.field(label, value, width=FIELD_WIDTH, cap=cap)
+				for label, value in (
+					("Algorithm", name),
+					("Length", length_text),
+					("Entropy", "~{} bits".format(int(round(bits))))
+				))
+	rows.append("")
 
-	# Wrap the key across a few lines so long keys stay readable. The panel
-	# frame is the shared one; each line is padded and styled as one accent
-	# span so the whole cell (padding included) sits on the surface.
+	# Wrap the key across a few lines so long keys stay readable. The key
+	# block is plain rows inside the app box: each line is padded and styled
+	# as one accent span so the whole cell (padding included) sits on the
+	# surface, without a second frame of its own.
 	wrap = 64
-	lines = [key[i:i + wrap] for i in range(0, len(key), wrap)] or [""]
-	cell = max(tui.display_width(line) for line in lines)
-	body = [tui.style(tui.pad(line, cell), fg="fg-accent", bg="bg-inside",
-					  bold=True, cap=cap) for line in lines]
-	stream.write(tui.chrome.panel("Generated key", body, padding=1,
-								  cap=cap) + "\n")
-	stream.write("\n")
+	key_lines = [key[i:i + wrap] for i in range(0, len(key), wrap)] or [""]
+	cell = max(tui.display_width(line) for line in key_lines)
+	rows.extend(tui.style(tui.pad(line, cell), fg="fg-accent", bg="bg-inside",
+						  bold=True, cap=cap) for line in key_lines)
+	rows.append("")
 	hint = (tui.style("[ENTER]", fg="fg-accent", bold=True, cap=cap) + " new key   "
 			+ tui.style("[A]", fg="fg-accent", bold=True, cap=cap) + " algorithm   ")
 	if alphabet is not None:
 		hint += (tui.style("[L]", fg="fg-accent", bold=True, cap=cap)
 				 + " length   ")
 	hint += tui.style("[ESC/Q]", fg="fg-accent", bold=True, cap=cap) + " quit"
-	stream.write(hint + "\n")
+	rows.append(hint)
+	stream.write(draw_page(cap, "{} / {}".format(name, length), rows) + "\n")
 	stream.flush()
 
 	while True:

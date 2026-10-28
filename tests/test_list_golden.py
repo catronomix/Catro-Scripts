@@ -167,6 +167,30 @@ class ListGoldenFixtureTest(unittest.TestCase):
 	def test_no_color_tty(self):
 		self.check("no-color.tty")
 
+	def test_footer_uses_body_ink(self):
+		"""The total line is prose ink (`fg`), never the frame pair.
+
+		The goldens pin bytes but a blanket `--regen` would happily bake a
+		regression in, so this asserts the role itself: the label is bold `fg`
+		and the count is plain `fg`, not `border-fg`.
+		"""
+		environ = CASES["truecolor.tty"]
+		footer = render(environ, self.script_dir).splitlines()[-1]
+		env = {key: value for key, value in os.environ.items()
+			   if key not in SCRUBBED}
+		env.update(environ)
+		with mock.patch.dict(os.environ, env, clear=True):
+			cap = tui.detect()
+			label = tui.prefix(fg="fg", bold=True, cap=cap)
+			ink = tui.prefix(fg="fg", cap=cap)
+			frame = tui.prefix(fg="border-fg", bold=True, cap=cap)
+		self.assertNotEqual(ink, tui.strip_ansi(ink), "no escapes at this cap")
+		self.assertNotEqual(ink, tui.prefix(fg="border-fg", cap=cap),
+							"the two roles must differ for this to bite")
+		self.assertTrue(footer.startswith(label), footer)
+		self.assertIn(ink + "3", footer, footer)
+		self.assertNotIn(frame, footer)
+
 
 def regenerate():
 	EXPECTED.mkdir(parents=True, exist_ok=True)

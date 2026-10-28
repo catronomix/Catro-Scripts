@@ -46,7 +46,7 @@
 
 - **`newfile`**: Creates new files with optional content templates and directory structure initialization.
 
-- **`opencode`**: Wraps the `opencode` CLI for non-interactive runs (`opencode run "<instruction>"`). Shows install instructions when missing, lists models when called without arguments, supports `-m <provider/model[#variant]>` overrides, and persists a default model in `opencode.default`.
+- **`opencode`**: Wraps the `opencode` CLI for non-interactive runs (`opencode run "<instruction>"`). Shows install instructions when missing, prints a usage summary (plus the saved default model) when called without arguments, lists the available models with `opencode models`, supports `-m <provider/model[#variant]>` overrides, and persists a default model in `opencode.default`.
 
 - **`randomsorter`**: Renames and distributes files in the current directory to anonymize them. It generates unique random identifiers (numeric or alphanumeric, with configurable length) and organizes files into subfolders.
 
