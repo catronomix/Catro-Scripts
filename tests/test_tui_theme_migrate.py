@@ -97,11 +97,12 @@ class MigrationMapTests(unittest.TestCase):
 				self.assertNotIn(old, theme_migrate.PALETTE_KEYS)
 
 	def test_the_new_keys_reproduce_the_nineteen_key_set(self):
-		carried = (set(theme_migrate.V1_TO_V2.values()) | {"bg", "fg"}
-				   | set(theme_migrate.DERIVED)
-				   | set(theme_migrate.V2_TO_V3))
+		v2 = (set(theme_migrate.V1_TO_V2.values()) | {"bg", "fg"}
+			  | set(theme_migrate.DERIVED))
+		carried = v2 | set(theme_migrate.V2_TO_V3)
 		self.assertEqual(carried, set(theme_migrate.PALETTE_KEYS))
 		self.assertEqual(len(carried), 19)
+		self.assertEqual(set(theme_migrate.V2_PALETTE_KEYS), v2)
 		self.assertEqual(theme_migrate.SCHEMA_CURRENT, 3)
 
 	def test_every_v3_derivation_reads_a_real_v2_key(self):
@@ -190,6 +191,35 @@ class MigrationMapTests(unittest.TestCase):
 				errors = theme_engine.validate_any(document)
 				self.assertTrue(any("fg-muted" in error for error in errors),
 								errors)
+
+	def test_a_v2_look_with_a_v3_spelling_is_rejected_not_derived(self):
+		document = v2_document()
+		document["looks"]["default"]["button-fg"] = "#123456"
+		migrated = theme_migrate.migrate_doc(document)["looks"]["default"]
+		self.assertIsNone(migrated["button-fg"])
+		self.assertNotEqual(migrated["button-fg"], migrated["bg"],
+							"a v3 spelling must not be silently replaced")
+		errors = theme_engine.validate_any(document)
+		self.assertTrue(any("button-fg" in error for error in errors), errors)
+
+	def test_a_v1_look_with_a_v3_spelling_is_rejected_through_the_chain(self):
+		document = v1_document()
+		document["looks"]["default"]["button-bg"] = "#123456"
+		errors = theme_engine.validate_any(document)
+		self.assertTrue(any("button-bg" in error for error in errors), errors)
+
+	def test_a_valid_v2_document_still_migrates_cleanly(self):
+		self.assertEqual(theme_engine.validate_any(v2_document()), [])
+		self.assertEqual(theme_engine.validate(
+			theme_migrate.migrate_doc(v2_document())), [])
+
+	def test_the_canonical_v3_document_round_trips_byte_identically(self):
+		document = shipped_document()
+		self.assertEqual(theme_engine.validate_any(document), [])
+		self.assertIs(theme_migrate.migrate_doc(document), document)
+		self.assertEqual(
+			json.dumps(theme_migrate.migrate_doc(document), indent=2) + "\n",
+			SHIPPED.read_text(encoding="utf-8"))
 
 	def test_a_valid_v1_document_still_migrates_cleanly(self):
 		self.assertEqual(theme_engine.validate_any(v1_document()), [])

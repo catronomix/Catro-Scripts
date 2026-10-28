@@ -17,7 +17,7 @@ checks, and an old file is never refused or rewritten by a read.
 """
 
 from .picker_keys import PALETTE_KEYS, V1_PALETTE_KEYS
-from .theme_keys import DERIVED, V1_TO_V2, V2_TO_V3  # noqa: F401  (re-export)
+from .theme_keys import (DERIVED, V1_TO_V2, V2_PALETTE_KEYS, V2_TO_V3)  # noqa: F401
 
 SCHEMA_CURRENT = 3
 
@@ -58,23 +58,22 @@ def _properties(properties):
 	return values
 
 
-def _look(entry):
-	"""One v1 look as a v2 look: derive, rename, then emit in canonical order."""
+def _look_step(entry, keys, renames, derived, order):
+	"""One old look as the next schema: blank a later spelling, derive, order."""
 	extra = {key: None if key in PALETTE_KEYS else value
-			 for key, value in entry.items() if key not in V1_PALETTE_KEYS}
-	colours = {V1_TO_V2.get(key, key): entry.get(key) for key in V1_PALETTE_KEYS}
-	colours.update({key: entry.get(source) for key, source in DERIVED.items()})
-	result = {key: colours.get(key) for key in PALETTE_KEYS}
+			 for key, value in entry.items() if key not in keys}
+	colours = {renames.get(key, key): entry.get(key) for key in keys}
+	colours.update({key: entry.get(source) for key, source in derived.items()})
+	result = {key: colours.get(key) for key in order}
 	result.update(extra)
 	return result
+
+
+def _look(entry):
+	"""One v1 look as a v2 look: the sixteen schema-2 keys, in canonical order."""
+	return _look_step(entry, V1_PALETTE_KEYS, V1_TO_V2, DERIVED, V2_PALETTE_KEYS)
 
 
 def _v3_look(entry):
 	"""One v2 look as v3: the three button slots derived, canonical order."""
-	extra = {key: value for key, value in entry.items()
-			 if key not in PALETTE_KEYS}
-	colours = dict(entry)
-	colours.update({key: entry.get(source) for key, source in V2_TO_V3.items()})
-	result = {key: colours.get(key) for key in PALETTE_KEYS}
-	result.update(extra)
-	return result
+	return _look_step(entry, V2_PALETTE_KEYS, {}, V2_TO_V3, PALETTE_KEYS)
