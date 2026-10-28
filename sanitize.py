@@ -13,19 +13,26 @@
 		- Warns on dirty working trees before rewriting.
 		- Verifies history after rewrite and reports leaks clearly.
 		- House-style key/value blocks; plain TAB output when piped.
+		- With the secret omitted, reads it at a masked prompt (no echo) and
+		  blanks the prompt row when it is done.
 
 	Usage:
-		python sanitize.py "<secret>" "<placeholder>" [--yes]
+		python sanitize.py "<secret>" ["<placeholder>"] [--yes]
+		python sanitize.py ["<placeholder>"] [--yes]   # prompts for the secret
 
 	Note:
 		Always quote both values. Secrets/placeholders often contain shell
 		metacharacters ([ ] ( ) & ! % < >); unquoted, the shell eats them
 		before Python ever runs (e.g. bare <redacted> is input redirection
 		and fails with "The syntax of the command is incorrect").
+		The masked prompt guarantees the typed secret is not echoed and the
+		prompt row is cleared; it cannot scrub a scrollback the terminal has
+		already committed by other means.
 
 	Examples:
 		- python sanitize.py "Mypassword123" "<redacted-pass1>"
 		- python sanitize.py "Mypassword123" "***" --yes
+		- python sanitize.py                      (prompts, default placeholder)
 
 	Requirements:
 		- No external Python libraries required; uses standard modules only.
@@ -35,6 +42,7 @@
 """
 
 import argparse
+import getpass
 import os
 import shutil
 import subprocess
@@ -43,6 +51,9 @@ import tempfile
 from pathlib import Path
 
 import tui
+
+# Width of the centred plan/summary panels; narrower terminals win.
+PLAN_WIDTH = 60
 
 
 def run(cmd, **kwargs):
@@ -60,14 +71,47 @@ def run_bytes(cmd, **kwargs):
 
 
 def parse_args(argv):
-	# Parse CLI input into secret/placeholder plus a non-interactive flag.
+	# Parse CLI input into secret/placeholder plus a non-interactive flag. Both
+	# positionals are optional so the secret can be read at a masked prompt:
+	# argv supplies them for automation, a terminal can be prompted.
 	parser = argparse.ArgumentParser(
 		description="Replace a secret with a placeholder across full git history.")
-	parser.add_argument("secret", help="Secret string to remove (must not be empty).")
-	parser.add_argument("placeholder", help="Replacement text, e.g. '<redacted>'.")
+	parser.add_argument("secret", nargs="?",
+						help="Secret string to remove (must not be empty). "
+							 "Omit it on a terminal to be prompted (no echo).")
+	parser.add_argument("placeholder", nargs="?", default="<redacted>",
+						help="Replacement text, e.g. '<redacted>' "
+							 "(default: '<redacted>').")
 	parser.add_argument("--yes", "-y", action="store_true",
 						help="Skip confirmation prompts (for automation).")
 	return parser.parse_args(argv)
+
+
+def blank_prompt_row(stream=None):
+	# Erase the row the masked prompt left behind so the prompt text does not
+	# stay in the scrollback. No-op off a terminal.
+	stream = sys.stderr if stream is None else stream
+	try:
+		if not stream.isatty():
+			return
+	except (AttributeError, ValueError, OSError):
+		return
+	stream.write(tui.screen.ERASE_ROW_UP)
+	stream.flush()
+
+
+def plan_block(title, pairs, cap):
+	# The plan and the next-steps block: a small centred panel on a terminal,
+	# the same TAB records as before in a pipe.
+	if cap.plain:
+		return tui.key_values(title, pairs, cap=cap)
+	key_width = max([len(key) for key, _ in pairs] or [0])
+	body = ["{}  {}".format(key.ljust(key_width), value) for key, value in pairs]
+	width = min(PLAN_WIDTH, cap.width) if cap.width else PLAN_WIDTH
+	lines = tui.panel(title, body, width=width, cap=cap).splitlines()
+	box = max([tui.display_width(line) for line in lines] or [0])
+	margin = " " * max(0, ((cap.width or box) - box) // 2)
+	return "\n".join(margin + line for line in lines)
 
 
 def find_repo_root():
@@ -183,82 +227,101 @@ def main(argv=None) -> int:
 	args = parse_args(sys.argv[1:] if argv is None else argv)
 	secret, placeholder = args.secret, args.placeholder
 
-	# Validate input: empty secrets or filter-repo delimiter sequences are rejected.
-	if not secret:
-		print(tui.status("error", "Error: secret must not be empty.", cap=cap),
-			  file=sys.stderr)
-		return 2
-	if "\n" in secret or "==>" in secret:
-		print(tui.status("error",
-						 "Error: secret must not contain a newline or '==>'.",
-						 cap=cap),
-			  file=sys.stderr)
-		return 2
-
-	# Confirm we are inside a repo before doing anything destructive.
-	repo_root, err = find_repo_root()
-	if repo_root is None:
-		print(tui.status("error", f"Error: {err}", cap=cap), file=sys.stderr)
-		if "not inside" in err:
-			print("Hint: cd to the repo root, or run: git init", file=sys.stderr)
-		return 1
-
-	# Confirm the rewrite backend exists before warning or scanning.
-	filter_repo_cmd = find_filter_repo()
-	if filter_repo_cmd is None:
-		print(tui.status("error",
-						 "Error: git-filter-repo not found. Install it with:",
-						 cap=cap),
-			  file=sys.stderr)
-		print("    pip install git-filter-repo", file=sys.stderr)
-		return 1
-
-	print(tui.key_values("SANITIZE PLAN", [
-		("Repo", str(repo_root)),
-		("Secret", "<redacted>"),
-		("Placeholder", placeholder),
-		("Backend", " ".join(filter_repo_cmd)),
-	], cap=cap))
-
-	# Warn about dirty trees; rewriting with uncommitted work risks losing it.
-	r = run(["git", "status", "--porcelain"])
-	if r.returncode == 0 and r.stdout.strip() and not args.yes:
-		print(tui.status("warn",
-						 "WARNING: working tree has uncommitted changes. "
-						 "Commit or stash first.", cap=cap))
-		ans = input("Continue anyway? [y/N] ").strip().lower()
-		if ans not in ("y", "yes"):
+	# Masked intake: argv wins; otherwise a terminal may be prompted. Off a
+	# terminal there is nobody to answer, so refuse rather than block.
+	if secret is None:
+		if not sys.stdin.isatty():
+			sys.stderr.write(
+				"[Error] sanitize needs an interactive terminal to prompt for "
+				"the secret (stdin is not a tty).\n")
+			return 2
+		try:
+			secret = getpass.getpass("Secret: ")
+		except (EOFError, KeyboardInterrupt):
 			print("Aborted.")
 			return 1
-	print(tui.status("warn", "WARNING: this rewrites ALL history. Back up first "
-					 "and force-push afterwards.", cap=cap))
-	if not args.yes:
-		ans = input("Rewrite full history now? [y/N] ").strip().lower()
-		if ans not in ("y", "yes"):
-			print("Aborted.")
-			return 1
+		finally:
+			# getpass never echoes the typed value; blank its prompt row too.
+			blank_prompt_row()
 
-	# Pre-check avoids a destructive no-op (filter-repo drops origin, expires
-	# reflogs, GCs) paired with a misleading SUCCESS message.
-	print(tui.status("info", "Scanning history for secret...", cap=cap))
-	if not secret_in_history(secret):
-		print(tui.status("ok", "Secret not found in repo history. Nothing to do "
-						 "(exit 0).", cap=cap))
-		return 0
-
-	# Snapshot remotes: git-filter-repo strips `origin` by design, so save
-	# them now and restore after the rewrite.
-	saved_remotes = get_remotes()
-
-	# Write the replacement file as plain UTF-8 without BOM; the literal:
-	# prefix keeps regex special chars in the secret safe.
-	with tempfile.NamedTemporaryFile(
-		mode="w", suffix=".txt", delete=False, encoding="utf-8", newline="\n"
-	) as f:
-		f.write(f"literal:{secret}==>{placeholder}\n")
-		replace_file = f.name
-
+	replace_file = None
 	try:
+		# Validate input: empty secrets or filter-repo delimiter sequences are
+		# rejected.
+		if not secret:
+			print(tui.status("error", "Error: secret must not be empty.",
+							 cap=cap), file=sys.stderr)
+			return 2
+		if "\n" in secret or "==>" in secret:
+			print(tui.status("error",
+							 "Error: secret must not contain a newline or '==>'.",
+							 cap=cap),
+				  file=sys.stderr)
+			return 2
+
+		# Confirm we are inside a repo before doing anything destructive.
+		repo_root, err = find_repo_root()
+		if repo_root is None:
+			print(tui.status("error", f"Error: {err}", cap=cap), file=sys.stderr)
+			if "not inside" in err:
+				print("Hint: cd to the repo root, or run: git init", file=sys.stderr)
+			return 1
+
+		# Confirm the rewrite backend exists before warning or scanning.
+		filter_repo_cmd = find_filter_repo()
+		if filter_repo_cmd is None:
+			print(tui.status("error",
+							 "Error: git-filter-repo not found. Install it with:",
+							 cap=cap),
+				  file=sys.stderr)
+			print("    pip install git-filter-repo", file=sys.stderr)
+			return 1
+
+		print(plan_block("SANITIZE PLAN", [
+			("Repo", str(repo_root)),
+			("Secret", "<redacted>"),
+			("Placeholder", placeholder),
+			("Backend", " ".join(filter_repo_cmd)),
+		], cap))
+
+		# Warn about dirty trees; rewriting with uncommitted work risks losing it.
+		r = run(["git", "status", "--porcelain"])
+		if r.returncode == 0 and r.stdout.strip() and not args.yes:
+			print(tui.status("warn",
+							 "WARNING: working tree has uncommitted changes. "
+							 "Commit or stash first.", cap=cap))
+			ans = input("Continue anyway? [y/N] ").strip().lower()
+			if ans not in ("y", "yes"):
+				print("Aborted.")
+				return 1
+		print(tui.status("warn", "WARNING: this rewrites ALL history. Back up "
+						 "first and force-push afterwards.", cap=cap))
+		if not args.yes:
+			ans = input("Rewrite full history now? [y/N] ").strip().lower()
+			if ans not in ("y", "yes"):
+				print("Aborted.")
+				return 1
+
+		# Pre-check avoids a destructive no-op (filter-repo drops origin,
+		# expires reflogs, GCs) paired with a misleading SUCCESS message.
+		print(tui.status("info", "Scanning history for secret...", cap=cap))
+		if not secret_in_history(secret):
+			print(tui.status("ok", "Secret not found in repo history. Nothing to "
+							 "do (exit 0).", cap=cap))
+			return 0
+
+		# Snapshot remotes: git-filter-repo strips `origin` by design, so save
+		# them now and restore after the rewrite.
+		saved_remotes = get_remotes()
+
+		# Write the replacement file as plain UTF-8 without BOM; the literal:
+		# prefix keeps regex special chars in the secret safe.
+		with tempfile.NamedTemporaryFile(
+			mode="w", suffix=".txt", delete=False, encoding="utf-8", newline="\n"
+		) as f:
+			f.write(f"literal:{secret}==>{placeholder}\n")
+			replace_file = f.name
+
 		# Run the rewrite over both file contents and commit messages.
 		cmd = filter_repo_cmd + [
 			"--replace-text", replace_file,
@@ -277,7 +340,8 @@ def main(argv=None) -> int:
 		run(["git", "reflog", "expire", "--expire=now", "--all"])
 		run(["git", "gc", "--prune=now", "--aggressive"])
 
-		# filter-repo removes `origin` (and other remotes) by design; put them back.
+		# filter-repo removes `origin` (and other remotes) by design; put them
+		# back.
 		restored = restore_remotes(saved_remotes)
 		if saved_remotes and restored:
 			detail = ", ".join(
@@ -314,15 +378,20 @@ def main(argv=None) -> int:
 		print(tui.status("ok",
 						 f"Secret replaced with '{placeholder}' in full history.",
 						 cap=cap))
-		print(tui.key_values("NEXT STEPS", [
+		print(plan_block("NEXT STEPS", [
 			("1. Force-push", "git push --force --all && git push --force --tags"),
 			("2. Teammates", "Everyone else must re-clone"),
 			("3. Rotation", "Rotate the leaked secret"),
-		], cap=cap))
+		], cap))
 		return 0
 	finally:
-		# Always remove the temp replacement file; it contains the raw secret.
-		Path(replace_file).unlink(missing_ok=True)
+		# Always remove the temp replacement file (it holds the raw secret) and
+		# overwrite the local copy before it leaves scope.
+		if replace_file is not None:
+			Path(replace_file).unlink(missing_ok=True)
+		if secret:
+			secret = "\0" * len(secret)
+		del secret
 
 
 if __name__ == "__main__":
