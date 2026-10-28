@@ -156,8 +156,15 @@ def print_colored_docstring(docstring, cap=None):
 		body.append(tui.prefix(bg="bg-inside", cap=cap, **indent_style)
 					+ tui.pad(display_line, max_w))
 
+	# The panel needs one rule glyph, " title ", and one more rule glyph in its
+	# top border: a title wider than the body would otherwise be cut short, so
+	# the frame grows to fit it. Normal titles (shorter than the body) keep the
+	# exact bytes they had.
+	frame_width = max_w + 4
+	if has_header:
+		frame_width = max(frame_width, len(header_text) + 6)
 	print(tui.panel(header_text if has_header else None, body,
-					width=max_w + 4, cap=cap))
+					width=frame_width, cap=cap))
 
 
 def main():
