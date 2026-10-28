@@ -151,6 +151,23 @@ class HeadlessOpenTests(EditorTestCase):
 			self.assertIn("60%", band)
 			self.assertIn("\u2588", band)
 
+	def test_wide_terminals_widen_colours_and_pin_the_actions_bar(self):
+		small = self.make()
+		wide = self.make(160, 40)
+		self.assertGreater(wide.rects[4][2], small.rects[4][2])
+		self.assertEqual(wide.rects[5][2], 14)
+		self.assertEqual(wide.rects[5][0] + wide.rects[5][2], 160 - 1)
+		# Below 120 columns the shipped formula is untouched.
+		self.assertEqual((small.rects[4][2], small.rects[5][0], small.rects[5][2]),
+						 (30, 72, 17))
+		# Paint and hit-test read the same rectangle: a press on the Colours
+		# pane's new right edge selects one of its rows.
+		x, y, width, height = wide.rects[4]
+		wide.draw()
+		wide.handle("mouse:press:{}:{}".format(x + width - 2, y + 1))
+		self.assertEqual(wide.focus, 1)
+		self.assertIsNotNone(wide.picker)
+
 	def test_a_one_cell_gutter_separates_the_three_previews(self):
 		ed = self.make()
 		for index in range(2):

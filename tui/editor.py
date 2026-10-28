@@ -114,13 +114,22 @@ class ThemeEditor(EditorKeys):
 			self.rects[index] = (1 + index * (column + 1), 2, column, preview_h)
 		panel_y = 3 + preview_h
 		panel_h = max(3, height - panel_y - 2)
-		prop_w = min(40, max(30, width // 2 - 6))
+		if width >= 120:
+			# Wide terminals: Colours grows with the width, the Actions
+			# buttons ride a narrow bar pinned to the right edge, and
+			# Properties takes the cells that remain.
+			colour_w = min(48, max(18, width // 4))
+			action_w = 14
+			action_x = width - 1 - action_w
+			prop_w = width - colour_w - action_w - 4
+		else:
+			prop_w = min(40, max(30, width // 2 - 6))
+			colour_w = min(30, max(18, width - prop_w - 4))
+			action_x = 3 + prop_w + colour_w
+			action_w = max(10, width - action_x - 1)
 		self.rects[3] = (1, panel_y, prop_w, panel_h)
-		colour_w = min(30, max(18, width - prop_w - 4))
 		self.rects[4] = (2 + prop_w, panel_y, colour_w, panel_h)
-		action_x = 3 + prop_w + colour_w
-		self.rects[5] = (action_x, panel_y, max(10, width - action_x - 1),
-						 panel_h)
+		self.rects[5] = (action_x, panel_y, action_w, panel_h)
 		# One blank row under the title, two between buttons, clamped to the
 		# last inner row: the top and bottom rules stay visible even in the
 		# smallest supported terminal (90x24) where the bar has no headroom.
