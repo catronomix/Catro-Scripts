@@ -30,17 +30,18 @@ def rule(glyphs, widths, left, middle, right, cap, theme):
 def header_row(glyphs, widths, labels, cap, theme):
 	"""One span over the whole row: border, then the first border, then bold.
 
-	This is the pre-migration `list.py` header byte for byte: the border colour
-	is emitted once, the leading `|` is inside it, and only then does bold begin,
-	so the rest of the row (inner borders included) is bold until the reset.
-	The header's body sits on `bg-inside`, so the band has no terminal-coloured
-	hole between its inner borders.
+	This keeps the pre-migration `list.py` escape order (border colour and
+	ground once, the leading `|` inside it, then one styled span for the rest):
+	only the header ink and its ground are new. The header's body sits on
+	`bg-inside` in `header-fg`, so the band has no terminal-coloured hole
+	between its inner borders and matches the editor preview's `thead` row.
 	"""
 	body = glyphs["v"].join(" " + pad(cell, width) + " "
 							for cell, width in zip(labels, widths))
 	return (palette.prefix(fg="border-fg", bg="border-bg", cap=cap,
 						   theme=theme) + glyphs["v"]
-			+ palette.prefix(bg="bg-inside", bold=True, cap=cap, theme=theme)
+			+ palette.prefix(fg="header-fg", bg="bg-inside", bold=True,
+							 cap=cap, theme=theme)
 			+ body + glyphs["v"] + reset(cap))
 
 

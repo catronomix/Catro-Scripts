@@ -3,8 +3,8 @@
 			PREVIEW ROW PLAN
 			===============
 The rows a kitchen-sink preview paints between its frame and its progress bar,
-as data: `rows()` returns the `(kind, palette role)` pairs in display order and
-`texts()` the sample string each kind carries. Kept out of
+as data: `rows()` returns the `(kind, palette role, background role)` triples in
+display order and `texts()` the sample string each kind carries. Kept out of
 `tui.editor_preview` so the painter stays inside its file budget and the plan
 can be read - and dropped from - in one place.
 

@@ -160,7 +160,7 @@ def menu(items, selected=0, *, title=None, width=None, cap=None, theme=None):
 	"""Numbered rows, one per item, with a selected-row bar.
 
 	The selected row is `fg-accent` on `bg-inside-active` behind a `>` pointer,
-	the others `fg`. `selected=None` means "nothing selected yet"
+	the others `fg` on `bg-inside`. `selected=None` means "nothing selected yet"
 	(`ask_choice`).
 	Rows number from 1 so a prompt can ask for the number it prints; a caller
 	`width` pins the bar, otherwise it spans the widest row.

@@ -138,7 +138,7 @@ class GoldenBytesTests(unittest.TestCase):
 		header = out.split("\n")[1]
 		# Border colour and ground, leading border, then the inside ground and
 		# bold: one span, one reset.
-		expected = (BORDER + SURFACE + "\u2502" + SURFACE + BOLD
+		expected = (BORDER + SURFACE + "\u2502" + HEADER + SURFACE + BOLD
 					+ " A    \u2502 B    \u2502" + RESET)
 		self.assertEqual(header, expected)
 
