@@ -108,11 +108,12 @@ def _top_frame(glyphs, inner, title, cap, theme, active=False):
 	rest = room - left
 	heading = palette.prefix(fg=edge_bg, bg=edge_fg, bold=True, cap=cap,
 							 theme=theme)
-	return (palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
-			+ glyphs["tl"] + glyphs["h"]
+	edge = palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
+	return (edge
+			+ glyphs["tl"] + glyphs["h"] * (1 + left)
 			+ heading
-			+ " " + " " * left + label + " "
-			+ palette.prefix(fg=edge_fg, bg=edge_bg, cap=cap, theme=theme)
+			+ " " + label + " "
+			+ edge
 			+ glyphs["h"] * rest + glyphs["tr"] + _reset(cap))
 def _band(text, width, *, fg, bold=False, align="left", cap, theme):
 	"""One full-width `header-bg` band with the label placed by `align`.

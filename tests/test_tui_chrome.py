@@ -563,6 +563,23 @@ class HeadingAndGroundTests(unittest.TestCase):
 		for line in (left, center, right):
 			self.assertEqual(display_width(strip_ansi(line)), 20)
 
+		# The ground is a chip around the label, not a strip from the left
+		# edge: the rule glyphs come first, in the frame pair, and the
+		# heading prefix starts only where the label band begins.
+		for align, line, left_glyphs in (("center", center, 5),
+										 ("right", right, 11)):
+			with self.subTest(align=align):
+				lead = "\u250c" + "\u2500" * (1 + left_glyphs)
+				self.assertTrue(strip_ansi(line).startswith(lead + " Info "),
+								strip_ansi(line))
+				heading = palette.prefix(fg="border-bg", bg="border-fg",
+										 bold=True, cap=TRUE, theme="light")
+				cut = line.index(heading)
+				self.assertEqual(
+					display_width(strip_ansi(line[:cut])),
+					2 + left_glyphs)
+				self.assertEqual(line.count(heading), 1, line)
+
 
 class ButtonTokenTests(unittest.TestCase):
 	"""A filled button paints its own tokens, not `fg-accent`."""
