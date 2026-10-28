@@ -292,6 +292,10 @@ class NavigationTests(EditorTestCase):
 		ed = self.make()
 		# Column 2 is inside the Properties panel; the preview band is not.
 		ed.handle("mouse:wheel-down:2:16")
+		ed.handle("mouse:wheel-down:2:16")
+		# The wheel moves the selection; the window follows only when the row
+		# would leave the visible band (5 of 9 rows at 90x24).
+		self.assertGreater(ed.property_index, 0)
 		self.assertGreater(ed.property_offset, 0)
 
 	def test_pagekeys_and_wheel_scroll_the_panel_not_the_document(self):
@@ -314,6 +318,40 @@ class NavigationTests(EditorTestCase):
 		self.assertIsNotNone(ed.edit, "scrolling committed or cancelled the draft")
 		self.assertEqual(ed.document["properties"][key], before)
 		self.assertFalse(ed.dirty)
+
+
+class WheelScrollTests(EditorTestCase):
+	"""Issue #38 item 8: the wheel moves the selection, not a lost offset."""
+
+	def test_wheel_moves_the_colour_selection_and_survives_the_next_paint(self):
+		ed = self.make()  # 90x24: Colours shows 5 of 16 keys
+		ed.handle("tab")  # focus Colours
+		for _ in range(6):
+			ed.handle("mouse:wheel-down:45:16")
+		ed.draw()
+		self.assertGreater(ed.colour_offset, 0)
+		self.assertEqual(ed.colour_index, len(theme_engine.PALETTE_KEYS) - 1)
+		x, y, width, height = ed.rects[4]
+		rows = self.lines(ed)
+		last = theme_engine.PALETTE_KEYS[-1]
+		self.assertTrue(any(last in row[x:x + width]
+							for row in rows[y:y + height]), last)
+
+	def test_wheel_up_at_the_top_keeps_the_property_window_at_zero(self):
+		ed = self.make()
+		ed.handle("mouse:wheel-up:2:16")
+		self.assertEqual((ed.property_index, ed.property_offset), (0, 0))
+
+	def test_an_overflowing_pane_draws_a_marker_on_its_right_edge(self):
+		ed = self.make()
+		ed.draw()
+		rows = self.lines(ed)
+		for panel in (3, 4):
+			x, y, width, height = ed.rects[panel]
+			self.assertGreater(len(ed._rows(panel)), ed._visible(panel))
+			column = [row[x + width - 2]
+					  for row in rows[y + 1:y + height - 1]]
+			self.assertTrue(all(cell != " " for cell in column), panel)
 
 
 class SchemaTwoDocumentTests(EditorTestCase):
@@ -350,13 +388,17 @@ class SchemaTwoDocumentTests(EditorTestCase):
 class DoubleClickTests(EditorTestCase):
 	"""A second press on the same cell activates it; the first only selects."""
 
-	def test_a_double_press_on_a_palette_row_opens_the_picker(self):
+	def test_a_single_press_on_a_palette_row_opens_the_picker(self):
+		# Issue #38 item 4: the first press selects the row and opens the
+		# picker; a second identical press lands in the open picker and must
+		# not replace it (the key path routes it to `picker_key`).
 		ed = self.make()
 		ed.handle("mouse:press:45:16")  # inside the Colours panel
 		self.assertEqual(ed.focus, 1)
-		self.assertIsNone(ed.picker)
+		picker = ed.picker
+		self.assertIsNotNone(picker)
 		ed.handle("mouse:press:45:16")
-		self.assertIsNotNone(ed.picker)
+		self.assertIs(ed.picker, picker)
 		self.assertEqual(ed.focus, 1)
 
 	def test_a_double_press_on_a_property_row_opens_its_draft(self):
@@ -384,18 +426,18 @@ class DoubleClickTests(EditorTestCase):
 		self.assertEqual(ed.prompt, "save")
 		self.assertFalse(ed.closed)
 
-	def test_a_double_press_on_a_load_row_opens_that_theme(self):
+	def test_a_single_press_on_a_load_row_opens_that_theme(self):
+		# Issue #38 item 10: one press loads the row (Enter's flow).
 		ed = self.make()
 		ed.load_popup()
 		ed.handle("mouse:press:0:0")
-		self.assertEqual(ed.prompt, "load")
 		self.assertEqual(ed.load_box.selected, 0)
-		ed.handle("mouse:press:0:0")
 		self.assertIsNone(ed.prompt)
 		self.assertIn("loaded", ed.message[1])
 
 	def test_a_double_press_on_an_invalid_load_row_only_selects_it(self):
 		(theme_engine.themes_dir() / "broken.json").write_text("{",
+
 															   encoding="utf-8")
 		ed = self.make()
 		ed.load_popup()
@@ -407,6 +449,26 @@ class DoubleClickTests(EditorTestCase):
 		self.assertEqual(ed.prompt, "load")
 		self.assertEqual(ed.load_box.selected, index)
 		self.assertIn("cannot load", ed.message[1])
+
+
+class LoadPressTests(EditorTestCase):
+	"""Issue #38 item 10: a single press on a Load row loads that theme."""
+
+	def test_a_press_on_an_extra_theme_row_loads_it(self):
+		document = theme_engine.document()
+		document["name"] = "extra"
+		theme_engine.save_theme(document, overwrite=True)
+		ed = self.make()
+		labels = ed.load_popup()
+		self.assertTrue(any("extra" in label for label in labels), labels)
+		index = next(index for index, entry in enumerate(ed.entries)
+					 if entry["slug"] == "extra")
+		ed.draw()
+		token = "mouse:press:{}:{}".format(ed.load_box.x,
+										   ed.load_box.y + index)
+		ed.handle(token)
+		self.assertEqual(ed.document["name"], "extra")
+		self.assertFalse(ed.dirty)
 
 
 class LookScopeTests(EditorTestCase):
@@ -453,13 +515,11 @@ class LookScopeTests(EditorTestCase):
 class ScrolledPaneTests(EditorTestCase):
 	"""A scrolled pane hits rows in screen space and never past its last key."""
 
-	def test_a_double_press_on_the_first_visible_colour_row_opens_that_key(self):
-		ed = self.make()  # 90x24: Colours shows 5 of 11 keys
+	def test_a_press_on_the_first_visible_colour_row_opens_that_key(self):
+		ed = self.make()  # 90x24: Colours shows 5 of 16 keys
 		ed.colour_offset = 1
 		ed.handle("mouse:press:45:16")
 		self.assertEqual((ed.focus, ed.colour_index), (1, 1))
-		self.assertIsNone(ed.picker)
-		ed.handle("mouse:press:45:16")
 		self.assertIsNotNone(ed.picker)
 
 	def test_a_double_press_on_a_scrolled_property_row_drafts_that_key(self):
