@@ -106,8 +106,7 @@ def _forced(env):
 def _autodetect(env, isatty):
 	"""Environment-derived level, most specific rule first.
 
-	A pipe is never a terminal, so autodetection short-circuits it to "none";
-	only an explicit request (`_forced`) can make a piped stream styled.
+	A pipe is never a terminal; only `_forced` can style one.
 	"""
 	term = str(env.get("TERM", "")).lower()
 	if term == "dumb":
@@ -118,9 +117,7 @@ def _autodetect(env, isatty):
 		return "16", "windows-legacy-console"
 	if str(env.get("COLORTERM", "")).lower() in ("truecolor", "24bit"):
 		return "true", "COLORTERM"
-	if str(env.get("WT_SESSION", "")).strip():
-		# Windows Terminal is truecolor, but stock PowerShell/cmd exports no
-		# COLORTERM/TERM, so without this rule the fallthrough caps it at 16.
+	if str(env.get("WT_SESSION", "")).strip():  # Windows Terminal is truecolor.
 		return "true", "WT_SESSION"
 	if "direct" in term or "truecolor" in term:
 		return "true", "TERM"
@@ -178,7 +175,5 @@ def _isatty(stream):
 
 def _truthy(value):
 	"""Non-empty and not an explicit off switch."""
-	if value is None:
-		return False
-	text = str(value).strip().lower()
+	text = str(value or "").strip().lower()
 	return bool(text) and text not in ("0", "false", "no", "off")
