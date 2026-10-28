@@ -459,10 +459,18 @@ class ScreensaverMenuTest(unittest.TestCase):
 		stream = self.Stream()
 		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
 		out = stream.getvalue()
-		self.assertEqual(out.count("  > "), 1)
-		self.assertIn("  > beta", out)
-		self.assertNotIn("  > alpha", out)
+		self.assertEqual(out.count("> "), 1, out)
+		self.assertIn("> 2. beta", out)
+		self.assertNotIn("> 1. alpha", out)
 		self.assertIn("Use UP/DOWN arrows", out)
+
+	def test_selected_row_uses_the_shared_menu_bar(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
+		out = stream.getvalue()
+		bar = tui.prefix(fg="fg-accent", bg="bg-inside-active", bold=True,
+						 cap=cap16())
+		self.assertIn(bar, out, "the picker lost the shared selected-row bar")
 
 	def test_menu_paints_on_cp1252(self):
 		# Regression: draw_menu hardcoded U+2500 glyphs and ignored cap.unicode,
@@ -482,7 +490,9 @@ class ScreensaverMenuTest(unittest.TestCase):
 		stream = self.Stream()
 		self.screensaver.draw_menu(stream, ["alpha"], 0, cap16())
 		out = stream.getvalue()
-		for glyph in "\u250c\u2510\u2514\u2518\u2500\u2502\u251c\u2524":
+		self.assertEqual(out.count("\u250c"), 1, out)
+		self.assertIn("SCREENSAVERS", out.splitlines()[0])
+		for glyph in "\u2500\u2502\u2514\u2518":
 			self.assertIn(glyph, out)
 
 	def test_select_returns_the_file_through_the_decoded_keys(self):
@@ -583,6 +593,57 @@ class HelpPanelTest(unittest.TestCase):
 							   isatty=False, plain=True, reason="test")
 		out = self.render(self.DOC, cap)
 		self.assertEqual(out, "COUNT\n\nBody line\n    Indented line\n")
+
+
+class CountTableTest(unittest.TestCase):
+	"""count.py renders one `render_table` with a bold TOTAL last row."""
+
+	def setUp(self):
+		import count as count_module
+		self.count = count_module
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		root = Path(self.tmp.name)
+		(root / "a.txt").write_text("x" * 10, encoding="utf-8")
+		(root / "b.py").write_text("y" * 5, encoding="utf-8")
+
+	def render(self, tty):
+		stream = FakeTty(tty)
+		env = clean_env()
+		if tty:
+			env["FORCE_COLOR"] = "3"
+		with mock.patch.dict(os.environ, env, clear=True), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(sys, "argv", ["count.py", self.tmp.name]):
+			self.count.main()
+		return stream.getvalue()
+
+	def test_total_is_the_last_row_and_is_bold(self):
+		out = self.render(tty=True)
+		lines = out.splitlines()
+		indexes = [i for i, line in enumerate(lines) if "TOTAL (ALL LISTED)" in line]
+		self.assertEqual(len(indexes), 1, out)
+		total = indexes[0]
+		self.assertIn("\033[1m", lines[total], "TOTAL lost its bold ink")
+		closing = lines[total + 1]
+		self.assertIn("\u2514", closing, "TOTAL is not the last table row")
+		self.assertNotIn("TOTAL", "".join(lines[total + 2:]))
+
+	def test_data_rows_keep_the_rainbow(self):
+		out = self.render(tty=True)
+		self.assertIn("\033[38;2;255;0;0m", out, "the first row lost its red ink")
+
+	def test_pipe_is_unchanged_tab_records(self):
+		out = self.render(tty=False)
+		self.assertNotIn("\x1b", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+		lines = [line for line in out.splitlines() if line.strip()]
+		self.assertEqual(lines[-4], "Extension\tCount\tTotal Size")
+		self.assertEqual(lines[-3], ".txt\t1\t10.00 B")
+		self.assertEqual(lines[-2], ".py\t1\t5.00 B")
+		self.assertEqual(lines[-1], "TOTAL (ALL LISTED)\t2\t15.00 B")
 
 
 class CountTableTest(unittest.TestCase):

@@ -86,55 +86,20 @@ def menu_step(count, index, key):
 
 
 def draw_menu(stream, names, selected_idx, cap):
-	"""Paint one menu frame; every write goes to `stream` (test seam)."""
-	def border(text):
-		# The border used to be the old menu's hardcoded magenta SGR (ESC[35m).
-		# It is now the shared palette's "border-fg" key, because the rest of the
-		# house style moved with it: a truecolor accent normally, and ESC[95m
-		# (bright magenta) of the standard 16, so the identity still reads as
-		# magenta without hardcoding a code that 256/truecolor themes cannot
-		# override.
-		return tui.style(text, fg="border-fg", cap=cap)
+	"""Paint one menu frame; every write goes to `stream` (test seam).
 
+	The picker is the shared `tui.menu` inside a `tui.panel`, so its frame,
+	selection bar and glyph fallback are the same ones every other page uses.
+	The plugin API is untouched: only this host-side frame changed.
+	"""
 	stream.write(tui.screen.CLEAR_HOME)
 
-	title = " SCREENSAVERS "
-	width = max(len(title), max(len(n) for n in names) + 8)
-
-	# A cp1252 console cannot encode U+2500, so the frame degrades to the same
-	# `+ - |` family `tui/table.py` falls back to; Unicode keeps the old bytes.
-	tl, tr, h, v, ml, mr, bl, br = (
-		("\u250c", "\u2510", "\u2500", "\u2502",
-		 "\u251c", "\u2524", "\u2514", "\u2518")
-		if cap.unicode else ("+", "+", "-", "|", "+", "+", "+", "+"))
-
-	# Draw Top Border
-	stream.write(border(tl + h * width + tr) + "\n")
-
-	# Draw Title
-	pad_left = (width - len(title)) // 2
-	pad_right = width - len(title) - pad_left
-	stream.write(border(v) + " " * pad_left + title + " " * pad_right
-				 + border(v) + "\n")
-
-	# Draw Divider
-	stream.write(border(ml + h * width + mr) + "\n")
-
-	# Draw Rows
-	for i, name in enumerate(names):
-		prefix = "  > " if i == selected_idx else "    "
-		text = f"{prefix}{name}"
-		pad = width - len(text)
-
-		if i == selected_idx:
-			stream.write(border(v)
-						 + tui.style(text + " " * pad, reverse=True, cap=cap)
-						 + border(v) + "\n")
-		else:
-			stream.write(border(v) + text + " " * pad + border(v) + "\n")
-
-	# Draw Bottom Border
-	stream.write(border(bl + h * width + br) + "\n")
+	# The menu rows carry their own styling and close with a reset; re-open the
+	# panel's interior ground so its right gutter is not left unpainted.
+	ground = tui.prefix(fg="fg", bg="bg-inside", cap=cap)
+	body = [line + ground
+			for line in tui.menu(names, selected_idx, cap=cap).splitlines()]
+	stream.write(tui.panel("SCREENSAVERS", body, cap=cap) + "\n")
 	stream.write("Use UP/DOWN arrows to select, ENTER to run.\n")
 	stream.flush()
 
