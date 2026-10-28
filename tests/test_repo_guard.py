@@ -63,6 +63,12 @@ class GuardInstallationTests(unittest.TestCase):
 			theme_engine._atomic_write(target, "{}\n")
 		self.assertIn(str(target.resolve()), str(caught.exception))
 
+	def test_a_plain_open_for_writing_is_refused_too(self):
+		target = REPO / "config.ini"
+		with self.assertRaises(AssertionError) as caught:
+			open(target, "w", encoding="utf-8")
+		self.assertIn(str(target.resolve()), str(caught.exception))
+
 	def test_temp_writes_are_unaffected(self):
 		with tempfile.TemporaryDirectory() as td:
 			target = Path(td) / "theme.json"
