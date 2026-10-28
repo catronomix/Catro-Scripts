@@ -168,13 +168,13 @@ class FocusGroundTests(unittest.TestCase):
 
 	def test_an_unfocused_widget_row_has_the_inside_ground(self):
 		cap = self.true_cap()
-		widget = widgets.Widget(0, 0, cap=cap)
+		widget = widgets.Widget(0, 0, 1, cap=cap)
 		self.assertEqual(widget.styled(False),
 						 palette.prefix(fg="fg", bg="bg-inside", cap=cap))
 
 	def test_a_focused_widget_row_has_the_active_inside_ground(self):
 		cap = self.true_cap()
-		widget = widgets.Widget(0, 0, cap=cap)
+		widget = widgets.Widget(0, 0, 1, cap=cap)
 		self.assertEqual(
 			widget.styled(True),
 			palette.prefix(fg="fg", bg="bg-inside-active", reverse=True,
@@ -182,7 +182,7 @@ class FocusGroundTests(unittest.TestCase):
 
 	def test_the_styled_row_keeps_the_fg_override(self):
 		cap = self.true_cap()
-		widget = widgets.Widget(0, 0, cap=cap)
+		widget = widgets.Widget(0, 0, 1, cap=cap)
 		self.assertEqual(widget.styled(False, fg="warn"),
 						 palette.prefix(fg="warn", bg="bg-inside", cap=cap))
 
