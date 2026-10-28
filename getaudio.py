@@ -363,7 +363,7 @@ def main(argv=None):
             failures += 1
 
     print()
-    print(tui.status("ok", "Done.", cap=cap))
+    print(tui.panel(None, [tui.status("ok", "Done.", cap=cap)], cap=cap))
     if failures:
         print(tui.status("error", f"{failures} file(s) failed.", cap=cap),
               file=sys.stderr)
