@@ -217,6 +217,18 @@ class ShutdownResultPanelTest(unittest.TestCase):
 			"\n[ok] Shutdown scheduled in 600 seconds.\n"
 			"[info] To cancel, type: shutdown /a\n", out)
 
+	def test_result_panel_shrinks_to_its_content(self):
+		"""The result box is as wide as its rows, not the 70-cell terminal."""
+		out = tui.strip_ansi(capture(self.render, TTY_TRUE))
+		lines = [line for line in out.splitlines() if line]
+		widths = {tui.display_width(line) for line in lines}
+		self.assertEqual(len(widths), 1, out)
+		width = widths.pop()
+		rows = ("[ok] Shutdown scheduled in 600 seconds.",
+				"[info] To cancel, type: shutdown /a")
+		self.assertEqual(width, max(map(tui.display_width, rows)) + 4)
+		self.assertLess(width, TTY_TRUE.width, out)
+
 	def test_closed_stdin_quits_instead_of_reprompting(self):
 		"""EOF is a quit: the delay prompt must not loop on a closed stdin."""
 		import shutdown
@@ -227,6 +239,46 @@ class ShutdownResultPanelTest(unittest.TestCase):
 				mock.patch.object(tui, "header", lambda *a, **k: "header"), \
 				contextlib.redirect_stdout(io.StringIO()):
 			shutdown.main()  # returns, never schedules, never spins
+
+
+class ShutdownPagePanelTest(unittest.TestCase):
+	"""The interactive page is one panel sized to its content (0044)."""
+
+	def render(self, cap):
+		import shutdown
+
+		with mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(tui, "ask_text", return_value=shutdown._EOF):
+			shutdown.main()
+
+	def test_page_is_one_content_sized_box(self):
+		import shutdown
+
+		out = tui.strip_ansi(capture(self.render, TTY_TRUE))
+		lines = [line for line in out.splitlines() if line]
+		widths = {tui.display_width(line) for line in lines}
+		self.assertEqual(len(widths), 1, out)  # every row has the same width
+		width = widths.pop()
+		self.assertLess(width, TTY_TRUE.width, out)
+		self.assertEqual(width, max(
+			max(map(tui.display_width, shutdown.FORMAT_EXAMPLES)) + 4,
+			tui.display_width(shutdown.DELAY_PROMPT) + 4,
+			tui.display_width(shutdown.PAGE_TITLE) + 6), out)
+
+		# Box edges: one top rule, one bottom rule, framed rows between them.
+		self.assertTrue(lines[0].startswith("\u250c"), out)
+		self.assertTrue(lines[0].endswith("\u2510"), out)
+		self.assertTrue(lines[-1].startswith("\u2514"), out)
+		self.assertTrue(lines[-1].endswith("\u2518"), out)
+		for line in lines[1:-1]:
+			self.assertTrue(line.startswith("\u2502") and line.endswith("\u2502"),
+							out)
+
+		# The masthead, the examples and the prompt all sit inside the box.
+		self.assertIn(shutdown.PAGE_TITLE, lines[0])
+		body = "\n".join(lines[1:-1])
+		self.assertIn(shutdown.FORMAT_EXAMPLES[0], body)
+		self.assertIn(shutdown.DELAY_PROMPT, body)
 
 
 class NoBareInputTest(unittest.TestCase):

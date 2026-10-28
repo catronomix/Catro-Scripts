@@ -44,6 +44,18 @@ SBIN_DIRS = ("/sbin", "/usr/sbin")
 # `tui.ask_text` returns this when stdin closes; a closed stdin is a quit.
 _EOF = object()
 
+# The interactive page: masthead title, the format examples and the two prompt
+# rows all live inside one content-sized panel (0044).
+PAGE_TITLE = "Cross-Platform Shutdown Timer"
+FORMAT_EXAMPLES = (
+	"Examples of valid time formats:",
+	"  - 2h30m (2 hours, 30 minutes)",
+	"  - 1d5h  (1 day, 5 hours)",
+	"  - 45m   (45 minutes)",
+	"  - 90    (90 minutes - default unit)",
+)
+DELAY_PROMPT = "Enter shutdown delay (or 'q' to quit): "
+
 def parse_duration(duration_str):
 	"""
 	Parses strings like '1d2h30m', '2h', '45m' into total seconds.
@@ -98,6 +110,45 @@ def find_windows_shutdown():
 	system_root = os.environ.get("SystemRoot", r"C:\Windows")
 	candidate = os.path.join(system_root, "System32", "shutdown.exe")
 	return candidate if os.path.isfile(candidate) else "shutdown"
+
+def panel_width(rows, cap, title=None):
+	"""
+	Content-sized panel width: the widest row plus the frame and its two
+	gutters, never wider than the terminal (which still caps the panel on a
+	narrow stream). `cap` handling is unchanged: plain mode ignores width.
+	"""
+	needed = max([tui.display_width(row) for row in rows] + [0]) + 4
+	if title:
+		# Room for one rule glyph, " title ", and one more rule glyph.
+		needed = max(needed, tui.display_width(title) + 6)
+	if cap.width:
+		needed = min(needed, cap.width)
+	return max(4, needed)
+
+def page_panel(cap, prompt, error=None):
+	"""
+	One content-sized page panel: the masthead title in the top rule, the
+	format examples, the current prompt row and, when the last answer was
+	rejected, the warning row. Nothing here reads stdin.
+	"""
+	rows = list(FORMAT_EXAMPLES)
+	rows.append("")
+	if prompt:
+		rows.append(tui.style(prompt, fg="header-fg", bg="bg-inside",
+							  bold=True, cap=cap))
+	width = panel_width(rows, cap, PAGE_TITLE)
+	if error:
+		# The warning is the longest row and would be cut by the panel: wrap
+		# it under its marker on a terminal instead. A pipe keeps one line.
+		if cap.plain:
+			rows.append(tui.status("warn", error, cap=cap))
+		else:
+			indent = len(tui.chrome.STATUS_MARKERS["warn"]) + 1
+			cell = max(1, width - 4)
+			pieces = tui.wrap(error, max(1, cell - indent)) or [""]
+			rows.append(tui.status("warn", pieces[0], cap=cap))
+			rows.extend(" " * indent + piece for piece in pieces[1:])
+	return tui.panel(PAGE_TITLE, rows, width=width, cap=cap)
 
 def schedule_shutdown(seconds, cap=None):
 	"""
@@ -174,38 +225,35 @@ def schedule_shutdown(seconds, cap=None):
 				f"(argv: {' '.join(argv)}).", cap=cap))
 		return False
 
-	print("\n" + tui.panel(None, [
-		tui.status("ok", success, cap=cap),
-		tui.status("info", cancel_hint, cap=cap),
-	], cap=cap))
+	rows = [tui.status("ok", success, cap=cap),
+			tui.status("info", cancel_hint, cap=cap)]
+	print("\n" + tui.panel(None, rows, width=panel_width(rows, cap), cap=cap))
 	return True
 
 def main():
 	tui.init_ansi()
 	cap = tui.detect()
 
-	print(tui.header("Cross-Platform Shutdown Timer", cap=cap))
-	print("Examples of valid time formats:")
-	print("  - 2h30m (2 hours, 30 minutes)")
-	print("  - 1d5h  (1 day, 5 hours)")
-	print("  - 45m   (45 minutes)")
-	print("  - 90    (90 minutes - default unit)")
-
+	error = None
 	while True:
-		# The free-text delay goes through `tui.prompts` like every other
-		# prompt in the toolset; a closed stdin is a quit, not a re-prompt, so
-		# the 0041 EOF sentinel ends the loop instead of spinning on it.
-		print()
-		user_input = tui.ask_text("Enter shutdown delay (or 'q' to quit): ",
-								  eof=_EOF)
+		# The page (masthead, examples, prompt and the last rejection) is one
+		# content-sized panel; the prompt row is drawn by it, so the read is a
+		# bare `tui.ask_text("")` and stdin stays the shared seam. A closed
+		# stdin is a quit, not a re-prompt: the 0041 EOF sentinel ends the loop.
+		print(page_panel(cap, DELAY_PROMPT, error=error))
+		user_input = tui.ask_text("", eof=_EOF)
 
 		if user_input is _EOF or user_input.lower() == 'q':
 			break
-			
+
 		seconds = parse_duration(user_input)
-		
+
 		if seconds is not None and seconds > 0:
-			confirm = tui.ask_text(f"Confirm shutdown in approx. {seconds // 60} minutes? (y/n): ")
+			error = None
+			prompt = (f"Confirm shutdown in approx. {seconds // 60} "
+					  f"minutes? (y/n): ")
+			print(page_panel(cap, prompt))
+			confirm = tui.ask_text("")
 			if confirm.lower() == 'y':
 				if not schedule_shutdown(seconds, cap=cap):
 					# A failed schedule must not look like success to the
@@ -215,8 +263,8 @@ def main():
 			else:
 				print("Cancelled.")
 		else:
-			print(tui.status("warn", "Invalid format. Please use units like d, h, m, or s (e.g., 1h30m).",
-							 cap=cap))
+			error = ("Invalid format. Please use units like d, h, m, or s "
+					 "(e.g., 1h30m).")
 
 if __name__ == "__main__":
 	main()
