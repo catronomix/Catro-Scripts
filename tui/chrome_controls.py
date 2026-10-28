@@ -18,10 +18,12 @@ newline, or reads the terminal: every escape comes from `palette.style()`.
 from . import caps, palette
 from .chrome_panels import _flat
 
-# button_decoration -> (prefix, suffix) wrapped around the label. `chevron`
-# uses the guillemets so it reads as a chevron without doubling `angles`.
+# button_decoration -> (prefix, suffix) wrapped around the label. `none` is a
+# painted pad, not an empty string: an undecorated button still needs its
+# footprint and its colours. `chevron` uses the guillemets so it reads as a
+# chevron without doubling `angles`.
 BUTTON_DECORATIONS = {
-	"none": ("", ""), "brackets": ("[ ", " ]"), "angles": ("< ", " >"),
+	"none": (" ", " "), "brackets": ("[ ", " ]"), "angles": ("< ", " >"),
 	"braces": ("{ ", " }"), "colons": (": ", " :"), "pipes": ("| ", " |"),
 	"chevron": ("\u00ab ", " \u00bb"), "ellipsis": ("\u2026 ", " \u2026"),
 }

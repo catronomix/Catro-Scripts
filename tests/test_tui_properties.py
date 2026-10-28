@@ -261,7 +261,7 @@ class ButtonTests(PropertyCase):
 
 	def test_every_decoration_wraps_the_label(self):
 		expected = {
-			"none": "OK", "brackets": "[ OK ]", "angles": "< OK >",
+			"none": " OK ", "brackets": "[ OK ]", "angles": "< OK >",
 			"braces": "{ OK }", "colons": ": OK :", "pipes": "| OK |",
 			"chevron": "\u00ab OK \u00bb", "ellipsis": "\u2026 OK \u2026",
 		}
@@ -271,7 +271,18 @@ class ButtonTests(PropertyCase):
 			with self.subTest(button_decoration=value):
 				self.set_properties(button_decoration=value)
 				self.assertEqual(chrome.button("OK", cap=MONO), text)
-				self.assertIn(text, strip_ansi(chrome.button("OK", cap=TRUE)))
+				styled = chrome.button("OK", cap=TRUE)
+				self.assertEqual(strip_ansi(styled), text)
+				# The pad is painted, not dropped: the whole label keeps the
+				# filled ground and the trailing reset.
+				self.assertTrue(styled.startswith(
+					"\033[38;2;27;23;38m\033[48;2;245;205;104m"), styled)
+				self.assertTrue(styled.endswith(RESET), styled)
+		# `none` is a painted pad, not a collapse: the button keeps a footprint
+		# of label + one cell each side.
+		self.set_properties(button_decoration="none")
+		self.assertEqual(display_width(strip_ansi(chrome.button("OK", cap=TRUE))),
+						 len("OK") + 2)
 
 	def test_unicode_less_decoration_uses_the_ascii_spelling(self):
 		for value, text in (("chevron", "<< OK >>"), ("ellipsis", "... OK ...")):
