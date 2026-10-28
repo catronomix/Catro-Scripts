@@ -485,7 +485,10 @@ class ThemeScriptTests(unittest.TestCase):
 		self.assertEqual(code, 0)
 		# Piped rows are TAB-joined fields (the `field` plain contract).
 		self.assertIn("theme.mode\tsoft", out)
-		self.assertIn("config\t{}".format(self.root / "config.ini"), out)
+		# The child prints the path it resolves; a short-spelled `TEMP`
+		# (`C:\Users\CATRON~1\...`) must not defeat the comparison (issue #39).
+		self.assertIn("config\t{}".format(
+			(self.root / "config.ini").resolve()), out)
 		self.assertFalse((self.root / "config.ini").exists())
 		self.assertFalse((self.root / "theme.ini").exists())
 		for name, state in before.items():
@@ -516,7 +519,7 @@ class ThemeScriptTests(unittest.TestCase):
 		code, out = self.run_python("theme.py", "contrast-light")
 		self.assertEqual(code, 1)
 		self.assertEqual(out, "theme.ini is not writable here: {}\n".format(
-			self.root / "theme.ini"))
+			(self.root / "theme.ini").resolve()))
 
 if __name__ == "__main__":
 	unittest.main()

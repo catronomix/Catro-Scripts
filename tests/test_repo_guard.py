@@ -44,6 +44,24 @@ from tui import config, theme_engine  # noqa: E402  (import after sys.path setup
 
 SHIPPED = REPO / "themes" / "cozypurple.json"
 
+
+def alias_spelling(path):
+	r"""A spelling of `path` whose `resolve()` differs from its text.
+
+	Windows 8.3 short names are the case that bit the suite (`TEMP` spelled
+	`C:\Users\CATRON~1\...`); when a volume has no short name for the folder, a
+	`..` segment gives the same property on any host.
+	"""
+	path = Path(path)
+	if os.name == "nt":
+		import ctypes
+		buffer = ctypes.create_unicode_buffer(32768)
+		length = ctypes.windll.kernel32.GetShortPathNameW(
+			str(path), buffer, 32768)
+		if length and buffer.value and Path(buffer.value) != path.resolve():
+			return Path(buffer.value)
+	return path / ".." / path.name
+
 # Recorded before the fallback install below: if this is False, the suite's
 # session fixture is not protecting the checkout and the guard tests must say
 # so instead of passing on their own bootstrap.
@@ -202,12 +220,49 @@ class CheckoutInvariantTests(unittest.TestCase):
 			self.assertIn("theme.ini", str(caught.exception))
 
 
+class ShortSpellingTests(unittest.TestCase):
+	r"""A different spelling of the repo root must not read as "outside it".
+
+	Issue #39 follow-up: `tempfile.mkdtemp()` can hand back an 8.3 path
+	(`C:\Users\CATRON~1\...`) while the target resolves to the long form, so
+	`relative_to` raising `ValueError` used to mean "allowed" - any short-spelled
+	path inside the checkout bypassed the guard.
+	"""
+
+	def test_a_write_through_an_alias_spelled_root_is_refused(self):
+		with tempfile.TemporaryDirectory() as td:
+			long_root = Path(td)
+			root = alias_spelling(long_root)
+			target = root / "themes" / "cozypurple.json"
+			target.parent.mkdir(parents=True)
+			with mock.patch.object(support, "REPO_ROOT", root):
+				with self.assertRaises(AssertionError) as caught:
+					target.write_text("{}", encoding="utf-8")
+			resolved = (long_root / "themes" / "cozypurple.json").resolve()
+			self.assertIn(str(resolved), str(caught.exception))
+			self.assertFalse(resolved.exists())
+
+	def test_the_atomic_writer_resolves_the_root_the_same_way(self):
+		with tempfile.TemporaryDirectory() as td:
+			long_root = Path(td)
+			root = alias_spelling(long_root)
+			target = root / "theme.ini"
+			with mock.patch.object(support, "REPO_ROOT", root):
+				with self.assertRaises(AssertionError) as caught:
+					theme_engine._atomic_write(target, "[theme]\n")
+			self.assertIn(str((long_root / "theme.ini").resolve()),
+						  str(caught.exception))
+			self.assertFalse((long_root / "theme.ini").exists())
+
+
 class FixtureOptOutTests(unittest.TestCase):
 	"""Fixture regeneration is the one legitimate checkout write."""
 
 	def test_the_opt_out_is_scoped_to_one_subtree(self):
 		with tempfile.TemporaryDirectory() as td:
-			root = Path(td)
+			# Spell the root the way a short-spelled TEMP does: same folder,
+			# different text (see `alias_spelling`).
+			root = alias_spelling(Path(td))
 			fixtures = root / "tests" / "fixtures"
 			fixtures.mkdir(parents=True)
 			with mock.patch.object(support, "REPO_ROOT", root):
