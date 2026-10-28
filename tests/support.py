@@ -147,9 +147,15 @@ def check_repo_write(target):
 	"""Raise unless `target` may be written: temp paths and cache dirs only."""
 	try:
 		resolved = Path(os.fsdecode(target)).resolve()
-		relative = resolved.relative_to(REPO_ROOT)
 	except (TypeError, ValueError, OSError):
 		return target
+	# Resolve the root at check time and decide containment positively: a
+	# short-spelled or `..`-spelled root must not turn a failure to relativise
+	# into "outside the checkout" (issue #39).
+	root = Path(REPO_ROOT).resolve()
+	if not resolved.is_relative_to(root):
+		return target
+	relative = resolved.relative_to(root)
 	allowed = (relative.parts and relative.parts[0] in CACHE_DIRS) or any(
 		prefix == Path(".") or relative == prefix or prefix in relative.parents
 		for prefix in _ALLOWED)
@@ -162,8 +168,8 @@ def check_repo_write(target):
 @contextlib.contextmanager
 def allow_repo_writes(path):
 	"""Permit writes under one checkout subtree (fixture regeneration only)."""
-	resolved = Path(path).resolve()
-	_ALLOWED.append(resolved.relative_to(REPO_ROOT))
+	_ALLOWED.append(
+		Path(path).resolve().relative_to(Path(REPO_ROOT).resolve()))
 	try:
 		yield
 	finally:
@@ -229,7 +235,7 @@ def snapshot_checkout(root=None):
 	Absent `theme.ini`/`config.ini` are recorded as `None`, so creating one is a
 	change too. `root` lets the checker itself be tested on a temp tree.
 	"""
-	root = Path(root) if root is not None else REPO_ROOT
+	root = Path(root).resolve() if root is not None else Path(REPO_ROOT).resolve()
 	state = {name: None for name in ("theme.ini", "config.ini")}
 	for pattern in GUARDED_GLOBS:
 		for entry in root.glob(pattern):
