@@ -350,13 +350,17 @@ class SchemaTwoDocumentTests(EditorTestCase):
 class DoubleClickTests(EditorTestCase):
 	"""A second press on the same cell activates it; the first only selects."""
 
-	def test_a_double_press_on_a_palette_row_opens_the_picker(self):
+	def test_a_single_press_on_a_palette_row_opens_the_picker(self):
+		# Issue #38 item 4: the first press selects the row and opens the
+		# picker; a second identical press lands in the open picker and must
+		# not replace it (the key path routes it to `picker_key`).
 		ed = self.make()
 		ed.handle("mouse:press:45:16")  # inside the Colours panel
 		self.assertEqual(ed.focus, 1)
-		self.assertIsNone(ed.picker)
+		picker = ed.picker
+		self.assertIsNotNone(picker)
 		ed.handle("mouse:press:45:16")
-		self.assertIsNotNone(ed.picker)
+		self.assertIs(ed.picker, picker)
 		self.assertEqual(ed.focus, 1)
 
 	def test_a_double_press_on_a_property_row_opens_its_draft(self):
@@ -453,13 +457,11 @@ class LookScopeTests(EditorTestCase):
 class ScrolledPaneTests(EditorTestCase):
 	"""A scrolled pane hits rows in screen space and never past its last key."""
 
-	def test_a_double_press_on_the_first_visible_colour_row_opens_that_key(self):
-		ed = self.make()  # 90x24: Colours shows 5 of 11 keys
+	def test_a_press_on_the_first_visible_colour_row_opens_that_key(self):
+		ed = self.make()  # 90x24: Colours shows 5 of 16 keys
 		ed.colour_offset = 1
 		ed.handle("mouse:press:45:16")
 		self.assertEqual((ed.focus, ed.colour_index), (1, 1))
-		self.assertIsNone(ed.picker)
-		ed.handle("mouse:press:45:16")
 		self.assertIsNotNone(ed.picker)
 
 	def test_a_double_press_on_a_scrolled_property_row_drafts_that_key(self):

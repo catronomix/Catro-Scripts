@@ -5,10 +5,12 @@
 The mouse half of `tui.editor`: a press selects the preview, row or Action
 button under the pointer; the wheel scrolls the hovered pane. A second press on
 the same cell is a `double` and opens what the press selected: picker, draft or
-theme (`tui.editor_keys` dispatches both, Load included).
+theme (`tui.editor_keys` dispatches both, Load included, and the Load rows live
+in `tui.editor_load_mouse`).
 """
 
 from . import editoractions, editorviews, theme_engine
+from .editor_load_mouse import load_mouse  # noqa: F401  (re-exported seam)
 from .mouse import DOUBLE
 
 
@@ -27,7 +29,7 @@ def mouse(editor, kind, x, y, modifiers=()):
 		return consumed
 	if panel == 3 and _select_row(editor, 3, y):
 		return editoractions.begin_property_edit(editor)
-	if panel == 4 and _select_row(editor, 4, y):
+	if panel == 4 and editor.picker is None and _select_row(editor, 4, y):
 		return editoractions.open_picker(editor) is not None
 	return consumed
 
@@ -41,25 +43,18 @@ def press(editor, x, y):
 			return True
 	panel = editor._panel_at(x, y)
 	if panel in (3, 4):
-		_select_row(editor, panel, y)
+		# A Colours row opens the picker on the first press; once it is open,
+		# `editor_keys` routes everything to `picker_key`, so this can only
+		# fire on a fresh press and never reopens or double-handles it.
+		if _select_row(editor, panel, y) and panel == 4 \
+				and editor.picker is None:
+			return editoractions.open_picker(editor) is not None
 		return True
 	for index, button in enumerate(editor.buttons):
 		if button.hit_test(x, y):
 			editor.focus, editor.button_index = 2, index
 			return editor._activate()
 	return False
-
-
-def load_mouse(editor, kind, x, y, modifiers=()):
-	"""Load popup: a press selects a row, a double opens it (Enter's flow)."""
-	kind = editor.clicks.push(kind, x, y, modifiers)
-	if kind not in ("press", DOUBLE) or editor.load_box is None:
-		return False
-	if not editor.load_box.click(x, y):
-		return False
-	if kind == DOUBLE:
-		return editoractions.load_key(editor, "enter")
-	return True
 
 
 def scroll(editor, panel, delta):
