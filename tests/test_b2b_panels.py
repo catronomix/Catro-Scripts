@@ -8,6 +8,8 @@ Issue 0041 batch B2b boxes the summary/result blocks of `opencode`,
 log, `tui.status` progress lines, the venv package table) keep their existing
 chrome, and the machine-readable (piped) output keeps its exact pre-sweep
 bytes - `tui.panel` in plain mode is just the title plus the body lines.
+`installdeps` goes one step further (issue 0047): its scan, per-package progress
+and summary are body rows of a single page panel, so the whole run is one box.
 
 Every probe below stubs the network, pip, npm, PIL and filesystem work, so
 nothing installs, scaffolds, generates images or reads a real venv. All writes
@@ -268,7 +270,7 @@ class ImageResizerResultPanelTest(unittest.TestCase):
 # --- installdeps -------------------------------------------------------------
 
 class InstalldepsSummaryPanelTest(unittest.TestCase):
-	"""The final summary is one panel; the install log stays inline."""
+	"""The whole page (scan/progress/summary) is one panel, never bare rows."""
 
 	def render(self, cap, failures=("beta",)):
 		import installdeps
@@ -284,7 +286,8 @@ class InstalldepsSummaryPanelTest(unittest.TestCase):
 
 		with mock.patch.object(installdeps, "parse_arguments",
 							   return_value=args), \
-				mock.patch.object(installdeps, "ensure_pip"), \
+				mock.patch.object(installdeps, "ensure_pip",
+								  return_value=True), \
 				mock.patch.object(installdeps, "fetch_package_mapping",
 								  return_value={}), \
 				mock.patch.object(installdeps.subprocess, "run",
@@ -295,10 +298,25 @@ class InstalldepsSummaryPanelTest(unittest.TestCase):
 		out = capture(self.render, TTY_TRUE)
 		self.assertIn(FRAME, out, out)
 		plain = tui.strip_ansi(out)
+		self.assertIn("DEPENDENCY INSTALLER", plain, out)
 		self.assertIn("INSTALLATION SUMMARY", plain, out)
 		self.assertIn("Successfully processed (1)", plain, out)
 		self.assertIn("Failed to install (1)", plain, out)
 		self.assertIn("\x1b[38;2;", out)
+
+	def test_the_page_is_exactly_one_box(self):
+		out = capture(self.render, TTY_TRUE)
+		plain = tui.strip_ansi(out)
+		lines = plain.strip().splitlines()
+		self.assertEqual(1, out.count(FRAME), out)
+		self.assertTrue(lines[0].startswith("\u250c"), lines[0])
+		self.assertTrue(lines[-1].startswith("\u2514"), lines[-1])
+		for line in lines[1:-1]:
+			self.assertTrue(line.startswith("\u2502") and line.endswith("\u2502"),
+							"row outside the box: {!r}".format(line))
+		# A long row wraps inside the box instead of being cut by the frame.
+		self.assertIn("Moving to next", plain, out)
+		self.assertIn("dependency...", plain, out)
 
 	def test_level_16_and_none_degrade_cleanly(self):
 		out16 = capture(self.render, TTY_16)
@@ -308,14 +326,16 @@ class InstalldepsSummaryPanelTest(unittest.TestCase):
 		self.assertIn(FRAME, out, out)
 		self.assertNotIn("\x1b", out)
 
-	def test_plain_bytes_are_the_pre_sweep_bytes(self):
+	def test_plain_bytes_are_unwrapped_facts(self):
 		out = capture(self.render, PIPE)
 		self.assertEqual(
+			"DEPENDENCY INSTALLER\n"
 			"[info] Installing 'alpha'...\n"
 			"[info] Installing 'beta'...\n"
 			"[warn] Failed to install 'beta' (exit code 1). Moving to next "
 			"dependency...\n"
-			"\nINSTALLATION SUMMARY\n"
+			"\n"
+			"INSTALLATION SUMMARY\n"
 			"Successfully processed (1)\talpha\n"
 			"Failed to install (1)\tbeta\n"
 			"[warn] Continuing execution despite missing packages...\n",
@@ -324,7 +344,7 @@ class InstalldepsSummaryPanelTest(unittest.TestCase):
 
 	def test_all_success_summary_is_the_same_panel(self):
 		out = capture(lambda cap: self.render(cap, failures=()), TTY_TRUE)
-		self.assertIn(FRAME, out, out)
+		self.assertEqual(1, out.count(FRAME), out)
 		self.assertIn("[ok] All dependencies were processed successfully.",
 					  tui.strip_ansi(out), out)
 
