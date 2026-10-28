@@ -6,7 +6,7 @@ One frozen `Capabilities` record per run, resolved by a fixed precedence so ever
 script agrees on colour level, Unicode safety and pipe mode.
 
 Precedence for `level`: NO_COLOR > FORCE_COLOR/CLICOLOR_FORCE > CATRO_COLOR >
-	config.ini colour.level > autodetect (TERM, console, COLORTERM, SSH, tty).
+	config.ini colour.level > autodetect (TERM, console, COLORTERM, WT_SESSION, SSH, tty).
 
 `plain` is the machine-readable mode: stdout is not a tty *and* nobody asked for
 colour on this run. A pipe therefore never carries ANSI, glyphs or padding unless
@@ -118,6 +118,10 @@ def _autodetect(env, isatty):
 		return "16", "windows-legacy-console"
 	if str(env.get("COLORTERM", "")).lower() in ("truecolor", "24bit"):
 		return "true", "COLORTERM"
+	if str(env.get("WT_SESSION", "")).strip():
+		# Windows Terminal is truecolor, but stock PowerShell/cmd exports no
+		# COLORTERM/TERM, so without this rule the fallthrough caps it at 16.
+		return "true", "WT_SESSION"
 	if "direct" in term or "truecolor" in term:
 		return "true", "TERM"
 	if "256color" in term:

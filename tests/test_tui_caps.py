@@ -197,6 +197,15 @@ class CapabilityTests(unittest.TestCase):
 		cap = self.detect({"COLORTERM": "truecolor", "WT_SESSION": "1"}, windows=True)
 		self.assertEqual((cap.level, cap.reason), ("true", "COLORTERM"))
 
+	def test_windows_terminal_is_truecolor_without_colorterm(self):
+		# Stock PowerShell/cmd in Windows Terminal exports only WT_SESSION:
+		# the console is truecolor, so the fallthrough must not cap it at 16.
+		cap = self.detect({"WT_SESSION": "1b2c3d4e"}, windows=True)
+		self.assertEqual((cap.level, cap.reason, cap.plain), ("true", "WT_SESSION", False))
+		# WT wins over a 256-colour TERM the same way COLORTERM does.
+		cap = self.detect({"WT_SESSION": "1", "TERM": "xterm-256color"}, windows=True)
+		self.assertEqual((cap.level, cap.reason), ("true", "WT_SESSION"))
+
 	def test_unicode_flag(self):
 		cases = (
 			({}, "utf-8", True),
