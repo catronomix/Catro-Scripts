@@ -6,7 +6,8 @@ One frozen `Capabilities` record per run, resolved by a fixed precedence so ever
 script agrees on colour level, Unicode safety and pipe mode.
 
 Precedence for `level`: NO_COLOR > FORCE_COLOR/CLICOLOR_FORCE > CATRO_COLOR >
-	config.ini colour.level > autodetect (TERM, console, COLORTERM, WT_SESSION, SSH, tty).
+	config.ini colour.level > autodetect (TERM, COLORTERM, WT_SESSION, the
+	Windows VT probe, mintty, SSH, tty).
 
 `plain` is the machine-readable mode: stdout is not a tty *and* nobody asked for
 colour on this run. A pipe therefore never carries ANSI, glyphs or padding unless
@@ -24,14 +25,14 @@ import os
 import sys
 from dataclasses import dataclass
 
-from . import config
+from . import config, console_vt
 
 LEVELS = ("none", "16", "256", "true")
 
 # True on a real Windows host; tests patch it to exercise the console rules.
 _IS_WINDOWS = os.name == "nt"
 
-_LEGACY_CONSOLE_MARKERS = ("WT_SESSION", "ANSICON", "ConEmuANSI", "TERM", "TERM_PROGRAM")
+_vt_probe = console_vt.can_vt  # test seam; only Windows + tty reaches it
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ def detect(stream=None, environ=None):
 	isatty = _isatty(stream)
 	level, reason, requested = _forced(env)
 	if level is None:
-		level, reason = _autodetect(env, isatty)
+		level, reason = _autodetect(env, isatty, stream)
 	return Capabilities(
 		level=level,
 		unicode=_supports_unicode(env, stream),
@@ -103,18 +104,13 @@ def _forced(env):
 	return None, "", False
 
 
-def _autodetect(env, isatty):
-	"""Environment-derived level, most specific rule first.
-
-	A pipe is never a terminal; only `_forced` can style one.
-	"""
+def _autodetect(env, isatty, stream=None):
+	"""Environment-derived level, most specific rule first."""
 	term = str(env.get("TERM", "")).lower()
 	if term == "dumb":
 		return "none", "TERM=dumb"
 	if not isatty:
 		return "none", "pipe"
-	if _IS_WINDOWS and not _modern_console(env):
-		return "16", "windows-legacy-console"
 	if str(env.get("COLORTERM", "")).lower() in ("truecolor", "24bit"):
 		return "true", "COLORTERM"
 	if str(env.get("WT_SESSION", "")).strip():  # Windows Terminal is truecolor.
@@ -123,15 +119,19 @@ def _autodetect(env, isatty):
 		return "true", "TERM"
 	if "256color" in term:
 		return "256", "TERM"
+	# Declarations above win; only now is the real Windows console asked.
+	if _IS_WINDOWS and _vt_probe(stream):
+		return "true", "vt-console"
+	cygwin = "cygwin" in str(env.get("OSTYPE", "")).lower()
+	mingw = "MINGW" in str(env.get("MSYSTEM", "")).upper()
+	if ("mintty" in str(env.get("TERM_PROGRAM", "")).lower()
+			or (term.startswith("xterm") and (cygwin or mingw))):
+		return "256", "mintty"  # Git Bash ships TERM=xterm, never 256color.
 	if env.get("SSH_TTY") or env.get("SSH_CLIENT"):
-		# Colour depth is capped remotely unless COLORTERM/TERM already said more.
-		return "256", "ssh"
+		return "256", "ssh"  # Capped remotely unless COLORTERM/TERM said more.
+	if _IS_WINDOWS:
+		return "16", "windows-legacy-console"
 	return "16", "tty"
-
-
-def _modern_console(env):
-	"""True when the Windows console is known to understand ANSI escapes."""
-	return any(str(env.get(marker, "")).strip() for marker in _LEGACY_CONSOLE_MARKERS)
 
 
 def _supports_unicode(env, stream):
