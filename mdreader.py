@@ -411,6 +411,34 @@ def segment_pair(style, colours):
     return 5 if is_dim else 1
 
 
+def linkify(raw_content):
+    """`[text](url)` -> `[url](url)`, leaving code and fences untouched.
+
+    Markdown that *shows* link syntax - a fenced block or an inline `code span` -
+    must render as written, so the rewrite skips both: only fenced lines outside
+    a ``` / ~~~ block and the text between backticks is rewritten.
+    """
+    link = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+    out = []
+    fence = None
+    for line in raw_content.splitlines(True):
+        marker = line.lstrip()[:3]
+        if marker in ("```", "~~~"):
+            if fence is None:
+                fence = marker[0]
+            elif marker[0] == fence:
+                fence = None
+            out.append(line)
+            continue
+        if fence is not None:
+            out.append(line)
+            continue
+        spans = re.split(r"(`[^`]*`)", line)
+        out.append("".join(part if index % 2 else link.sub(r"[\2](\2)", part)
+                           for index, part in enumerate(spans)))
+    return "".join(out)
+
+
 def process_markdown_rich(raw_content, width, theme_mode=0):
     """Parses and renders Markdown text into formatted lines using Rich."""
     rich_theme = get_rich_theme(theme_mode)
@@ -424,7 +452,7 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
     # still applies the link styles - both `markdown.link` (the text) and
     # `markdown.link_url` (the hyperlinked url Rich emits) paint the warn
     # colour, so the reader shows links as links instead of plain body text.
-    processed_content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"[\2](\2)", raw_content)
+    processed_content = linkify(raw_content)
 
     # Disable justify to prevent table columns from drifting
     md = Markdown(processed_content, justify="left")

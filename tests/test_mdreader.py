@@ -459,6 +459,35 @@ class MdreaderColourMappingTests(unittest.TestCase):
         self.assertEqual(len(roles), len(mdreader.PAIR_ROLES),
                          "pair numbers must stay unique")
 
+    def test_link_rewrite_leaves_fences_and_code_spans_alone(self):
+        """A document that shows link syntax must render it as written."""
+        source = (
+            "```\n[x](https://example.com/a)\n```\n\n"
+            "~~~\n[y](https://example.com/b)\n~~~\n\n"
+            "Use `[z](https://example.com/c)` here, or [site](https://example.com/d).\n"
+        )
+        rewritten = mdreader.linkify(source)
+        for literal in ("[x](https://example.com/a)",
+                        "[y](https://example.com/b)",
+                        "`[z](https://example.com/c)`"):
+            with self.subTest(literal=literal):
+                self.assertIn(literal, rewritten)
+        self.assertIn("[https://example.com/d](https://example.com/d)",
+                      rewritten)
+
+    def test_rendered_code_keeps_its_link_syntax(self):
+        """End to end: the fence and the span survive the Rich pass verbatim."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        source = ("```\n[x](https://example.com/a)\n```\n\n"
+                  "Use `[z](https://example.com/c)` here.\n")
+        doc = mdreader.process_markdown_rich(source, 80, 0)
+        text = "\n".join(seg.text for line in doc for seg in line.segments)
+        self.assertIn("[x](https://example.com/a)", text)
+        self.assertIn("[z](https://example.com/c)", text)
+        self.assertNotIn("[https://example.com/a]", text)
+        self.assertNotIn("[https://example.com/c]", text)
+
 
 if __name__ == "__main__":
     unittest.main()
