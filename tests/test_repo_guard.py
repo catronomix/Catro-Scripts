@@ -44,12 +44,28 @@ from tui import config, theme_engine  # noqa: E402  (import after sys.path setup
 
 SHIPPED = REPO / "themes" / "cozypurple.json"
 
+# Recorded before the fallback install below: if this is False, the suite's
+# session fixture is not protecting the checkout and the guard tests must say
+# so instead of passing on their own bootstrap.
+_SEEN = {}
+
+
+def setUpModule():
+	_SEEN["installed"] = support.guard_installed()
+	# Fallback for a direct `python -m unittest` run: these tests deliberately
+	# attempt a checkout write, so the guard must exist before they start.
+	support.install_repo_write_guard()
+
 
 class GuardInstallationTests(unittest.TestCase):
 	"""The session fixture is enough: these tests do no per-module setup."""
 
 	def test_the_suite_installed_the_guard(self):
-		self.assertTrue(support.guard_installed())
+		if "PYTEST_CURRENT_TEST" not in os.environ:
+			self.skipTest("only pytest has the session hook; setUpModule "
+						  "installs the guard for a plain unittest run")
+		self.assertTrue(_SEEN.get("installed"),
+						"no suite-wide guard: tests/conftest.py did not install it")
 
 	def test_a_repo_write_is_refused_and_the_target_is_named(self):
 		target = REPO / "themes" / "cozypurple.json"
