@@ -32,6 +32,18 @@ import tui  # noqa: E402  (import after sys.path setup)
 import sanitize  # noqa: E402
 from support import clean_env  # noqa: E402  (test helper, not production)
 
+FRAME = "\u250c"
+TTY_TRUE = tui.Capabilities(level="true", unicode=True, width=80, isatty=True,
+							plain=False, reason="test")
+TTY_16 = tui.Capabilities(level="16", unicode=True, width=80, isatty=True,
+						  plain=False, reason="test")
+TTY_NONE = tui.Capabilities(level="none", unicode=True, width=80, isatty=True,
+							plain=False, reason="test")
+NARROW = tui.Capabilities(level="true", unicode=True, width=48, isatty=True,
+						  plain=False, reason="test")
+PIPE = tui.Capabilities(level="none", unicode=False, width=None, isatty=False,
+						plain=True, reason="test")
+
 
 class FakeStream:
 	"""A tty-able stream: writes are captured, `isatty` is the argument."""
@@ -160,6 +172,132 @@ class SanitizeTest(unittest.TestCase):
 		self.assertFalse(os.path.exists(created[0]),
 						 "the temp replacement file survived the run")
 		self.assertNotIn("SECRET", self.stdout.getvalue())
+
+	def test_the_successful_page_shows_the_whole_force_push(self):
+		self.history.return_value = True
+		with mock.patch.object(sanitize.subprocess, "run",
+							   return_value=ok_run()):
+			rc = self.run_main(["SECRET", "<redacted>", "--yes"])
+		self.assertEqual(rc, 0)
+		out = self.stdout.getvalue()
+		self.assertIn("git push --force --all && git push --force --tags", out)
+		self.assertIn("Rotate the leaked secret", out)
+
+	def test_one_positional_is_a_usage_error(self):
+		"""The prompt form takes no positional: never read it as the secret."""
+		getpass_ = mock.patch.object(sanitize.getpass, "getpass").start()
+		self.addCleanup(mock.patch.stopall)
+		stderr = io.StringIO()
+		with mock.patch.object(sys, "stderr", stderr), \
+				self.assertRaises(SystemExit) as caught:
+			self.run_main(["<redacted>", "--yes"])
+		self.assertEqual(caught.exception.code, 2)
+		self.assertIn("both the secret and the placeholder",
+					  self.stderr.getvalue())
+		getpass_.assert_not_called()
+		self.history.assert_not_called()
+
+
+class SanitizePlanPageTest(unittest.TestCase):
+	"""The PLAN and NEXT STEPS boxes are a tty frame around complete values."""
+
+	PLAN = [("Repo", "/tmp/repo"), ("Secret", "<redacted>"),
+			("Placeholder", "<redacted>"), ("Backend", "git filter-repo")]
+	STEPS = [
+		("1. Force-push", "git push --force --all && git push --force --tags"),
+		("2. Teammates", "Everyone else must re-clone"),
+		("3. Rotation", "Rotate the leaked secret"),
+	]
+
+	@staticmethod
+	def text(out):
+		"""The page's words: no frame glyphs, no escapes, single spaces."""
+		plain = tui.strip_ansi(out)
+		for glyph in "─│┌┐└┘":
+			plain = plain.replace(glyph, " ")
+		return " ".join(plain.split())
+
+	def test_true_colour_draws_a_centred_frame(self):
+		out = sanitize.plan_block("SANITIZE PLAN", self.PLAN, TTY_TRUE)
+		self.assertIn(FRAME, out, out)
+		self.assertIn("\x1b[38;2;", out)
+		self.assertEqual(len(out.splitlines()), len(self.PLAN) + 2)
+		self.assertIn("SANITIZE PLAN", tui.strip_ansi(out))
+
+	def test_level_16_keeps_the_frame_and_drops_truecolour(self):
+		out = sanitize.plan_block("SANITIZE PLAN", self.PLAN, TTY_16)
+		self.assertIn(FRAME, out, out)
+		self.assertNotIn("38;2;", out)
+		self.assertNotIn("48;2;", out)
+
+	def test_level_none_keeps_the_layout_and_drops_every_escape(self):
+		out = sanitize.plan_block("SANITIZE PLAN", self.PLAN, TTY_NONE)
+		self.assertIn(FRAME, out, out)
+		self.assertNotIn("\x1b", out)
+
+	def test_plain_keeps_the_tab_records(self):
+		out = sanitize.plan_block("SANITIZE PLAN", self.PLAN, PIPE)
+		self.assertEqual(
+			out,
+			"SANITIZE PLAN\n"
+			"Repo\t/tmp/repo\n"
+			"Secret\t<redacted>\n"
+			"Placeholder\t<redacted>\n"
+			"Backend\tgit filter-repo")
+
+	def test_plain_next_steps_records_are_unchanged(self):
+		out = sanitize.plan_block("NEXT STEPS", self.STEPS, PIPE)
+		self.assertEqual(
+			out,
+			"NEXT STEPS\n"
+			"1. Force-push\tgit push --force --all && git push --force --tags\n"
+			"2. Teammates\tEveryone else must re-clone\n"
+			"3. Rotation\tRotate the leaked secret")
+
+	def test_the_force_push_command_survives_every_width(self):
+		for label, cap in (("80", TTY_TRUE), ("48", NARROW)):
+			with self.subTest(width=label):
+				out = sanitize.plan_block("NEXT STEPS", self.STEPS, cap)
+				text = self.text(out)
+				self.assertIn(
+					"git push --force --all && git push --force --tags", text)
+				self.assertNotIn("..", text)
+				self.assertIn("Rotate the leaked secret", text)
+
+	def test_a_long_repo_path_wraps_instead_of_truncating(self):
+		repo = "C:/Users/catronomix/GITHUB/a-really-long-repository-name"
+		out = sanitize.plan_block("SANITIZE PLAN",
+								  [("Repo", repo), ("Secret", "<redacted>")],
+								  NARROW)
+		text = self.text(out)
+		self.assertIn(repo, text.replace(" ", ""))
+		self.assertNotIn("..", text)
+
+
+class SanitizePromptRowTest(unittest.TestCase):
+	"""The prompt-row erase is the shared seam and only on a capable tty."""
+
+	def test_erase_writes_the_shared_seam_on_a_tty(self):
+		stream = FakeStream(tty=True)
+		sanitize.blank_prompt_row(TTY_16, stream)
+		self.assertEqual(stream.getvalue(), tui.screen.ERASE_ROW_UP)
+
+	def test_erase_is_silent_off_a_tty(self):
+		stream = FakeStream(tty=False)
+		sanitize.blank_prompt_row(TTY_TRUE, stream)
+		self.assertEqual(stream.getvalue(), "")
+
+	def test_erase_is_silent_when_the_run_asked_for_no_escapes(self):
+		stream = FakeStream(tty=True)
+		sanitize.blank_prompt_row(TTY_NONE, stream)
+		self.assertEqual(stream.getvalue(), "")
+
+	def test_erase_is_silent_on_a_stream_without_isatty(self):
+		class Bare:
+			def write(self, text):
+				raise AssertionError("wrote to a stream without isatty")
+
+		sanitize.blank_prompt_row(TTY_TRUE, Bare())
 
 
 if __name__ == "__main__":

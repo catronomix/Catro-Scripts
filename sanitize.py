@@ -18,7 +18,7 @@
 
 	Usage:
 		python sanitize.py "<secret>" ["<placeholder>"] [--yes]
-		python sanitize.py ["<placeholder>"] [--yes]   # prompts for the secret
+		python sanitize.py [--yes]                      # prompts for the secret
 
 	Note:
 		Always quote both values. Secrets/placeholders often contain shell
@@ -73,28 +73,48 @@ def run_bytes(cmd, **kwargs):
 def parse_args(argv):
 	# Parse CLI input into secret/placeholder plus a non-interactive flag. Both
 	# positionals are optional so the secret can be read at a masked prompt:
-	# argv supplies them for automation, a terminal can be prompted.
+	# argv supplies them for automation, a terminal can be prompted. A lone
+	# positional is refused rather than guessed - the prompt form takes none, so
+	# it would silently be read as the secret and could rewrite history in place.
 	parser = argparse.ArgumentParser(
 		description="Replace a secret with a placeholder across full git history.")
-	parser.add_argument("secret", nargs="?",
+	parser.add_argument("secret", nargs="?", default=None,
 						help="Secret string to remove (must not be empty). "
 							 "Omit it on a terminal to be prompted (no echo).")
-	parser.add_argument("placeholder", nargs="?", default="<redacted>",
+	parser.add_argument("placeholder", nargs="?", default=None,
 						help="Replacement text, e.g. '<redacted>' "
 							 "(default: '<redacted>').")
 	parser.add_argument("--yes", "-y", action="store_true",
 						help="Skip confirmation prompts (for automation).")
-	return parser.parse_args(argv)
+	args = parser.parse_args(argv)
+	if (args.secret is None) != (args.placeholder is None):
+		parser.error("pass both the secret and the placeholder, or neither "
+					 "of them to be prompted for the secret")
+	return args
 
 
-def blank_prompt_row(stream=None):
+def _vt_ready(stream):
+	# False only for a real Windows console that rejects VT escapes: there the
+	# erase bytes would be typed out as literal "[1A[2K". Everything else
+	# (POSIX ttys, test doubles) is assumed to render them.
+	if os.name != "nt" or not hasattr(stream, "fileno"):
+		return True
+	return tui.console_vt.can_vt(stream)
+
+
+def blank_prompt_row(cap, stream=None):
 	# Erase the row the masked prompt left behind so the prompt text does not
-	# stay in the scrollback. No-op off a terminal.
+	# stay in the scrollback. Silent when the run asked for no escapes at all
+	# (level "none") or the console cannot take them; no-op off a terminal.
+	if cap is not None and cap.level == "none":
+		return
 	stream = sys.stderr if stream is None else stream
 	try:
 		if not stream.isatty():
 			return
 	except (AttributeError, ValueError, OSError):
+		return
+	if not _vt_ready(stream):
 		return
 	stream.write(tui.screen.ERASE_ROW_UP)
 	stream.flush()
@@ -102,12 +122,25 @@ def blank_prompt_row(stream=None):
 
 def plan_block(title, pairs, cap):
 	# The plan and the next-steps block: a small centred panel on a terminal,
-	# the same TAB records as before in a pipe.
+	# the same TAB records as before in a pipe. Values wrap inside the box, so a
+	# long repo path or the force-push command is shown whole instead of cut.
 	if cap.plain:
 		return tui.key_values(title, pairs, cap=cap)
 	key_width = max([len(key) for key, _ in pairs] or [0])
-	body = ["{}  {}".format(key.ljust(key_width), value) for key, value in pairs]
-	width = min(PLAN_WIDTH, cap.width) if cap.width else PLAN_WIDTH
+	rows = ["{}  {}".format(key.ljust(key_width), value) for key, value in pairs]
+	needed = max([tui.display_width(row) for row in rows] or [0]) + 4
+	needed = max(needed, tui.display_width(title) + 6)
+	width = max(PLAN_WIDTH, needed)
+	if cap.width:
+		width = min(width, cap.width)
+	cell = max(1, width - 4)
+	body = []
+	for key, value in pairs:
+		lead = "{}  ".format(key.ljust(key_width))
+		hang = " " * len(lead)
+		pieces = tui.wrap(value, max(1, cell - len(lead))) or [""]
+		body.append(lead + pieces[0])
+		body.extend(hang + piece for piece in pieces[1:])
 	lines = tui.panel(title, body, width=width, cap=cap).splitlines()
 	box = max([tui.display_width(line) for line in lines] or [0])
 	margin = " " * max(0, ((cap.width or box) - box) // 2)
@@ -226,6 +259,8 @@ def main(argv=None) -> int:
 	cap = tui.detect()
 	args = parse_args(sys.argv[1:] if argv is None else argv)
 	secret, placeholder = args.secret, args.placeholder
+	if placeholder is None:
+		placeholder = "<redacted>"
 
 	# Masked intake: argv wins; otherwise a terminal may be prompted. Off a
 	# terminal there is nobody to answer, so refuse rather than block.
@@ -235,6 +270,9 @@ def main(argv=None) -> int:
 				"[Error] sanitize needs an interactive terminal to prompt for "
 				"the secret (stdin is not a tty).\n")
 			return 2
+		# The prompt (and its erase) land on stderr, so its capability - not the
+		# page's stdout - decides whether the erase escapes may be written.
+		prompt_cap = tui.detect(sys.stderr)
 		try:
 			secret = getpass.getpass("Secret: ")
 		except (EOFError, KeyboardInterrupt):
@@ -242,7 +280,7 @@ def main(argv=None) -> int:
 			return 1
 		finally:
 			# getpass never echoes the typed value; blank its prompt row too.
-			blank_prompt_row()
+			blank_prompt_row(prompt_cap)
 
 	replace_file = None
 	try:
