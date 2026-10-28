@@ -123,9 +123,11 @@ def main(argv=None):
 	"""Run one command; returns the process exit code."""
 	args = list(sys.argv[1:] if argv is None else argv)
 	out = sys.stdout
-	# The VT probe reads the console mode, so bootstrap ANSI first.
-	caps.init_ansi()
 	cap = caps.detect(out)
+	# Windows consoles need the ANSI bootstrap, but only when the page is
+	# actually going to emit codes (a pipe or level "none" emits none).
+	if not cap.plain and cap.level != "none":
+		caps.init_ansi()
 	try:
 		return _dispatch(args, out, cap)
 	except theme_engine.ThemeError as exc:

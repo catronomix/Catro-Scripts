@@ -14,6 +14,7 @@ inert - no capability probe, print or file access before `main()` runs.
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -55,6 +56,35 @@ class CliSplitShimTests(unittest.TestCase):
 					node, (ast.Expr, ast.Import, ast.ImportFrom, ast.Assign,
 						   ast.FunctionDef))
 		self.assertIn("def main(", source)
+
+
+class BootstrapGateTests(unittest.TestCase):
+	"""The Windows ANSI bootstrap stays gated on "this run emits codes"."""
+
+	def run_main(self, cap):
+		import io
+		import tui.theme_cli as cli
+		with mock.patch.object(cli.caps, "detect", return_value=cap), \
+				mock.patch.object(cli.caps, "init_ansi") as init_ansi, \
+				mock.patch.object(sys, "stdout", io.StringIO()):
+			self.assertEqual(cli.main(["show"]), 0)
+		return init_ansi
+
+	def test_pipe_does_not_bootstrap(self):
+		from tui import caps
+		cap = caps.Capabilities("none", False, None, False, True, "pipe")
+		self.run_main(cap).assert_not_called()
+
+	def test_no_colour_tty_does_not_bootstrap(self):
+		# Level "none" on a tty still draws the box, but emits no escape codes.
+		from tui import caps
+		cap = caps.Capabilities("none", True, None, True, False, "NO_COLOR")
+		self.run_main(cap).assert_not_called()
+
+	def test_styled_tty_bootstraps(self):
+		from tui import caps
+		cap = caps.Capabilities("16", True, None, True, False, "tty")
+		self.run_main(cap).assert_called_once_with()
 
 
 if __name__ == "__main__":
