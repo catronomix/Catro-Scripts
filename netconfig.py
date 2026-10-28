@@ -20,9 +20,10 @@ USAGE:
 	python netconfig.py
 
 RENDERING:
-	- Menus and mastheads are the shared `tui.chrome` rows and prompts come
-	  from `tui.prompts`, so the theme, colour level and ASCII fallback are the
-	  library's, not this script's. Answers are still plain numbers.
+	- Each page is one `tui.panel` holding the title, subtitle and menu rows,
+	  and the menus and prompts come from `tui.chrome`/`tui.prompts`, so the
+	  theme, colour level and ASCII fallback are the library's, not this
+	  script's. Answers are still plain numbers.
 
 INTERMEDIATE OPTIONS:
 	- Switch Mode: Toggle between dynamic and manual addressing.
@@ -44,23 +45,35 @@ import tui
 # Configuration file for storing manual profiles
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "networks.json")
 
-# Masthead of the tool: the shared page width, so every menu lines up under it.
+# Masthead of the tool: the shared page width, so every page lines up.
 PAGE_WIDTH = 64
 
 
-def banner(title, subtitle=None, cap=None):
-	"""House masthead for one page of the tool."""
-	return tui.chrome.header(title, subtitle, width=PAGE_WIDTH, cap=cap)
-
-
-def menu(items, cap=None):
+def menu(items, cap=None, width=PAGE_WIDTH):
 	"""Numbered menu rows from the shared chrome.
 
 	`selected=None`: these menus are answered by number, so nothing is
 	highlighted until the operator picks a row. A caller that does select a row
 	gets the accent-on-surface bar from `chrome.menu`.
 	"""
-	return tui.chrome.menu(items, selected=None, width=PAGE_WIDTH, cap=cap)
+	return tui.chrome.menu(items, selected=None, width=width, cap=cap)
+
+
+def page(title, subtitle, items, cap=None):
+	"""One tool page: the title, subtitle and menu rows inside the page frame.
+
+	The frame spans PAGE_WIDTH; the menu is narrowed by the frame's two edge
+	cells and its two gutters, so its bars land inside the box instead of being
+	truncated by it. Piped, `panel` drops the frame and the page is the old
+	title/subtitle/menu lines, one per row.
+	"""
+	if cap is None:
+		cap = tui.detect()
+	body = []
+	if subtitle:
+		body.append(tui.style(subtitle, fg="fg-muted", cap=cap))
+	body.extend(menu(items, cap=cap, width=PAGE_WIDTH - 4).splitlines())
+	return tui.panel(title, body, width=PAGE_WIDTH, cap=cap)
 
 
 def get_platform():
@@ -436,9 +449,7 @@ def interface_menu(selected_iface, cap=None):
 	while True:
 		configs = load_configs()
 		print()
-		print(banner(f"Managing: {selected_iface}", "Network adapter menu",
-					 cap=cap))
-		print(menu([
+		print(page(f"Managing: {selected_iface}", "Network adapter menu", [
 			"Switch IP Mode (DHCP/Static)",
 			"Set DNS (Auto/Manual)",
 			"Restart Network Adapter",
@@ -531,9 +542,8 @@ def main():
 			continue
 
 		print()
-		print(banner("Available Interfaces", "Select adapter number",
-					 cap=cap))
-		print(menu(list(interfaces) + ["Quit"], cap=cap))
+		print(page("Available Interfaces", "Select adapter number",
+				   list(interfaces) + ["Quit"], cap=cap))
 
 		try:
 			choice_str = tui.ask_text("\nSelect interface (or Enter to quit): ")
