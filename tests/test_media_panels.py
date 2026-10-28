@@ -353,11 +353,13 @@ class PromptSeamTest(unittest.TestCase):
 								 "{} still calls input() directly".format(name))
 
 	def test_settings_blocks_use_a_tui_panel(self):
+		# A result block is a `tui.panel` (or `tui.status_panel`, the wrapping
+		# variant built on it), never a hand-drawn frame.
 		for name, _probe in PROBES:
 			with self.subTest(script=name):
 				source = (REPO / name).read_text(encoding="utf-8")
-				self.assertIn("tui.panel(", source,
-							  "{} draws no result panel".format(name))
+				self.assertRegex(source, r"tui\.(?:status_)?panel\(",
+								 "{} draws no result panel".format(name))
 
 
 if __name__ == "__main__":

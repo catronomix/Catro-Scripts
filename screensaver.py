@@ -71,8 +71,8 @@ def menu_step(count, index, key):
 	"""Apply one key token to the menu; returns (action, index).
 
 	Actions: "move" (redraw at the returned index), "select" (take the index)
-	or "exit" (leave with status 0). Unknown keys redraw in place, so every
-	press gives feedback.
+	or "exit" (leave with status 0). A digit key selects the row it labels when
+	in range; unknown keys redraw in place, so every press gives feedback.
 	"""
 	if key == "up":
 		return "move", (index - 1) % count
@@ -80,6 +80,12 @@ def menu_step(count, index, key):
 		return "move", (index + 1) % count
 	if key == "enter":
 		return "select", index
+	if isinstance(key, str) and len(key) == 1 and key.isdigit():
+		# A number key is a shortcut for the row it labels; out-of-range digits
+		# are not a choice and just redraw.
+		choice = int(key) - 1
+		if 0 <= choice < count:
+			return "select", choice
 	if key in ("esc", "ctrl-c"):
 		return "exit", index
 	return "move", index
@@ -100,7 +106,7 @@ def draw_menu(stream, names, selected_idx, cap):
 	body = [line + ground
 			for line in tui.menu(names, selected_idx, cap=cap).splitlines()]
 	stream.write(tui.panel("SCREENSAVERS", body, cap=cap) + "\n")
-	stream.write("Use UP/DOWN arrows to select, ENTER to run.\n")
+	stream.write("Use UP/DOWN arrows or a number to select, ENTER to run.\n")
 	stream.flush()
 
 

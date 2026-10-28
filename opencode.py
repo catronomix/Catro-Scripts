@@ -105,7 +105,7 @@ def print_not_installed(cap=None):
 		tui.field("Get it here:", "https://opencode.ai", cap=cap),
 		tui.field("Docs (CLI):", "https://opencode.ai/docs/cli", cap=cap),
 		"",
-		tui.section("Install options:", cap=cap),
+		tui.style("Install options:", fg="header-fg", bold=True, cap=cap),
 		"  {}   (macOS/Linux)".format(
 			command("curl -fsSL https://opencode.ai/install | bash")),
 		"  {}                              (npm, cross-platform)".format(

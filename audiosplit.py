@@ -262,7 +262,8 @@ def main():
 			failures += 1
 
 	print()
-	print(tui.panel(None, [tui.section("Processing complete.", cap=cap)],
+	print(tui.panel(None, [tui.style("Processing complete.", fg="header-fg",
+									bold=True, cap=cap)],
 					cap=cap))
 	# Any per-file error makes the whole run a failure even though processing
 	# continued to the next file.
