@@ -607,7 +607,7 @@ class CountTableTest(unittest.TestCase):
 		(root / "a.txt").write_text("x" * 10, encoding="utf-8")
 		(root / "b.py").write_text("y" * 5, encoding="utf-8")
 
-	def render(self, tty):
+	def render(self, tty, argv=None):
 		stream = FakeTty(tty)
 		env = clean_env()
 		if tty:
@@ -615,7 +615,8 @@ class CountTableTest(unittest.TestCase):
 		with mock.patch.dict(os.environ, env, clear=True), \
 				mock.patch.object(tui, "init_ansi"), \
 				mock.patch.object(sys, "stdout", stream), \
-				mock.patch.object(sys, "argv", ["count.py", self.tmp.name]):
+				mock.patch.object(sys, "argv",
+								  argv or ["count.py", self.tmp.name]):
 			self.count.main()
 		return stream.getvalue()
 
@@ -644,6 +645,30 @@ class CountTableTest(unittest.TestCase):
 		self.assertEqual(lines[-3], ".txt\t1\t10.00 B")
 		self.assertEqual(lines[-2], ".py\t1\t5.00 B")
 		self.assertEqual(lines[-1], "TOTAL (ALL LISTED)\t2\t15.00 B")
+
+	def test_long_label_is_truncated_and_the_box_stays_square(self):
+		long_name = "a-rather-long-directory-name-that-overflows-the-column"
+		subdir = Path(self.tmp.name) / long_name
+		subdir.mkdir()
+		(subdir / "payload.bin").write_text("z" * 3, encoding="utf-8")
+		out = self.render(tty=True, argv=["count.py", self.tmp.name, "-d"])
+		frame = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u253c"
+		boxed = [line for line in out.splitlines()
+				 if any(glyph in line for glyph in frame)]
+		self.assertTrue(boxed, out)
+		widths = {tui.display_width(line) for line in boxed}
+		self.assertEqual(len(widths), 1,
+						 "a long label broke the box: widths {}".format(widths))
+		self.assertIn("a-rather-long-directory-name", out)
+		self.assertIn("..", out, "the long label was not cut at the table seam")
+
+	def test_long_label_pipe_record_keeps_the_full_name(self):
+		long_name = "a-rather-long-directory-name-that-overflows-the-column"
+		subdir = Path(self.tmp.name) / long_name
+		subdir.mkdir()
+		(subdir / "payload.bin").write_text("z" * 3, encoding="utf-8")
+		out = self.render(tty=False, argv=["count.py", self.tmp.name, "-d"])
+		self.assertIn(long_name + "\t", out)
 
 
 class ActionResultBlockTest(unittest.TestCase):

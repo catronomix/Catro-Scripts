@@ -252,9 +252,12 @@ def main():
 	total_row = (footer_label, str(total_count), format_size(total_size, raw=args.raw))
 	row_styles = [{"fg": RAINBOW[i % len(RAINBOW)]} for i in range(len(rows))]
 	row_styles.append({"bold": True})
+	# The fixed widths are exact, so a name longer than NAME_WIDTH must be cut
+	# by the table seam (`..`): letting it overflow would break the frame. A
+	# pipe never reaches the truncation branch, so its records stay complete.
 	print(tui.render_table(headers, rows + [total_row],
 						   widths=(NAME_WIDTH, COUNT_WIDTH, SIZE_WIDTH),
-						   truncate=False, row_styles=row_styles, cap=cap))
+						   row_styles=row_styles, cap=cap))
 	if not cap.plain:
 		print()
 
