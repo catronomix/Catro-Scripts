@@ -299,6 +299,17 @@ class SanitizePromptRowTest(unittest.TestCase):
 
 		sanitize.blank_prompt_row(TTY_TRUE, Bare())
 
+	def test_erase_is_silent_when_a_windows_console_rejects_vt(self):
+		"""A console without VT support would type the erase bytes out."""
+		stream = FakeStream(tty=True)
+		stream.fileno = lambda: 1
+		with mock.patch.object(sanitize.os, "name", "nt"), \
+				mock.patch.object(tui.console_vt, "can_vt",
+								  return_value=False) as probe:
+			sanitize.blank_prompt_row(TTY_TRUE, stream)
+		self.assertEqual(stream.getvalue(), "")
+		probe.assert_called_once_with(stream)
+
 
 if __name__ == "__main__":
 	unittest.main()
