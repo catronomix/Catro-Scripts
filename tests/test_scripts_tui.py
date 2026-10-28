@@ -31,6 +31,7 @@ Run with:
 import contextlib
 import io
 import json
+import ast
 import os
 import re
 import sys
@@ -55,6 +56,20 @@ setUpModule, tearDownModule = module_isolation()
 def cap16():
 	return tui.Capabilities(level="16", unicode=True, width=None,
 							isatty=True, plain=False, reason="test")
+
+
+def is_tui_call(node, name):
+	"""True for a `tui.<name>(...)` / `tui.chrome.<name>(...)` call node."""
+	if not isinstance(node, ast.Call):
+		return False
+	func = node.func
+	if not isinstance(func, ast.Attribute) or func.attr != name:
+		return False
+	owner = func.value
+	if isinstance(owner, ast.Name):
+		return owner.id == "tui"
+	return (isinstance(owner, ast.Attribute) and owner.attr == "chrome"
+			and isinstance(owner.value, ast.Name) and owner.value.id == "tui")
 
 
 class FakeTty:
@@ -248,6 +263,30 @@ class ThemedOutputTest(unittest.TestCase):
 			"these scripts print without a shared chrome helper "
 			"(tui.header/panel/rule/status/field/fill/menu or the table "
 			"helpers): {}".format(", ".join(unthemed)))
+
+
+class NoNestedSectionTest(unittest.TestCase):
+	"""A section inside a panel doubles the heading.
+
+	A `tui.panel` already frames its rows, so a `tui.section` in that slot
+	paints a second heading band inside the box; the page helper there is
+	`tui.style(..., fg="header-fg", bold=True)`.
+	"""
+
+	def test_no_script_puts_a_section_inside_a_panel(self):
+		offenders = []
+		for name in NoPrivateAnsiTest.MIGRATED:
+			tree = ast.parse((REPO / name).read_text(encoding="utf-8"))
+			for node in ast.walk(tree):
+				if not is_tui_call(node, "panel"):
+					continue
+				for arg in node.args:
+					for inner in ast.walk(arg):
+						if is_tui_call(inner, "section"):
+							offenders.append("{}:{}".format(name, inner.lineno))
+		self.assertEqual(offenders, [],
+						 "tui.section nested inside tui.panel: {}".format(
+							 ", ".join(offenders)))
 
 
 class ListNoColorTest(unittest.TestCase):
@@ -455,6 +494,15 @@ class ScreensaverMenuTest(unittest.TestCase):
 		self.assertEqual(self.screensaver.menu_step(3, 1, "x"), ("move", 1))
 		self.assertEqual(self.screensaver.menu_step(3, 1, None), ("move", 1))
 
+	def test_step_digit_selects_the_row_it_labels(self):
+		self.assertEqual(self.screensaver.menu_step(3, 0, "2"), ("select", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 2, "1"), ("select", 0))
+		self.assertEqual(self.screensaver.menu_step(3, 0, "3"), ("select", 2))
+
+	def test_step_out_of_range_digit_redraws_in_place(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "4"), ("move", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 1, "0"), ("move", 1))
+
 	def test_draw_menu_marks_only_the_selected_row(self):
 		stream = self.Stream()
 		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
@@ -593,6 +641,17 @@ class HelpPanelTest(unittest.TestCase):
 							   isatty=False, plain=True, reason="test")
 		out = self.render(self.DOC, cap)
 		self.assertEqual(out, "COUNT\n\nBody line\n    Indented line\n")
+
+	def test_title_near_the_body_width_is_not_cut_off(self):
+		# The title is two cells wider than the longest body line, which is
+		# exactly the case where the panel's top-rule margin used to eat it.
+		title = "A TITLE SLIGHTLY WIDER THAN THE BODY"
+		doc = "{}\n{}\n\nBody is narrower\n".format(title, "=" * len(title))
+		out = self.render(doc, cap16())
+		top = out.splitlines()[0]
+		self.assertIn(title, top, "the frame cut the title: {!r}".format(top))
+		widths = {tui.display_width(line) for line in out.splitlines() if line}
+		self.assertEqual(len(widths), 1, "the frame is ragged: {}".format(widths))
 
 
 class CountTableTest(unittest.TestCase):
