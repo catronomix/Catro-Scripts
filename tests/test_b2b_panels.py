@@ -125,6 +125,65 @@ class OpencodeGuidancePanelTest(unittest.TestCase):
 		no_frame(self, out)
 
 
+class OpencodeSubcommandTest(unittest.TestCase):
+	"""Bare run shows usage only; `models` is the one path that dumps models."""
+
+	def main(self, argv, cap=TTY_TRUE):
+		"""Run opencode.main with argv, a fake binary and a recording runner."""
+		import opencode
+
+		calls = []
+
+		def fake_run(binary, args):
+			calls.append(args)
+			return mock.Mock(returncode=0)
+
+		buffer = io.StringIO()
+		self.written = mock.Mock()
+		with mock.patch.object(tui, "detect", lambda: cap), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(opencode, "find_opencode",
+								  lambda: "opencode"), \
+				mock.patch.object(opencode, "run_opencode", fake_run), \
+				mock.patch.object(opencode, "read_default_model", lambda: None), \
+				mock.patch.object(opencode, "write_default_model", self.written), \
+				mock.patch.object(sys, "argv", ["opencode.py"] + argv), \
+				contextlib.redirect_stdout(buffer):
+			try:
+				opencode.main()
+			except SystemExit as exc:
+				self._exit = exc.code
+			else:
+				self._exit = None
+		return calls, buffer.getvalue()
+
+	def test_bare_run_never_lists_models(self):
+		calls, out = self.main([])
+		self.assertEqual([], calls, out)
+		self.assertIn("--- USAGE ---", tui.strip_ansi(out), out)
+		self.assertNotIn("AVAILABLE MODELS", out, out)
+		self.assertIsNone(self._exit)
+
+	def test_models_subcommand_delegates_and_keeps_usage(self):
+		calls, out = self.main(["models"])
+		self.assertEqual([["models"]], calls, out)
+		plain = tui.strip_ansi(out)
+		self.assertIn("--- AVAILABLE MODELS ---", plain, out)
+		self.assertIn("--- USAGE ---", plain, out)
+		self.assertEqual(0, self._exit)
+
+	def test_instruction_still_runs_with_model(self):
+		calls, out = self.main(["-m", "openai/gpt-5.2", "fix", "the", "tests"])
+		self.assertEqual([["run", "-m", "openai/gpt-5.2", "fix the tests"]],
+						 calls, out)
+		self.written.assert_not_called()
+
+	def test_model_alone_still_saves_the_default(self):
+		calls, out = self.main(["-m", "openai/gpt-5.2"])
+		self.assertEqual([], calls, out)
+		self.written.assert_called_once_with("openai/gpt-5.2")
+
+
 # --- image_generator ---------------------------------------------------------
 
 class _FakePixels:
