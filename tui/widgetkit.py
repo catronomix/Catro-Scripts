@@ -16,6 +16,7 @@ import re
 
 from . import caps, palette
 from .text import strip_ansi
+from .widget_focus import focus_prefix  # noqa: F401  (re-exported by tui.widgets)
 
 MIN_WIDTH, MIN_HEIGHT = 90, 24  # three live previews plus the panels beside them
 SMALL_TERMINAL = "too small"
@@ -28,28 +29,6 @@ def cells(text):
 	match = _LEAD.match(text)
 	lead = match.group(1) if match else ""
 	return (lead or None, strip_ansi(text[len(lead):]))
-
-
-def focus_prefix(focused, cap=None, *, fg="fg", bg="bg"):
-	"""A self-contained focus-visible cell colour, or None when not focused.
-
-	The theme's `focus_style` picks the attribute (`reverse` by default,
-	`accent` fg, or `underline`), but `fg`/`bg` are re-asserted first: a canvas
-	cell carries no state of its own, so a prefix that only had the attribute
-	would inherit whatever ground the previously drawn cell left behind. Two
-	adjacent focused rows therefore cannot bleed into each other.
-	"""
-	if not focused:
-		return None
-	cap = cap or caps.detect()
-	if cap.level == "none":
-		return None
-	style = palette.properties().get("focus_style")
-	if style == "accent":
-		return palette.prefix(fg="fg-accent", bg=bg, cap=cap) or None
-	if style == "underline":
-		return palette.prefix(fg=fg, bg=bg, underline=True, cap=cap) or None
-	return palette.prefix(fg=fg, bg=bg, reverse=True, cap=cap) or None
 
 
 def small_terminal(width, height):
@@ -83,7 +62,7 @@ class Widget:
 		"""The prefix for this widget's own row, focused or not."""
 		cap = self.cap or caps.detect()
 		return (focus_prefix(focused, cap, fg=fg)
-				or palette.prefix(fg=fg, cap=cap) or None)
+				or palette.prefix(fg=fg, bg="bg-inside", cap=cap) or None)
 	def draw(self, canvas, focused=False):
 		raise NotImplementedError
 	def key(self, token):

@@ -107,12 +107,14 @@ class ThemeEditor(EditorKeys):
 		self._layout_size = (width, height)
 		if widgets.small_terminal(width, height):
 			return
-		preview_h = max(6, min(13, height - 11))
+		preview_h = max(6, min(15, height - 10))
 		# One blank column between (and around) the three live previews.
 		column = max(8, (width - 4) // 3)
 		for index in range(3):
 			self.rects[index] = (1 + index * (column + 1), 2, column, preview_h)
-		panel_y = 3 + preview_h
+		# The preview band now spends the separator row that used to sit
+		# between the previews and the panels (ticket 0040).
+		panel_y = 2 + preview_h
 		panel_h = max(3, height - panel_y - 2)
 		if width >= 120:
 			# Wide terminals: Colours grows with the width, the Actions

@@ -169,6 +169,18 @@ class PanelTests(unittest.TestCase):
 		self.assertEqual(len(lines), 4)
 		self.assertEqual(strip_ansi(lines[1]), "\u2502 a      \u2502")
 
+	def test_the_panel_ground_is_unchanged(self):
+		# The panel already painted its interior; the container ticket must not
+		# move it. Frame on border-bg, every body cell on bg-inside.
+		lines = chrome.panel("T", ["ab"], width=12, cap=TRUE,
+							 theme="soft").split("\n")
+		self.assertTrue(lines[0].startswith(
+			BORDER + SURFACE + "\u250c\u2500"), lines[0])
+		self.assertIn(HEADER + SURFACE + BOLD + " T ", lines[0])
+		self.assertTrue(lines[1].startswith(BORDER + SURFACE + "\u2502"), lines[1])
+		self.assertIn(FG + SURFACE, lines[1])
+		self.assertNotIn(SURFACE_ACTIVE, "\n".join(lines))
+
 	def test_ascii_frame(self):
 		out = chrome.panel("T", "body", width=10, cap=ASCII)
 		self.assertIn("+", out)
@@ -303,16 +315,28 @@ class MenuTests(unittest.TestCase):
 	def test_rows_are_numbered_and_the_selected_row_has_the_bar(self):
 		lines = chrome.menu(["one", "two"], selected=1, width=12, cap=TRUE,
 						  theme="soft").split("\n")
-		self.assertEqual(lines[0], FG + "  1. one    " + RESET)
+		self.assertEqual(lines[0], FG + SURFACE + "  1. one    " + RESET)
 		self.assertEqual(lines[1],
 						 HEADER + SURFACE_ACTIVE + BOLD + "> 2. two    " + RESET)
 		for line in lines:
 			self.assertEqual(display_width(line), 12)
 
+	def test_an_unselected_row_sits_on_the_inside_ground(self):
+		lines = chrome.menu(["one", "two"], selected=1, width=12, cap=TRUE,
+						  theme="soft").split("\n")
+		self.assertTrue(lines[0].startswith(FG + SURFACE), lines[0])
+		self.assertTrue(lines[0].endswith(RESET), lines[0])
+		self.assertNotIn(SURFACE_ACTIVE, lines[0])
+
 	def test_selected_none_means_no_bar(self):
-		out = chrome.menu(["one", "two"], selected=None, width=12, cap=TRUE)
+		out = chrome.menu(["one", "two"], selected=None, width=12, cap=TRUE,
+						  theme="soft")
 		self.assertNotIn(">", out)
-		self.assertNotIn(SURFACE, out)
+		self.assertNotIn(SURFACE_ACTIVE, out)
+		# Every row is still an unselected row on the inside ground.
+		for line in out.split("\n"):
+			self.assertTrue(line.startswith(FG + SURFACE), line)
+			self.assertTrue(line.endswith(RESET), line)
 
 	def test_title_is_a_header_band(self):
 		lines = chrome.menu(["a"], title="Pick", width=10, cap=TRUE).split("\n")

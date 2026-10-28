@@ -301,7 +301,7 @@ class ListNoColorTest(unittest.TestCase):
 		# plain OFF, so the pipe gets borders, padding and zebra rows - not bare
 		# TAB records with a styled banner on top.
 		out = self.render(tty=False, environ={"FORCE_COLOR": "3"})
-		self.assertIn("\x1b[38;2;163;146;192m\u250c", out,
+		self.assertIn("\x1b[38;2;163;146;192m\x1b[48;2;41;34;56m\u250c", out,
 					  "the top border is missing its accent colour")
 		self.assertIn("\u2502", out)
 		self.assertIn("\x1b[48;2;27;23;38m", out, "the zebra row lost its background")
@@ -311,7 +311,7 @@ class ListNoColorTest(unittest.TestCase):
 
 	def test_catro_color_16_pipe_is_decorated_with_16_colour_codes(self):
 		out = self.render(tty=False, environ={"CATRO_COLOR": "16"})
-		self.assertIn("\x1b[37m\u250c", out)
+		self.assertIn("\x1b[37m\x1b[40m\u250c", out)
 		self.assertNotIn("\x1b[38;2;", out, "16-colour output carried truecolor")
 		self.assertNotIn("\t", out)
 

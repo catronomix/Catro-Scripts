@@ -13,7 +13,7 @@ preview keeps its footprint and only the glyphs vanish. A console without
 Unicode degrades to `+ - |` first, then the document's `corner-char` lands on
 the four corners, exactly like a table.
 
-The edge colour is the look's own `border-fg` hex (the document under edit,
+The edge is the look's own `border-fg` on `border-bg` (the document under edit,
 whatever `theme.ini` selects), so all three previews stay theme-accurate.
 """
 
@@ -54,6 +54,7 @@ def draw(canvas, x, y, width, height, glyphs, title=None, colour=None):
 
 
 def edge(colours, cap=None):
-	"""The SGR prefix for a preview frame: the look's own `border-fg` hex."""
-	return palette.prefix(fg=colours.get(palette.role("border-fg"),
-										 "border-fg"), cap=cap)
+	"""The SGR prefix for a preview frame: the look's own border hexes."""
+	fg = colours.get(palette.role("border-fg"), "border-fg")
+	bg = colours.get(palette.role("border-bg"), "border-bg")
+	return palette.prefix(fg=fg, bg=bg, cap=cap)

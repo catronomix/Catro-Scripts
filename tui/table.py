@@ -16,10 +16,11 @@ re-exported here, so `tui.table.glyphs_for()`/`BORDER_GLYPHS` keep resolving.
 """
 
 from . import caps, palette
+from . import table_rows
 from .table_glyphs import (ASCII_GLYPHS, BORDER_GLYPHS, DOUBLE_GLYPHS,  # noqa: F401
 						   HEAVY_GLYPHS, SPACE_GLYPHS, SQUARE_GLYPHS,
 						   UNICODE_GLYPHS, glyphs_for)
-from .text import display_width, pad, truncate as _truncate
+from .text import display_width, pad
 
 MIN_COLUMN = 4
 
@@ -62,23 +63,27 @@ def render_table(headers, rows, *, box=None, zebra=None, truncate=True,
 		widths = _explicit_widths(widths, len(labels))
 	glyphs = glyphs_for(cap)
 	if not box:
-		return "\n".join(_bare_rows(labels, data, widths, cap, theme, zebra))
+		return "\n".join(table_rows.bare_rows(labels, data, widths, cap, theme,
+											  zebra))
 	if compact:
-		lines = [_bare_line(labels, widths, cap, theme, fg="header-fg", bold=True)]
-		lines.append(_span_rule(glyphs, widths, cap, theme))
+		lines = [table_rows.bare_line(labels, widths, cap, theme,
+									  fg="header-fg", bg="bg-inside", bold=True)]
+		lines.append(table_rows.span_rule(glyphs, widths, cap, theme))
 		for index, cells in enumerate(data):
-			lines.append(_bare_line(cells, widths, cap, theme,
-									bg=_zebra_bg(index, zebra)))
-		lines.append(_span_rule(glyphs, widths, cap, theme))
+			lines.append(table_rows.bare_line(
+				cells, widths, cap, theme,
+				bg=table_rows.zebra_bg(index, zebra)))
+		lines.append(table_rows.span_rule(glyphs, widths, cap, theme))
 		return "\n".join(lines)
 
-	lines = [_rule(glyphs, widths, "tl", "tm", "tr", cap, theme)]
-	lines.append(_header_row(glyphs, widths, labels, cap, theme))
-	lines.append(_rule(glyphs, widths, "ml", "mm", "mr", cap, theme))
+	lines = [table_rows.rule(glyphs, widths, "tl", "tm", "tr", cap, theme)]
+	lines.append(table_rows.header_row(glyphs, widths, labels, cap, theme))
+	lines.append(table_rows.rule(glyphs, widths, "ml", "mm", "mr", cap, theme))
 	for index, cells in enumerate(data):
-		lines.append(_row(glyphs, widths, cells, cap, theme,
-						  bg=_zebra_bg(index, zebra), truncate_cells=truncate))
-	lines.append(_rule(glyphs, widths, "bl", "bm", "br", cap, theme))
+		lines.append(table_rows.row(glyphs, widths, cells, cap, theme,
+									bg=table_rows.zebra_bg(index, zebra),
+									truncate_cells=truncate))
+	lines.append(table_rows.rule(glyphs, widths, "bl", "bm", "br", cap, theme))
 	return "\n".join(lines)
 
 
@@ -171,77 +176,3 @@ def _fit(widths, limit):
 		widths[widest] -= 1
 	return widths
 
-
-def _rule(glyphs, widths, left, middle, right, cap, theme):
-	body = glyphs[middle].join(glyphs["h"] * (width + 2) for width in widths)
-	return palette.style(glyphs[left] + body + glyphs[right], fg="border-fg",
-						 cap=cap, theme=theme)
-
-
-def _header_row(glyphs, widths, labels, cap, theme):
-	"""One span over the whole row: border, then the first border, then bold.
-
-	This is the pre-migration `list.py` header byte for byte: the border colour
-	is emitted once, the leading `|` is inside it, and only then does bold begin,
-	so the rest of the row (inner borders included) is bold until the reset.
-	"""
-	body = glyphs["v"].join(" " + pad(cell, width) + " "
-							for cell, width in zip(labels, widths))
-	return (palette.prefix(fg="border-fg", cap=cap, theme=theme) + glyphs["v"]
-			+ palette.prefix(bold=True, cap=cap, theme=theme) + body + glyphs["v"]
-			+ _reset(cap))
-
-
-def _row(glyphs, widths, cells, cap, theme, bg=None, truncate_cells=False):
-	"""Zebra data row, composed exactly like the old `list.py` row.
-
-	Each cell re-asserts its own colours after the border (`border | cell-style
-	text`), and only the closing border is preceded by a reset, so the row
-	carries the same escapes in the same order as the hand-built table did.
-	"""
-	border = palette.prefix(fg="border-fg", cap=cap, theme=theme)
-	cell_style = palette.prefix(fg="fg", bg=bg, cap=cap, theme=theme)
-	reset = _reset(cap)
-	parts = []
-	for index, width in enumerate(widths):
-		cell = cells[index]
-		if truncate_cells:
-			cell = _truncate(cell, width)
-		parts.append(border + glyphs["v"] + cell_style)
-		parts.append(" " + pad(cell, width) + " ")
-	parts.append(reset + border + glyphs["v"] + reset)
-	return "".join(parts)
-
-
-def _reset(cap):
-	"""The reset code, or "" when the caller asked for no styling at all."""
-	return "" if cap.level == "none" else palette.RESET
-
-
-def _bare_rows(labels, data, widths, cap, theme, zebra):
-	"""Borderless variant: padded columns separated by two spaces."""
-	lines = [_bare_line(labels, widths, cap, theme, fg="header-fg", bold=True)]
-	for index, cells in enumerate(data):
-		lines.append(_bare_line(cells, widths, cap, theme,
-								bg=_zebra_bg(index, zebra)))
-	return lines
-
-
-def _zebra_bg(index, zebra):
-	"""Palette key for row `index`, or None when zebra shading is off."""
-	if not zebra:
-		return None
-	return "bg" if index % 2 == 0 else "bg-inside"
-
-
-def _span_rule(glyphs, widths, cap, theme):
-	"""One rule as wide as the borderless row (`compact`'s top/bottom edge)."""
-	span = sum(widths) + 2 * max(0, len(widths) - 1)
-	return palette.style(glyphs["h"] * max(1, span), fg="border-fg", cap=cap,
-						 theme=theme)
-
-
-def _bare_line(cells, widths, cap, theme, fg="fg", bg=None, bold=False):
-	cells = [_truncate(cell, width) for cell, width in zip(cells, widths)]
-	body = "  ".join(pad(cell, width) for cell, width in zip(cells, widths))
-	return palette.style(body, fg=fg, bg=bg, bold=bold, cap=cap, theme=theme)

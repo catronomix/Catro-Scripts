@@ -44,6 +44,7 @@ HEADER = "\033[38;2;245;205;104m"
 FG = "\033[38;2;212;200;235m"
 BG = "\033[48;2;27;23;38m"
 SURFACE = "\033[48;2;41;34;56m"
+STRIPE = "\033[48;2;53;43;73m"
 ACCENT = "\033[38;2;245;205;104m"
 MUTED = BORDER
 BOLD = "\033[1m"
@@ -200,8 +201,14 @@ class TableStyleTests(PropertyCase):
 		self.assertIn(BG, self.render())
 		self.set_properties(table_zebra=False)
 		out = self.render()
-		self.assertNotIn(BG, out)
-		self.assertNotIn(SURFACE, out)
+		# The header and every rule still sit on the inside ground; only the
+		# data rows lose the zebra pair.
+		data = out.split("\n")[3:5]
+		for row in data:
+			self.assertNotIn(BG, row)
+			self.assertNotIn(STRIPE, row)
+		self.assertNotIn(STRIPE, out)
+		self.assertIn(SURFACE, out)
 		self.assertIn(FG, out)
 
 	def test_an_explicit_caller_argument_beats_the_property(self):

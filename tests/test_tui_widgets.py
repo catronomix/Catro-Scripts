@@ -92,11 +92,15 @@ class ModuleSplitTests(unittest.TestCase):
 
 	def test_helpers_are_the_widgetkit_objects(self):
 		from tui import widgetkit  # noqa: E402  (the split is the assertion)
-		for name in ("Widget", "Panel", "Clip", "cells", "focus_prefix",
-					 "small_terminal", "resize_notice", "MIN_WIDTH",
-					 "MIN_HEIGHT", "SMALL_TERMINAL"):
+		for name in ("Widget", "Panel", "Clip", "cells", "small_terminal",
+					 "resize_notice", "MIN_WIDTH", "MIN_HEIGHT",
+					 "SMALL_TERMINAL"):
 			with self.subTest(name=name):
 				self.assertIs(getattr(widgets, name), getattr(widgetkit, name))
+
+	def test_focus_prefix_moved_but_is_still_reexported(self):
+		from tui import widget_focus  # noqa: E402  (the split is the assertion)
+		self.assertIs(widgets.focus_prefix, widget_focus.focus_prefix)
 
 	def test_widgets_keep_the_public_import_surface(self):
 		from tui.widgets import (Clip, Panel, Widget, cells,  # noqa: F401
@@ -154,6 +158,33 @@ class FocusGroundTests(unittest.TestCase):
 		self.assertIn("\x1b[48;2;", prefix)
 		self.assertEqual(widgets.focus_prefix(True, cap, fg="warn"),
 						 widgets.focus_prefix(True, cap, fg="warn"))
+
+	def test_the_focus_prefix_defaults_to_the_active_inside_ground(self):
+		cap = self.true_cap()
+		self.assertEqual(
+			widgets.focus_prefix(True, cap),
+			palette.prefix(fg="fg", bg="bg-inside-active", reverse=True,
+						   cap=cap))
+
+	def test_an_unfocused_widget_row_has_the_inside_ground(self):
+		cap = self.true_cap()
+		widget = widgets.Widget(0, 0, 1, cap=cap)
+		self.assertEqual(widget.styled(False),
+						 palette.prefix(fg="fg", bg="bg-inside", cap=cap))
+
+	def test_a_focused_widget_row_has_the_active_inside_ground(self):
+		cap = self.true_cap()
+		widget = widgets.Widget(0, 0, 1, cap=cap)
+		self.assertEqual(
+			widget.styled(True),
+			palette.prefix(fg="fg", bg="bg-inside-active", reverse=True,
+						   cap=cap))
+
+	def test_the_styled_row_keeps_the_fg_override(self):
+		cap = self.true_cap()
+		widget = widgets.Widget(0, 0, 1, cap=cap)
+		self.assertEqual(widget.styled(False, fg="warn"),
+						 palette.prefix(fg="warn", bg="bg-inside", cap=cap))
 
 
 class ButtonTests(unittest.TestCase):
@@ -256,6 +287,24 @@ class TextFieldTests(unittest.TestCase):
 		field.draw(canvas)
 		self.assertEqual(rows(canvas, 0, 0, 6, 1), ["012345"])
 		self.assertEqual(canvas.region(6, 0, 4, 1), ["    "])
+
+	def test_the_field_text_sits_on_the_inside_ground(self):
+		cap = caps.Capabilities(level="true", unicode=True, width=120,
+								isatty=True, plain=False, reason="test")
+		cells_drawn = {}
+
+		class Recorder:
+			def draw_char(self, x, y, char, color=None):
+				cells_drawn[(x, y)] = color
+
+			def draw_text(self, x, y, text, color=None):
+				for offset in range(len(str(text))):
+					self.draw_char(x + offset, y, str(text)[offset], color)
+
+		field = widgets.TextField(0, 0, "abc", width=5, cap=cap)
+		field.draw(Recorder())
+		ground = palette.prefix(fg="fg", bg="bg-inside", cap=cap)
+		self.assertEqual({cells_drawn[(x, 0)] for x in range(5)}, {ground})
 
 
 class SelectFieldTests(unittest.TestCase):
@@ -454,7 +503,8 @@ class SelectionRepaintTests(unittest.TestCase):
 		vacated = frame.split("\033[3;1H")[1]
 		self.assertNotIn("\033[7m", vacated)
 		self.assertTrue(vacated.startswith(
-			screen.SGR_RESET + palette.prefix(fg="fg", cap=CAP)), vacated)
+			screen.SGR_RESET + palette.prefix(fg="fg", bg="bg-inside",
+											 cap=CAP)), vacated)
 
 	def test_a_button_drops_the_focus_style_when_the_focus_moves_away(self):
 		canvas = new_canvas()
