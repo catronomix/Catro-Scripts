@@ -62,7 +62,11 @@ V2_LOOK = {
 	"fg-error": "#000008", "border-bg": "#0000cc", "border-fg": "#000009",
 	"border-bg-active": "#0000dd", "border-fg-active": "#00000a",
 	"header-fg": "#00000b", "header-bg": "#0000ee",
+	"button-fg": "#0000f0", "button-bg": "#0000f1", "button-bg-active": "#0000f2",
 }
+BUTTON_FG = "\033[38;2;0;0;240m"
+BUTTON_BG = "\033[48;2;0;0;241m"
+BUTTON_BG_ACTIVE = "\033[48;2;0;0;242m"
 BG_ACTIVE = "\033[48;2;0;0;170m"
 BORDER_BG = "\033[48;2;0;0;204m"
 BORDER_FG_ACTIVE = "\033[38;2;0;0;10m"
@@ -418,6 +422,32 @@ class NewTokenTests(unittest.TestCase):
 		self.assertEqual(chrome_panels.frame_roles(True),
 						 ("border-fg-active", "border-bg-active"))
 		self.assertIs(chrome.frame_roles, chrome_panels.frame_roles)
+
+
+class ButtonTokenTests(unittest.TestCase):
+	"""A filled button paints its own tokens, not `fg-accent`."""
+
+	def render(self, call):
+		with mock.patch.object(palette, "palette", return_value=dict(V2_LOOK)):
+			return call()
+
+	def test_a_filled_button_uses_button_fg_and_button_bg(self):
+		out = self.render(lambda: chrome.button("OK", cap=TRUE))
+		self.assertTrue(out.startswith(BUTTON_FG + BUTTON_BG), out)
+		self.assertIn("[ OK ]", out)
+		self.assertNotIn("\033[38;2;0;0;5m", out, "fg-accent is a highlight only")
+
+	def test_a_focused_filled_button_uses_the_active_ground(self):
+		properties = {"button_style": "filled", "button_decoration": "brackets",
+					  "focus_style": "accent"}
+		with mock.patch.object(palette, "properties", return_value=properties):
+			out = self.render(lambda: chrome.button("OK", focused=True, cap=TRUE))
+		self.assertTrue(out.startswith(BUTTON_FG + BUTTON_BG_ACTIVE), out)
+		self.assertNotIn(BUTTON_BG, out)
+
+	def test_a_focused_filled_button_still_reverses_by_default(self):
+		out = self.render(lambda: chrome.button("OK", focused=True, cap=TRUE))
+		self.assertTrue(out.startswith(BUTTON_FG + BUTTON_BG + "\033[7m"), out)
 
 
 if __name__ == "__main__":

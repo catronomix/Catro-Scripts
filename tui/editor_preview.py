@@ -38,8 +38,9 @@ def button_text(label, properties, colours, *, focused=False, disabled=False,
 		chrome.BUTTON_STYLES["filled"]))
 	if focused:
 		focus = str(properties.get("focus_style", "reverse"))
-		if focus == "accent":
-			attributes.pop("bg", None)
+		if focus == "accent" and "bg" in attributes:
+			attributes["bg"] = "button-bg-active"
+		elif focus == "accent":
 			attributes["fg"] = "fg-accent"
 		elif focus == "underline":
 			attributes["underline"] = True

@@ -189,6 +189,22 @@ class PreviewFrameTests(EditorTestCase):
 		self.assertEqual(band[0][0], " ")
 		self.assertEqual(band[-1][0], " ")
 
+	def test_a_filled_preview_button_paints_the_button_tokens(self):
+		document = copy.deepcopy(self.make().document)
+		look = document["looks"]["default"]
+		look["button-fg"], look["button-bg"] = "#010203", "#040506"
+		out = editor_preview.button_text("OK", document["properties"], look,
+										 cap=self.cap)
+		self.assertTrue(out.startswith(palette.prefix(
+			fg="#010203", bg="#040506", cap=self.cap)), out)
+		# The mirror follows chrome's focus branch: accent focus moves the ground.
+		document["properties"]["focus_style"] = "accent"
+		look["button-bg-active"] = "#070809"
+		out = editor_preview.button_text("OK", document["properties"], look,
+										 focused=True, cap=self.cap)
+		self.assertTrue(out.startswith(palette.prefix(
+			fg="#010203", bg="#070809", cap=self.cap)), out)
+
 	def test_the_twelve_row_band_keeps_the_bar_and_drops_the_closing_rule(self):
 		_, document, band = self.preview("rounded")
 		title = editorviews.preview_title(document, "default")

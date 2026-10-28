@@ -34,7 +34,7 @@ ASCII_DECORATIONS = dict(BUTTON_DECORATIONS, chevron=("<< ", " >>"),
 
 # button_style -> the palette roles and attributes the label is painted with.
 BUTTON_STYLES = {
-	"filled": {"fg": "bg", "bg": "fg-accent"}, "outline": {"fg": "border-fg"},
+	"filled": {"fg": "button-fg", "bg": "button-bg"}, "outline": {"fg": "border-fg"},
 	"plain": {"fg": "fg"}, "underline": {"fg": "fg", "underline": True},
 }
 
@@ -66,9 +66,10 @@ def button(label, *, focused=False, disabled=False, cap=None, theme=None):
 	attributes = dict(BUTTON_STYLES.get(style, BUTTON_STYLES["filled"]))
 	if focused:
 		focus = str(properties.get("focus_style", "reverse"))
-		if focus == "accent":
-			# Replacing the ground keeps the label legible on the accent.
-			attributes.pop("bg", None)
+		if focus == "accent" and "bg" in attributes:
+			# A filled button moves its ground; `fg-accent` stays a highlight.
+			attributes["bg"] = "button-bg-active"
+		elif focus == "accent":
 			attributes["fg"] = "fg-accent"
 		elif focus == "underline":
 			attributes["underline"] = True
