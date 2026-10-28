@@ -321,31 +321,81 @@ class _Stream:
 		return self.text
 
 
-class KeygenDetailsPanelTest(unittest.TestCase):
-	"""`keygen.show_key` boxes its facts block, next to the key panel."""
+class KeygenAppBoxTest(unittest.TestCase):
+	"""`keygen` draws one fit-to-content box around the whole app.
 
-	def render(self, cap):
+	Issue #45: the details and key blocks used to be boxed on their own with
+	nothing around the page. Every screen now renders through `keygen.draw_page`,
+	which wraps the masthead and the rows in a single panel and centres it with
+	`(terminal width - box width) // 2` columns of left margin.
+	"""
+
+	PAINTERS = {
+		"show_key": lambda keygen, stream, cap: keygen.show_key(stream, cap, 0, 8),
+		"picker": lambda keygen, stream, cap: keygen.choose_algorithm(
+			stream, cap, 1),
+		"length": lambda keygen, stream, cap: keygen.prompt_length(
+			stream, cap, 32),
+	}
+
+	def paint(self, cap, name):
 		import keygen
 
 		stream = _Stream()
-		with mock.patch.object(keygen, "read_key", return_value="q"):
-			keygen.show_key(stream, cap, 0, 8)
+		with mock.patch.object(keygen, "read_key", return_value="esc"):
+			self.PAINTERS[name](keygen, stream, cap)
 		return stream.getvalue()
 
-	def test_true_colour_draws_both_panels(self):
-		out = self.render(TTY_TRUE)
-		self.assertEqual(2, out.count(FRAME), out)
-		self.assertIn("Key details", tui.strip_ansi(out), out)
-		self.assertIn("Algorithm", tui.strip_ansi(out), out)
+	def frame_rows(self, cap, name):
+		"""Visible, non-blank rows of the single box, escapes stripped."""
+		return [line for line in tui.strip_ansi(self.paint(cap, name)).splitlines()
+				if line.strip()]
+
+	def test_every_screen_draws_one_centred_fit_to_content_box(self):
+		for name in self.PAINTERS:
+			with self.subTest(screen=name):
+				rows = self.frame_rows(TTY_TRUE, name)
+				out = self.paint(TTY_TRUE, name)
+				# One outer frame only: no inner panel frames left behind.
+				self.assertEqual(1, out.count(FRAME))
+				width = tui.display_width(rows[0].strip())
+				self.assertLess(width, TTY_TRUE.width)  # fit to content
+				self.assertTrue(rows[0].strip().endswith("\u2510"))
+				self.assertTrue(rows[-1].strip().endswith("\u2518"))
+				self.assertEqual(width, tui.display_width(rows[-1].strip()))
+				left = (TTY_TRUE.width - width) // 2
+				for row in rows:
+					self.assertEqual(left, len(row) - len(row.lstrip(" ")), row)
+					self.assertEqual(width, tui.display_width(row.strip()), row)
+
+	def test_show_key_keeps_the_details_and_key_inside_the_box(self):
+		out = tui.strip_ansi(self.paint(TTY_TRUE, "show_key"))
+		for text in ("KEYGEN", "Algorithm", "Entropy", "[ENTER] new key"):
+			self.assertIn(text, out)
+		self.assertEqual(1, out.count(FRAME), out)
+
+	def test_true_colour_still_styles_the_box(self):
+		out = self.paint(TTY_TRUE, "show_key")
 		self.assertIn("\x1b[38;2;", out)
 
 	def test_level_16_and_none_degrade_cleanly(self):
-		out16 = self.render(TTY_16)
-		self.assertEqual(2, out16.count(FRAME))
+		out16 = self.paint(TTY_16, "show_key")
+		self.assertEqual(1, out16.count(FRAME))
 		self.assertNotIn("38;2;", out16)
-		out = self.render(TTY_NONE)
-		self.assertEqual(2, out.count(FRAME), out)
+		out = self.paint(TTY_NONE, "show_key")
+		self.assertEqual(1, out.count(FRAME), out)
 		self.assertNotIn("\x1b", out)
+
+	def test_pipe_stays_plain_without_a_frame(self):
+		import keygen
+
+		stream = _Stream()
+		with mock.patch.object(keygen, "read_key", return_value="esc"):
+			keygen.show_key(stream, PIPE, 0, 8)
+		out = stream.getvalue()
+		self.assertNotIn(FRAME, out)
+		self.assertNotIn("\x1b", out)
+		self.assertIn("Algorithm", out)
 
 
 if __name__ == "__main__":
