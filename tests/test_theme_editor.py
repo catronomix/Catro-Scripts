@@ -102,6 +102,19 @@ class HeadlessOpenTests(EditorTestCase):
 								for row in self.lines(ed)), title)
 		self.assertEqual(sorted(ed.rects), [0, 1, 2, 3, 4, 5])
 
+	def test_every_pane_interior_is_filled(self):
+		# Fill the interior, not just the rows that happen to hold text: a
+		# pane's ground must not depend on its content length.
+		ed = self.make()
+		inside = palette.prefix(fg="fg", bg="bg-inside", cap=self.cap)
+		for index in (3, 4, 5):
+			x, y, width, height = ed.rects[index]
+			for row in range(y + 1, y + height - 1):
+				for col in range(x + 1, x + width - 1):
+					with self.subTest(pane=index, row=row, col=col):
+						self.assertIsNotNone(ed.canvas._colors[row][col])
+			self.assertEqual(ed.canvas._colors[y + 1][x + 1], inside)
+
 	def test_every_painted_colour_is_a_palette_prefix(self):
 		# No private ANSI: the canvas only ever sees SGR sequences.
 		ed = self.make()

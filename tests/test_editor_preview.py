@@ -29,7 +29,8 @@ from types import SimpleNamespace
 
 from tui import (caps, config, editor, editor_keys, editor_nav, editor_overlays,
 				 editor_preview, editoractions, editorpaint, editor_store,
-				 editorviews, keys, palette, screen, table, theme_engine)  # noqa: E402
+				 editorviews, keys, palette, preview_plan, screen, table,
+				 theme_engine)  # noqa: E402
 from tui.editor import ThemeEditor  # noqa: E402
 from tui.editor_keys import EditorKeys  # noqa: E402
 from support import module_isolation  # noqa: E402  (test helper, not production)
@@ -147,6 +148,7 @@ class PreviewFrameTests(EditorTestCase):
 							canvas._colors[2][1],
 							palette.prefix(
 								fg=document["looks"][look]["border-fg"],
+								bg=document["looks"][look]["border-bg"],
 								cap=self.cap))
 
 	def test_ascii_console_degrades_the_frame_but_keeps_the_band(self):
@@ -200,6 +202,7 @@ class PreviewFrameTests(EditorTestCase):
 		self.assertEqual(none_band[0][0], " ")
 		self.assertEqual(none_band[-1][0], " ")
 		edge = palette.prefix(fg=document["looks"]["default"]["border-fg"],
+							  bg=document["looks"]["default"]["border-bg"],
 							  cap=self.cap)
 
 		def edge_cells(canvas):
@@ -229,8 +232,10 @@ class PreviewFrameTests(EditorTestCase):
 		x, y, width, height = ed.rects[0]
 		lines = self.lines(ed)
 		band = "\n".join(row[x:x + width] for row in lines[y:y + height])
-		self.assertEqual((y, height), (2, 13))
-		self.assertIn("NAME", band)
+		self.assertEqual((y, height), (2, 14))
+		self.assertIn("ID", band)
+		self.assertIn("alpha", band)
+		self.assertIn("beta", band)
 		self.assertIn("dialog - overwrite?", band)
 		self.assertIn("[ Cancel ]", band)
 		self.assertIn("60%", band)
@@ -262,7 +267,96 @@ class PreviewFrameTests(EditorTestCase):
 		self.assertTrue(out.startswith(palette.prefix(
 			fg="#010203", bg="#070809", cap=self.cap)), out)
 
-	def test_the_twelve_row_band_keeps_the_bar_and_drops_the_closing_rule(self):
+	def test_the_plan_lists_the_twelve_content_rows_in_display_order(self):
+		kinds = [kind for kind, _, _ in preview_plan.rows(13)]
+		self.assertEqual(kinds, [
+			"rule_top", "thead", "trow_a", "trow_b", "rule_bot", "buttons",
+			"field", "look", "menu", "modal_t", "modal_b", "ready"])
+		# The bar is never a plan row: the painter always keeps the last
+		# inner row for it.
+		self.assertNotIn("bar", kinds)
+
+	def test_a_90x24_band_drops_only_the_table_bottom_rule(self):
+		kinds = [kind for kind, _, _ in preview_plan.rows(12)]
+		self.assertEqual(kinds, [
+			"rule_top", "thead", "trow_a", "trow_b", "buttons", "field",
+			"look", "menu", "modal_t", "modal_b", "ready"])
+
+	def test_the_drop_order_keeps_the_bar_last(self):
+		# Every band from four inner rows up keeps a bar-sized tail and never
+		# leaves the modal behind the table.
+		for inner_h in range(4, 14):
+			with self.subTest(inner_h=inner_h):
+				kinds = [kind for kind, _, _ in preview_plan.rows(inner_h)]
+				self.assertLessEqual(len(kinds), inner_h - 1)
+				if inner_h >= 4:
+					self.assertTrue(kinds)
+
+	def test_the_plan_rows_carry_a_role_and_a_ground(self):
+		rows = {kind: (role, bg) for kind, role, bg in preview_plan.rows(13)}
+		self.assertEqual(rows["rule_top"], ("border-fg", "border-bg"))
+		self.assertEqual(rows["rule_bot"], ("border-fg", "border-bg"))
+		self.assertEqual(rows["thead"], ("header-fg", "bg-inside"))
+		self.assertEqual(rows["trow_a"], ("fg", "bg"))
+		self.assertEqual(rows["trow_b"], ("fg", "bg-stripe"))
+		self.assertEqual(rows["field"], ("fg", "bg-inside"))
+		self.assertEqual(rows["ready"], ("fg-success", "bg-inside"))
+
+	def test_the_modal_rows_paint_in_the_loop_not_an_overlay(self):
+		self.assertFalse(hasattr(editor_preview, "_draw_modal"))
+		_, document, band = self.preview("rounded")
+		text = "\n".join(band)
+		self.assertIn("dialog - overwrite?", text)
+		self.assertIn("[ Cancel ]", text)
+		# Both rows are full-width on the inside ground, like every other row.
+		title_row = band.index(next(row for row in band
+									if "dialog - overwrite?" in row))
+		self.assertEqual(len(band[title_row]), 29)
+		self.assertEqual(len(band[title_row + 1]), 29)
+
+	def test_the_inner_band_is_filled_every_row_every_column(self):
+		canvas, _, _ = self.preview("rounded")
+		# Outer band is rows 2..13, columns 1..29: the inner 27x10 must all
+		# carry a colour, otherwise the terminal shows through the preview.
+		for row in range(3, 12):
+			for col in range(2, 28):
+				with self.subTest(row=row, col=col):
+					self.assertIsNotNone(canvas._colors[row][col])
+
+	def test_the_preview_ground_is_the_inside_ground(self):
+		canvas, document, _ = self.preview("rounded")
+		ground = palette.prefix(bg=document["looks"]["default"]["bg-inside"],
+								cap=self.cap)
+		# The bar row and a plain content row both sit on it.
+		self.assertIn(ground, canvas._colors[12][2])
+		self.assertIn(ground, canvas._colors[8][2])
+
+	def test_the_rules_paint_glyphs_on_the_border_ground(self):
+		canvas, document, band = self.preview("rounded", height=14)
+		look = document["looks"]["default"]
+		rule = palette.prefix(fg=look["border-fg"], bg=look["border-bg"],
+							  cap=self.cap)
+		self.assertEqual(canvas._colors[3][1], rule)
+		self.assertTrue(set(band[1][1:-1]) <= {"\u2500"}, band[1])
+
+	def test_the_preview_scrollbar_keeps_the_inside_ground(self):
+		canvas, document, _ = self.preview("rounded")
+		look = document["looks"]["default"]
+		ground = palette.prefix(bg=look["bg-inside"], cap=self.cap)
+		column = [canvas._colors[row][28] for row in range(3, 12)]
+		for colour in column:
+			self.assertIn(ground, colour)
+
+	def test_the_preview_height_is_capped_at_fifteen(self):
+		ed = self.make(90, 40)
+		self.assertEqual(ed.rects[0][3], 15)
+		self.assertEqual(ed.rects[0][1], 2)
+		band = "\n".join(row[1:1 + ed.rects[0][2]]
+						 for row in self.lines(ed)[2:17])
+		self.assertIn("dialog - overwrite?", band)
+		self.assertIn("60%", band)
+
+	def test_the_twelve_row_band_keeps_the_bar_and_drops_the_rules(self):
 		_, document, band = self.preview("rounded")
 		title = editorviews.preview_title(document, "default")
 		self.assertEqual(len(band), 12)
@@ -270,11 +364,14 @@ class PreviewFrameTests(EditorTestCase):
 		self.assertEqual(band[0][0], "\u250c")
 		self.assertEqual(band[-1][0], "\u2514")
 		self.assertIn("60%", band[-2])
-		# The table's own closing rule never fits at this budget.
+		# A twelve-row band drops the table's top and bottom rules and the
+		# second stripe, keeping the header, one body row and the modal.
 		self.assertFalse(any("\u2500" in row for row in band[1:-1]))
+		self.assertIn("alpha", "\n".join(band))
+		self.assertNotIn("beta", "\n".join(band))
 
 	def test_a_short_preview_never_drops_the_progress_bar(self):
-		for height in range(6, 13):
+		for height in range(6, 14):
 			with self.subTest(height=height):
 				_, _, band = self.preview("rounded", height=height)
 				self.assertIn("60%", band[-2], "bar dropped at height %d" % height)

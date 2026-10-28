@@ -31,9 +31,13 @@ from tui.text import display_width  # noqa: E402
 # `tui` now, so scraping its source would only ever prove that the library
 # agrees with itself.
 BORDER = "\033[38;2;163;146;192m"
+HEADER = "\033[38;2;245;205;104m"
 FG = "\033[38;2;212;200;235m"
 BG = "\033[48;2;27;23;38m"
+# soft's border-bg shares bg-inside's hex, so one constant covers both; the
+# stripe is the separate #352B49 band.
 SURFACE = "\033[48;2;41;34;56m"
+STRIPE = "\033[48;2;53;43;73m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -125,13 +129,17 @@ class GoldenBytesTests(unittest.TestCase):
 	def test_border_row_is_one_border_run(self):
 		out = table.render_table(["A"], [["b"]], cap=TRUE, theme="soft")
 		border = out.split("\n")[0]
-		self.assertEqual(border, BORDER + "\u250c" + "\u2500" * 6 + "\u2510" + RESET)
+		self.assertEqual(border,
+						 BORDER + SURFACE + "\u250c" + "\u2500" * 6 + "\u2510"
+						 + RESET)
 
 	def test_header_row_matches_list_py(self):
 		out = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE, theme="soft")
 		header = out.split("\n")[1]
-		# Border colour, leading border, then bold: one span, one reset.
-		expected = BORDER + "\u2502" + BOLD + " A    \u2502 B    \u2502" + RESET
+		# Border colour and ground, leading border, then the inside ground and
+		# bold: one span, one reset.
+		expected = (BORDER + SURFACE + "\u2502" + SURFACE + BOLD
+					+ " A    \u2502 B    \u2502" + RESET)
 		self.assertEqual(header, expected)
 
 	def test_zebra_rows_match_list_py(self):
@@ -148,7 +156,29 @@ class GoldenBytesTests(unittest.TestCase):
 
 		lines = out.split("\n")
 		self.assertEqual(lines[3], expected("x", "y", BG))
-		self.assertEqual(lines[4], expected("z", "w", SURFACE))
+		self.assertEqual(lines[4], expected("z", "w", STRIPE))
+
+	def test_the_zebra_pair_is_bg_then_bg_stripe(self):
+		out = table.render_table(["A"], [["one"], ["two"], ["three"]],
+								 cap=TRUE, theme="soft")
+		body = out.split("\n")[3:-1]
+		self.assertIn(FG + BG, body[0])
+		self.assertIn(FG + STRIPE, body[1])
+		self.assertIn(FG + BG, body[2])
+		self.assertNotIn(FG + SURFACE, out)
+
+	def test_rules_carry_the_border_ground(self):
+		lines = table.render_table(["A"], [["b"]], cap=TRUE, theme="soft").split("\n")
+		for index in (0, 2, 4):
+			self.assertTrue(lines[index].startswith(BORDER + SURFACE),
+							(lines[index], index))
+			self.assertIn(RESET, lines[index])
+
+	def test_header_ground_is_bg_inside(self):
+		header = table.render_table(["A"], [["b"]], cap=TRUE,
+									theme="soft").split("\n")[1]
+		self.assertIn(SURFACE + BOLD, header)
+		self.assertNotIn(FG, header)
 
 	def test_data_row_has_two_resets_only(self):
 		row = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE).split("\n")[3]
@@ -156,8 +186,8 @@ class GoldenBytesTests(unittest.TestCase):
 
 	def test_divider_and_bottom_use_the_border_colour(self):
 		lines = table.render_table(["A", "B"], [["x", "y"]], cap=TRUE).split("\n")
-		self.assertTrue(lines[2].startswith(BORDER + "\u251c"))
-		self.assertTrue(lines[-1].startswith(BORDER + "\u2514"))
+		self.assertTrue(lines[2].startswith(BORDER + SURFACE + "\u251c"))
+		self.assertTrue(lines[-1].startswith(BORDER + SURFACE + "\u2514"))
 		self.assertIn("\u253c", lines[2])
 		self.assertIn("\u2534", lines[-1])
 
@@ -235,6 +265,14 @@ class LayoutTests(unittest.TestCase):
 		out = table.render_table(["A", "BB"], [["x", "y"]], box=False, cap=TRUE, theme="soft")
 		self.assertNotIn("\u2502", out)
 		self.assertIn("x", out)
+
+	def test_borderless_header_and_rows_carry_their_grounds(self):
+		out = table.render_table(["A"], [["b"]], box=False, cap=TRUE,
+								 theme="soft")
+		header, body = out.split("\n")
+		self.assertTrue(header.startswith(HEADER + SURFACE + BOLD), header)
+		self.assertTrue(body.startswith(FG + BG), body)
+		self.assertTrue(body.endswith(RESET), body)
 
 	def test_style_config_can_force_ascii(self):
 		from tui import config
