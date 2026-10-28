@@ -63,7 +63,8 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 	space family, which is painted as coloured spaces so the preview keeps the
 	same footprint. Its title sits in the top rule, and the progress bar is
 	always the last inner row, so a short band drops content from the middle
-	instead of losing the bar.
+	instead of losing the bar. The inner band is filled first: every cell
+	carries a ground, so the terminal never shows through.
 	"""
 	colours = dict(document["looks"][look_id])
 	properties = document["properties"]
@@ -82,21 +83,26 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 	def ink(role):
 		return colours.get(palette.role(role), role)
 
+	for offset in range(inner_h):
+		canvas.draw_text(inner_x, inner_y + offset,
+						 truncate(" " * inner_w, inner_w),
+						 palette.prefix(fg=ink("fg"), bg=ink("bg-inside"),
+										cap=cap))
+
 	rows = plan_rows(inner_h)
 	texts = plan_texts(look_id, active)
 	table_style = str(properties.get("table_style", "box"))
 	borderless = table_style == "borderless"
-	zebra = "bg-stripe" if properties.get("table_zebra") else None
 	row = 0
-	drawn = {}
-	for kind, role in rows:
+	for kind, role, background in rows:
 		if row >= max(0, inner_h - 1):
 			break
-		top = drawn[kind] = inner_y + row
-		if kind == "rule":
+		top = inner_y + row
+		if kind in ("rule_top", "rule_bot"):
 			glyph = " " if borderless else glyphs["h"]
 			canvas.draw_text(inner_x, top, truncate(glyph * inner_w, inner_w),
-							 palette.prefix(fg=ink("border-fg"), cap=cap))
+							 palette.prefix(fg=ink(role), bg=ink(background),
+											cap=cap))
 		elif kind == "buttons":
 			column = 1
 			for label, focused, disabled in (("OK", False, False),
@@ -111,46 +117,22 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 				column += len(visible) + 1
 		else:
 			text = texts[kind]
-			background = zebra if kind in ("alpha", "preview") else None
 			canvas.draw_text(inner_x, top, pad(truncate(text, inner_w),
 											   inner_w),
-							 palette.prefix(fg=ink(role),
-											bg=ink(background) if background
-											else None,
-											bold=kind in ("header", "name",
-														  "preview"),
+							 palette.prefix(fg=ink(role), bg=ink(background),
+											bold=kind in ("thead", "modal_t"),
 											cap=cap))
 		row += 1
-	_draw_modal(canvas, inner_x, inner_w, drawn, colours, cap)
 
 	bar = progress.bar(3, 5, max(5, min(10, inner_w - 12)), cap=cap)
 	canvas.draw_text(inner_x, inner_y + max(0, inner_h - 1),
 					 truncate(" build {} 60%".format(bar), inner_w),
-					 palette.prefix(fg=ink("fg-accent"), cap=cap))
+					 palette.prefix(fg=ink("fg-accent"), bg=ink("bg-inside"),
+									cap=cap))
 	_draw_scrollbar(canvas, inner_x + inner_w - 1,
 					inner_y + (0 if not framed else 1),
 					max(1, inner_h - (2 if framed else 3)),
 					properties, colours, cap)
-
-
-def _draw_modal(canvas, x, width, drawn, colours, cap):
-	"""The dialog sample: two rows painted over content, never a new row.
-
-	`drawn` maps each planned kind to the row it landed on, so a band too
-	short for the preview row simply has no modal rather than a moved one.
-	"""
-	top = drawn.get("preview")
-	if top is None or drawn.get("menu") != top + 1:
-		return None
-	fg = colours.get(palette.role("header-fg"), "header-fg")
-	bg = colours.get(palette.role("bg-inside"), "bg-inside")
-	for offset, text in enumerate((" dialog - overwrite? ",
-								   " [ OK ]   [ Cancel ] ")):
-		canvas.draw_text(x, top + offset,
-						 pad(truncate(text, width), width),
-						 palette.prefix(fg=fg, bg=bg, bold=not offset,
-										cap=cap))
-	return None
 
 
 def _draw_scrollbar(canvas, x, y, height, properties, colours, cap):
@@ -160,10 +142,11 @@ def _draw_scrollbar(canvas, x, y, height, properties, colours, cap):
 		chrome.SCROLLBAR_GLYPHS["block"])
 	if not cap.unicode:
 		thumb, track = ascii_thumb, ascii_track
+	ground = colours.get(palette.role("bg-inside"), "bg-inside")
 	stop = max(1, height // 3)
 	for row in range(height):
 		active = row < stop
 		glyph = thumb if active else track
 		canvas.draw_char(x, y + row, glyph, palette.prefix(
 			fg=colours.get(palette.role("fg-accent" if active else "fg-muted")),
-			cap=cap))
+			bg=ground, cap=cap))

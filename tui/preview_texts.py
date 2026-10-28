@@ -16,14 +16,14 @@ def texts(look_id, active=False):
 	"""The sample text of every planned row, keyed by kind."""
 	mark = " *" if active else ""
 	return {
-		"header": " NAME            VALUE",
-		"name": " name            value",
-		"alpha": " alpha            yes",
-		"beta": " beta             no",
+		"thead": " ID    NAME",
+		"trow_a": " 1     alpha",
+		"trow_b": " 2     beta",
 		"field": " field: hello___",
 		"look": " look  < {} >{}".format(look_label(look_id), mark),
-		"preview": "> 1. preview",
 		"menu": " 2. menu row",
+		"modal_t": " dialog - overwrite? ",
+		"modal_b": " [ OK ]   [ Cancel ] ",
 		"ready": "[ok] ready",
 	}
 
