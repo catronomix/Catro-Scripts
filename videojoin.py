@@ -106,27 +106,23 @@ def get_codec_choice(cap):
 	print()
 	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in codecs],
 				   selected=None, title="Select Output Codec", cap=cap))
-	while True:
-		choice = input(f"\nChoose (1-{len(codecs)}) [1]: ").strip()
-		if not choice: return codecs[0][0]
-		if choice.isdigit() and 1 <= int(choice) <= len(codecs):
-			return codecs[int(choice)-1][0]
-		print(tui.status("error", "Invalid choice.", cap=cap))
+	choice = tui.ask_int("Choose", 1, len(codecs), default=1)
+	return codecs[(choice or 1) - 1][0]
 
 def get_resize_config(cap):
 	print()
 	print(tui.section("--- Resize Configuration ---", cap=cap))
 	try:
-		w = int(input("{} ".format(tui.style("Target Width (px):", fg="fg-accent", cap=cap))).strip())
+		w = int(tui.ask_text("Target Width (px)", ""))
 		if w % 2 != 0: w += 1 # Force divisible by 2
-		
-		h_in = input("{} ".format(tui.style("Target Height (px) [Enter for Auto]:", fg="fg-accent", cap=cap))).strip()
+
+		h_in = tui.ask_text("Target Height (px) [Enter for Auto]", "")
 		if not h_in:
 			h = -2
 		else:
 			h = int(h_in)
 			if h != -2 and h % 2 != 0: h += 1 # Force divisible by 2
-	except ValueError:
+	except (TypeError, ValueError):
 		return None
 
 	# If height is auto, we only need basic scaling
@@ -143,16 +139,8 @@ def get_resize_config(cap):
 	print(tui.section("Resize Method", cap=cap))
 	print(tui.menu(["{} - {}".format(cmd, desc) for cmd, desc in methods],
 				   selected=None, cap=cap))
-	
-	while True:
-		choice = input(f"\nChoose (1-{len(methods)}) [1]: ").strip()
-		if not choice: 
-			method = "fit"
-			break
-		if choice.isdigit() and 1 <= int(choice) <= len(methods):
-			method = methods[int(choice)-1][0]
-			break
-		print(tui.status("error", "Invalid choice.", cap=cap))
+	choice = tui.ask_int("Choose", 1, len(methods), default=1)
+	method = methods[(choice or 1) - 1][0]
 
 	quant = 2
 	if method == "limit":
@@ -160,15 +148,8 @@ def get_resize_config(cap):
 		print()
 		print(tui.section("Select Edge Quantization (pixels)", cap=cap))
 		print(tui.section("Options: " + ", ".join(map(str, q_opts)), cap=cap))
-		while True:
-			q_in = input(f"Choose quantization [2]: ").strip()
-			if not q_in:
-				quant = 2
-				break
-			if q_in.isdigit() and int(q_in) in q_opts:
-				quant = int(q_in)
-				break
-			print(tui.status("error", "Invalid choice.", cap=cap))
+		q_in = tui.ask_int("Choose quantization", 0, 64, default=2)
+		quant = q_in if q_in in q_opts else 2
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
@@ -288,7 +269,8 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 			return False
 			
 		print()
-		print(tui.status("ok", f"Joined video saved as {output_path}", cap=cap))
+		print(tui.panel(None, [tui.status(
+			"ok", f"Joined video saved as {output_path}", cap=cap)], cap=cap))
 		return True
 
 	except Exception as e:
