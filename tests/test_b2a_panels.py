@@ -142,5 +142,47 @@ class RenamerConfirmPanelTest(unittest.TestCase):
 		self.assertIn("You are using the --all flag", out)
 
 
+class RandomsorterConfirmPanelTest(unittest.TestCase):
+	"""The `--all` confirmation is a panel; the run summary stays inline."""
+
+	def test_true_colour_frames_the_confirmation(self):
+		out = run_as_main("randomsorter.py", ["--all"], TTY_TRUE, answers=["n"])
+		self.assertIn(FRAME, out, out)
+		plain = tui.strip_ansi(out)
+		self.assertIn("You are using the --all flag", plain, out)
+		self.assertIn("process system files and scripts", plain, out)
+		self.assertIn("\x1b[38;2;", out)
+
+	def test_level_16_and_none_degrade_cleanly(self):
+		out16 = run_as_main("randomsorter.py", ["--all"], TTY_16, answers=["n"])
+		self.assertIn(FRAME, out16)
+		self.assertNotIn("38;2;", out16)
+		out = run_as_main("randomsorter.py", ["--all"], TTY_NONE, answers=["n"])
+		self.assertIn(FRAME, out, out)
+		self.assertNotIn("\x1b", out)
+
+	def test_plain_bytes_are_the_pre_sweep_bytes(self):
+		out = run_as_main("randomsorter.py", ["--all"], PIPE, answers=["n"])
+		self.assertNotIn("\x1b", out)
+		self.assertEqual("Confirm\n[error] You are using the --all flag.\n"
+						 "This will process system files and scripts.\n"
+						 "[info] Operation cancelled.\n", out)
+
+	def test_empty_run_still_prints_the_same_plain_summary(self):
+		"""A real non-destructive run (empty folder) keeps its exact bytes."""
+		import tempfile
+
+		previous = os.getcwd()
+		with tempfile.TemporaryDirectory() as folder:
+			os.chdir(folder)
+			try:
+				out = run_as_main("randomsorter.py", [], PIPE)
+			finally:
+				os.chdir(previous)
+		self.assertEqual(
+			"[warn] No matching files found. Nothing to do.\n"
+			"\nProcessing complete.\n", out)
+
+
 if __name__ == "__main__":
 	unittest.main()
