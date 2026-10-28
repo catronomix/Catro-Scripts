@@ -8,11 +8,12 @@ validation - the tables above are the only place that knows what a valid
 document looks like, so the checks live next to them and the engine only calls
 `validate()`.
 
-`validate()` knows one schema: the current one (schema 2). A schema-1 document
-is read through `tui.theme_migrate` first, so `validate_any()` renames before it
-checks and an old file keeps loading; the strict `validate()` stays the writer's
-gate. A schema-2 document that still carries the retired `selection_style`
-property is rejected as an unknown key, never silently dropped.
+`validate()` knows one schema: the current one (schema 3). An older document
+is read through `tui.theme_migrate` first, so `validate_any()` migrates before
+it checks and an old file keeps loading; the strict `validate()` stays the
+writer's gate. A schema-2 document that still carries the retired
+`selection_style` property is rejected as an unknown key, never silently
+dropped.
 
 `theme_engine` re-exports `canonical_hex` and `validate`, so callers keep using
 the engine namespace. Pure data plus pure functions: no I/O, no terminal, no
@@ -26,7 +27,7 @@ truth, and `tui.theme_engine` loads it lazily for the built-in fallback.
 import re
 
 from .picker_keys import CORNER_CHARS, PALETTE_KEYS
-from .theme_migrate import migrate_doc
+from .theme_migrate import SCHEMA_CURRENT, migrate_doc
 
 DEFAULT_THEME = "cozypurple"
 DEFAULT_LOOK = "soft"
@@ -91,7 +92,7 @@ def canonical_hex(value, lower=True):
 
 
 def validate(document):
-	"""Every reason `document` is not a valid schema-2 theme; [] when it is."""
+	"""Every reason `document` is not a valid current-schema theme; [] when it is."""
 	if not isinstance(document, dict):
 		return ["theme document must be a JSON object"]
 	errors = []
@@ -102,8 +103,8 @@ def validate(document):
 		errors.append("unknown top-level keys: {}".format(
 			", ".join(str(key) for key in unknown)))
 	schema = document.get("schema")
-	if isinstance(schema, bool) or schema != 2:
-		errors.append("schema must be 2")
+	if isinstance(schema, bool) or schema != SCHEMA_CURRENT:
+		errors.append("schema must be {}".format(SCHEMA_CURRENT))
 	name = document.get("name")
 	if not isinstance(name, str) or not SLUG.match(name):
 		errors.append("name must be a slug matching [a-z0-9][a-z0-9-]*")
@@ -116,11 +117,11 @@ def validate(document):
 
 
 def validate_any(document):
-	"""`validate()` after the v1->v2 migrate step: an old file still reads.
+	"""`validate()` after the migrate steps: an older file still reads.
 
-	Migration is in memory and only renames; the document then meets the same
-	strict schema-2 checker the writer uses. A malformed v1 document that
-	migration cannot walk is reported, never raised.
+	Migration is in memory and only renames or derives; the document then meets
+	the same strict current-schema checker the writer uses. A malformed old
+	document that migration cannot walk is reported, never raised.
 	"""
 	try:
 		document = migrate_doc(document)

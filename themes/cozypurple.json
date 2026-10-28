@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "name": "cozypurple",
   "display": "Cozy Purple",
   "properties": {
@@ -30,7 +30,10 @@
       "border-bg-active": "#352B49",
       "border-fg-active": "#F5CD68",
       "header-fg": "#F5CD68",
-      "header-bg": "#292238"
+      "header-bg": "#292238",
+      "button-fg": "#1B1726",
+      "button-bg": "#F5CD68",
+      "button-bg-active": "#F5CD68"
     },
     "contrast-dark": {
       "bg": "#000000",
@@ -48,7 +51,10 @@
       "border-bg-active": "#1A1A1A",
       "border-fg-active": "#00FFFF",
       "header-fg": "#FFFF00",
-      "header-bg": "#0A0A0A"
+      "header-bg": "#0A0A0A",
+      "button-fg": "#000000",
+      "button-bg": "#00FFFF",
+      "button-bg-active": "#00FFFF"
     },
     "contrast-light": {
       "bg": "#FFFFFF",
@@ -66,7 +72,10 @@
       "border-bg-active": "#E8F4F8",
       "border-fg-active": "#0000B3",
       "header-fg": "#A0007A",
-      "header-bg": "#E8F4F8"
+      "header-bg": "#E8F4F8",
+      "button-fg": "#FFFFFF",
+      "button-bg": "#0000B3",
+      "button-bg-active": "#0000B3"
     }
   }
 }

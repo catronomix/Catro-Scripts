@@ -3,7 +3,7 @@
 		PALETTE TABLES AND STYLING
 		==========================
 Pins the final theme set: exactly soft (default), contrast-light and
-contrast-dark, each with the sixteen schema-2 keys. The soft truecolor
+contrast-dark, each with the nineteen current-schema keys. The soft truecolor
 escapes are spelled out literally so the fixed emission order (foreground,
 background, attributes, text, reset) cannot drift; the table renderer and the
 golden fixture both depend on it.
@@ -37,7 +37,7 @@ SHIPPED = REPO / "themes" / "cozypurple.json"
 
 
 def shipped_looks():
-	"""The three looks as the engine hands them out (schema 2, one source)."""
+	"""The three looks as the engine hands them out (current schema, one source)."""
 	document = json.loads(SHIPPED.read_text(encoding="utf-8"))
 	return theme_migrate.migrate_doc(document)["looks"]
 
@@ -110,7 +110,7 @@ class SoftByteTests(unittest.TestCase):
 				self.assertEqual(rgb_of(escape), palette.rgb(soft[key]))
 		self.assertEqual(soft["fg-muted"], soft["border-fg"])
 		self.assertEqual(soft["header-fg"], soft["fg-accent"])
-		# ... and the published table carries the sixteen schema-2 keys only.
+		# ... and the published table carries the nineteen current keys only.
 		self.assertEqual(set(table), set(theme_engine.PALETTE_KEYS))
 
 
@@ -236,12 +236,24 @@ class ThreeThemeTests(unittest.TestCase):
 	def test_theme_set_is_exactly_three(self):
 		self.assertEqual(set(palette.THEMES), set(self.shipped()))
 
-	def test_every_theme_has_the_same_sixteen_keys(self):
+	def test_every_theme_has_the_same_nineteen_keys(self):
 		keys = set(theme_engine.PALETTE_KEYS)
-		self.assertEqual(len(keys), 16)
+		self.assertEqual(len(keys), 19)
 		for name, table in palette.THEMES.items():
 			with self.subTest(theme=name):
 				self.assertEqual(set(table), keys)
+
+	def test_the_schema_the_shipped_doc_and_the_picker_list_agree(self):
+		# `PALETTE_KEYS`/`theme_migrate` are the schema's rows, the shipped
+		# document and the editor picker all read that same tuple.
+		self.assertEqual(tuple(theme_migrate.PALETTE_KEYS),
+						 tuple(theme_engine.PALETTE_KEYS))
+		shipped = json.loads(SHIPPED.read_text(encoding="utf-8"))
+		for look, table in shipped["looks"].items():
+			with self.subTest(look=look):
+				self.assertEqual(list(table), list(theme_engine.PALETTE_KEYS))
+		for key in ("button-fg", "button-bg", "button-bg-active"):
+			self.assertEqual(palette.role(key), key)
 
 	def test_tables_are_the_shipped_values(self):
 		for name, expected in self.shipped().items():
@@ -371,6 +383,16 @@ class ContrastGateTests(unittest.TestCase):
 						ratio, 4.5, "{} {} on {} is {:.2f}:1".format(
 							name, key, backdrop, ratio))
 
+	def test_the_button_pairs_clear_wcag_aa(self):
+		# A filled button is its own pair: `button-fg` on `button-bg`, and on
+		# the focused ground.
+		for name, colours in palette.THEMES.items():
+			for backdrop in ("button-bg", "button-bg-active"):
+				ratio = _contrast(colours["button-fg"], colours[backdrop])
+				self.assertGreaterEqual(
+					ratio, 4.5, "{} button-fg on {} is {:.2f}:1".format(
+						name, backdrop, ratio))
+
 
 class ThemeAliasTests(unittest.TestCase):
 	def setUp(self):
@@ -430,7 +452,7 @@ class ThemeAliasTests(unittest.TestCase):
 
 
 class RoleTests(unittest.TestCase):
-	"""Only schema-2 keys are roles; a v1 spelling is an unknown name now."""
+	"""Only current-schema keys are roles; a v1 spelling is an unknown name now."""
 
 	def test_role_only_normalises_case_and_whitespace(self):
 		for key in theme_engine.PALETTE_KEYS:
@@ -453,7 +475,7 @@ class RoleTests(unittest.TestCase):
 					palette.style("x", fg=old, cap=TRUE, theme="soft"),
 					palette.style("x", fg=new, cap=TRUE, theme="soft"))
 
-	def test_published_tables_carry_the_v2_keys_only(self):
+	def test_published_tables_carry_the_current_keys_only(self):
 		tables = [palette.palette("soft")]
 		tables += [getattr(palette, name) for name in
 				   ("SOFT", "CONTRAST_LIGHT", "CONTRAST_DARK")]

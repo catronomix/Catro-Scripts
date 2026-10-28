@@ -1,47 +1,25 @@
-# Theme migration: schema 1 -> schema 2 key renames, new slots and defaults
+# Theme migration: schema 1 -> 2 -> 3 key renames, new slots and defaults
 """
 			THEME MIGRATION
 			===============
-One in-memory step between a schema-1 document on disk and the schema-2
-document the engine hands out. `migrate_doc()` renames the nine palette slots,
-derives the five new ones from a slot that already carries the byte a shipped
-theme needs, drops the retired `selection_style` property and adds
-`corner-char: none`; hex case is copied, never rewritten. A look key the v1
-schema never had rides along (a v2 spelling is blanked), so `validate_any()`
-refuses a half-migrated file instead of a save dropping the bytes.
+Two in-memory steps between an old document on disk and the current schema:
+`migrate_doc()` renames a schema-1 document to schema 2 and then derives the
+three schema-3 button slots from a slot that already carries the byte a shipped
+theme needs; a schema-2 document takes the second step only. Hex case is copied,
+never rewritten, and a look key the schema never had rides along (a spelling a
+later schema owns is blanked), so `validate_any()` refuses a half-migrated file
+instead of a save dropping the bytes.
 
-The map lives here (not in `tui.theme_engine`, which is at its budget) and is
-the only reader of a v1 spelling: `tui.palette` publishes schema-2 roles only,
-so an old name is just an unknown role there. Validation stays in
-`tui.theme_schema`: `validate_any()` migrates first, then the schema-2 checker
-runs, and a v1 file is never refused or rewritten by a read.
+The maps live in `tui.theme_keys` (not in `tui.theme_engine`, which is at its
+budget) and are re-exported here: `tui.palette` publishes current roles only, so
+an old name is just an unknown role there. `tui.theme_schema` migrates before it
+checks, and an old file is never refused or rewritten by a read.
 """
 
 from .picker_keys import PALETTE_KEYS, V1_PALETTE_KEYS
+from .theme_keys import DERIVED, V1_TO_V2, V2_TO_V3  # noqa: F401  (re-export)
 
-SCHEMA_CURRENT = 2
-
-# Schema-1 key -> schema-2 key for the nine renamed palette slots.
-V1_TO_V2 = {
-	"surface": "bg-inside",
-	"zebra_bg": "bg-stripe",
-	"muted": "fg-muted",
-	"accent": "fg-accent",
-	"success": "fg-success",
-	"warn": "fg-warn",
-	"error": "fg-error",
-	"border": "border-fg",
-	"header": "header-fg",
-}
-
-# The new slots and the schema-1 slot each one starts from (byte-preserving).
-DERIVED = {
-	"bg-inside-active": "zebra_bg",
-	"border-bg": "surface",
-	"border-bg-active": "zebra_bg",
-	"border-fg-active": "accent",
-	"header-bg": "surface",
-}
+SCHEMA_CURRENT = 3
 
 # Properties the current schema adds (defaults) and retires (dropped).
 DEFAULT_PROPERTIES = {"corner-char": "none"}
@@ -49,14 +27,25 @@ DROPPED_PROPERTIES = ("selection_style",)
 
 
 def migrate_doc(document):
-	"""`document` as the current schema; a non-v1 document is returned as is."""
-	if not isinstance(document, dict) or document.get("schema") != 1:
+	"""`document` as the current schema; a current document is returned as is."""
+	if not isinstance(document, dict):
 		return document
-	looks = document.get("looks")
-	migrated = dict(document)
-	migrated["schema"] = SCHEMA_CURRENT
-	migrated["properties"] = _properties(document.get("properties"))
-	migrated["looks"] = {look: _look(entry) for look, entry in (looks or {}).items()}
+	schema = document.get("schema")
+	if schema == 1:
+		schema = 2
+		document = _document(document, schema, _look)
+	if schema != 2:
+		return document
+	return _document(document, SCHEMA_CURRENT, _v3_look)
+
+
+def _document(document, schema, look_step):
+	"""One old document as `schema`: v1 properties plus `look_step` per look."""
+	migrated = dict(document, schema=schema)
+	if schema == 2:
+		migrated["properties"] = _properties(document.get("properties"))
+	migrated["looks"] = {look: look_step(entry)
+						 for look, entry in (document.get("looks") or {}).items()}
 	return migrated
 
 
@@ -75,6 +64,17 @@ def _look(entry):
 			 for key, value in entry.items() if key not in V1_PALETTE_KEYS}
 	colours = {V1_TO_V2.get(key, key): entry.get(key) for key in V1_PALETTE_KEYS}
 	colours.update({key: entry.get(source) for key, source in DERIVED.items()})
+	result = {key: colours.get(key) for key in PALETTE_KEYS}
+	result.update(extra)
+	return result
+
+
+def _v3_look(entry):
+	"""One v2 look as v3: the three button slots derived, canonical order."""
+	extra = {key: value for key, value in entry.items()
+			 if key not in PALETTE_KEYS}
+	colours = dict(entry)
+	colours.update({key: entry.get(source) for key, source in V2_TO_V3.items()})
 	result = {key: colours.get(key) for key in PALETTE_KEYS}
 	result.update(extra)
 	return result

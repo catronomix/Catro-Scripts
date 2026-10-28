@@ -76,12 +76,12 @@ class ShippedDocumentTests(SeamCase):
 	def test_the_shipped_file_is_valid_and_matches_the_builtin_table(self):
 		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
 		self.assertEqual(theme_engine.validate(document), [])
-		# The file is schema 2 since the flip, so it is the built-in table.
-		self.assertEqual(document["schema"], 2)
+		# The file is the current schema since the flip, so it is the built-in table.
+		self.assertEqual(document["schema"], theme_migrate.SCHEMA_CURRENT)
 		self.assertEqual(theme_migrate.migrate_doc(document), document)
 		self.assertEqual(document, builtin())
 
-	def test_every_look_carries_the_sixteen_tokens(self):
+	def test_every_look_carries_the_nineteen_tokens(self):
 		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
 		for look in theme_engine.LOOKS:
 			with self.subTest(look=look):
@@ -169,7 +169,7 @@ class ValidationTests(SeamCase):
 		self.assertTrue(self.check(document))
 
 	def test_schema_and_name_rules(self):
-		for schema in (3, "1", True):
+		for schema in (2, 4, "3", True):
 			document = builtin()
 			document["schema"] = schema
 			self.assertTrue(self.check(document), schema)

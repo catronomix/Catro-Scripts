@@ -7,10 +7,10 @@ One JSON file per theme under `themes/`, one selection file per checkout
 data; `tui.palette` stays the public styling API and delegates here.
 
 A document is `{schema, name, display, properties, looks}`: exactly the three
-looks `default`, `contrast-dark`, `contrast-light` with the sixteen schema-2
-palette keys as `#rrggbb` strings, plus the nine rendering properties. A
-schema-1 file is migrated in memory (`tui.theme_migrate`) and validated as the
-current schema, so an old theme keeps loading and a save writes schema 2.
+looks `default`, `contrast-dark`, `contrast-light` with the nineteen schema-3
+palette keys as `#rrggbb` strings, plus the nine rendering properties. An older
+file is migrated in memory (`tui.theme_migrate`) and validated as the current
+schema, so an old theme keeps loading and a save writes the current schema.
 Validation is all-or-nothing, so a typo can never ship a half-theme. The tables
 and their checker live in `tui.theme_schema` and are re-exported here, so this
 module stays the public surface while `theme_schema` owns what "valid" means.
