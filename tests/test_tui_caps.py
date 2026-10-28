@@ -62,8 +62,14 @@ class CapabilityTests(unittest.TestCase):
 	def tearDown(self):
 		config.CONFIG_FILE = self._config_file
 
-	def detect(self, environ=None, tty=True, encoding="utf-8", windows=False):
-		with mock.patch.object(caps, "_IS_WINDOWS", windows):
+	def detect(self, environ=None, tty=True, encoding="utf-8", windows=False,
+			   vt=False):
+		# The Windows VT probe is a seam: `vt` is what it reports, and
+		# `self.probe` proves when the real console was never touched.
+		with mock.patch.object(caps, "_IS_WINDOWS", windows), \
+				mock.patch.object(caps, "_vt_probe", return_value=vt,
+								  create=True) as probe:
+			self.probe = probe
 			return caps.detect(FakeStream(tty, encoding), environ or {})
 
 	def test_no_color_wins_over_everything(self):
@@ -189,9 +195,69 @@ class CapabilityTests(unittest.TestCase):
 			self.assertEqual((cap.level, cap.reason, cap.plain),
 							 ("true", "config.ini", True))
 
-	def test_legacy_windows_console_beats_colorterm(self):
-		cap = self.detect({"COLORTERM": "truecolor"}, windows=True)
+	def test_legacy_windows_console_falls_back_to_16(self):
+		# A conhost that refuses the VT probe with no marker env is legacy.
+		cap = self.detect({}, windows=True, vt=False)
 		self.assertEqual((cap.level, cap.reason), ("16", "windows-legacy-console"))
+
+	def test_conhost_vt_capable_is_truecolor(self):
+		# Modern conhost accepts ENABLE_VIRTUAL_TERMINAL_PROCESSING even though
+		# it exports no marker variable at all.
+		cap = self.detect({}, windows=True, vt=True)
+		self.assertEqual((cap.level, cap.reason), ("true", "vt-console"))
+
+	def test_probe_failure_never_downgrades_colorterm(self):
+		# COLORTERM is a declaration by the program that launched us (and is
+		# inherited across consoles), so it outranks the probe.
+		cap = self.detect({"COLORTERM": "truecolor"}, windows=True, vt=False)
+		self.assertEqual((cap.level, cap.reason), ("true", "COLORTERM"))
+		self.probe.assert_not_called()
+
+	def test_vt_console_keeps_colorterm(self):
+		cap = self.detect({"COLORTERM": "truecolor"}, windows=True, vt=True)
+		self.assertEqual((cap.level, cap.reason), ("true", "COLORTERM"))
+		self.probe.assert_not_called()
+
+	def test_mintty_xterm_is_256(self):
+		# Git for Windows ships mintty with TERM=xterm, so the 256color branch
+		# never matches and mintty needs its own conservative rule.
+		cap = self.detect({"TERM": "xterm", "TERM_PROGRAM": "mintty",
+						   "MSYSTEM": "MINGW64"}, windows=True)
+		self.assertEqual((cap.level, cap.reason), ("256", "mintty"))
+
+	def test_mintty_truecolor_opt_in(self):
+		cap = self.detect({"TERM": "xterm", "TERM_PROGRAM": "mintty",
+						   "MSYSTEM": "MINGW64", "COLORTERM": "truecolor"},
+						  windows=True)
+		self.assertEqual((cap.level, cap.reason), ("true", "COLORTERM"))
+
+	def test_inherited_term_still_256(self):
+		# A console that inherits TERM=xterm-256color keeps its 256 answer.
+		cap = self.detect({"TERM": "xterm-256color"}, windows=True)
+		self.assertEqual((cap.level, cap.reason), ("256", "TERM"))
+		self.probe.assert_not_called()
+
+	def test_pipe_stays_plain_with_vt_probe(self):
+		cap = self.detect({"TERM": "xterm-256color"}, tty=False, windows=True,
+						  vt=True)
+		self.assertEqual((cap.level, cap.plain), ("none", True))
+		self.probe.assert_not_called()
+
+	def test_no_color_beats_vt_probe(self):
+		cap = self.detect({"NO_COLOR": "1"}, windows=True, vt=True)
+		self.assertEqual((cap.level, cap.reason), ("none", "NO_COLOR"))
+		self.probe.assert_not_called()
+
+	def test_dumb_beats_vt_probe(self):
+		cap = self.detect({"TERM": "dumb"}, windows=True, vt=True)
+		self.assertEqual((cap.level, cap.reason), ("none", "TERM=dumb"))
+		self.probe.assert_not_called()
+
+	def test_probe_not_called_off_windows_or_pipe(self):
+		self.detect({}, windows=False, vt=True)
+		self.probe.assert_not_called()
+		self.detect({"TERM": "xterm-256color"}, tty=False, windows=True, vt=True)
+		self.probe.assert_not_called()
 
 	def test_modern_windows_console_keeps_colorterm(self):
 		cap = self.detect({"COLORTERM": "truecolor", "WT_SESSION": "1"}, windows=True)
@@ -252,6 +318,24 @@ class CapabilityTests(unittest.TestCase):
 				mock.patch.object(caps.os, "system") as system:
 			caps.init_ansi()
 		system.assert_called_once_with("")
+
+
+class ConsoleVtProbeTests(unittest.TestCase):
+	"""tui.console_vt.can_vt is inert off Windows and never raises."""
+
+	def test_can_vt_is_false_off_windows(self):
+		from tui import console_vt
+		with mock.patch.object(console_vt, "_IS_WINDOWS", False), \
+				mock.patch.object(console_vt, "_handle") as handle:
+			self.assertFalse(console_vt.can_vt())
+		handle.assert_not_called()
+
+	def test_can_vt_is_false_when_the_handle_probe_raises(self):
+		from tui import console_vt
+		with mock.patch.object(console_vt, "_IS_WINDOWS", True), \
+				mock.patch.object(console_vt, "_handle",
+								  side_effect=OSError("no console")):
+			self.assertFalse(console_vt.can_vt())
 
 
 if __name__ == "__main__":
