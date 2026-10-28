@@ -209,6 +209,21 @@ class PreviewFrameTests(EditorTestCase):
 		# The painted space frame costs exactly the cells a drawn one does.
 		self.assertEqual(edge_cells(none_canvas), edge_cells(framed_canvas))
 
+	def test_header_align_moves_the_framed_title(self):
+		_, document, left = self.preview("rounded", header_align="left")
+		_, _, center = self.preview("rounded", header_align="center")
+		_, _, right = self.preview("rounded", header_align="right")
+		title = editorviews.preview_title(document, "default")
+
+		def column(band):
+			return band[0].index(title)
+
+		self.assertEqual(column(left), 3)
+		self.assertGreater(column(center), column(left))
+		self.assertGreater(column(right), column(center))
+		# Right aligns the label's trailing space against the closing corner.
+		self.assertEqual(column(right) + len(title), 27)
+
 	def test_a_filled_preview_button_paints_the_button_tokens(self):
 		document = copy.deepcopy(self.make().document)
 		look = document["looks"]["default"]

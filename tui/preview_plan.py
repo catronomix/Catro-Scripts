@@ -53,3 +53,21 @@ def texts(look_id, active=False):
 		"menu": " 2. menu row",
 		"ready": "[ok] ready",
 	}
+
+
+def title_label(title, width, properties):
+	"""The frame title, padded so it sits per the document's `header_align`.
+
+	`tui.editorframe` wraps the string in one space on each side and draws it
+	two cells in from the corners; the leading padding here is what moves it,
+	so the frame keeps one formula for every alignment.
+	"""
+	room = width - 5 - len(title)
+	if room < 0:
+		return ""
+	align = str(properties.get("header_align", "left"))
+	if align == "right":
+		return " " * room + title
+	if align == "center":
+		return " " * (room // 2) + title
+	return title

@@ -17,6 +17,7 @@ currently selects.
 from . import chrome, editorframe, palette, progress, widgets
 from .editor_nav import preview_title
 from .preview_plan import rows as plan_rows, texts as plan_texts
+from .preview_plan import title_label
 from .text import pad, truncate
 
 
@@ -72,7 +73,8 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 	inner_w, inner_h = width, height
 	if framed:
 		editorframe.draw(canvas, x, y, width, height, glyphs,
-						 preview_title(document, look_id),
+						 title_label(preview_title(document, look_id), width,
+									 properties),
 						 editorframe.edge(colours, cap))
 		inner_x, inner_y = x + 1, y + 1
 		inner_w, inner_h = width - 2, height - 2
