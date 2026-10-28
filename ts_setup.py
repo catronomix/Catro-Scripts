@@ -214,10 +214,13 @@ console.log("Environment ready: scripts and styles linked.");
 						 cap=cap))
 
 	print()
-	print(tui.status("ok", f"Success! Project '{project_name}' is ready.", cap=cap))
-	print("To start the development server:")
-	print(f"  cd {project_name}")
-	print("  npm run dev")
+	print(tui.panel(None, [
+		tui.status("ok", f"Success! Project '{project_name}' is ready.",
+				   cap=cap),
+		"To start the development server:",
+		f"  cd {project_name}",
+		"  npm run dev",
+	], cap=cap))
 
 if __name__ == "__main__":
 	main()
