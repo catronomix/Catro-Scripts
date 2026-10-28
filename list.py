@@ -98,8 +98,10 @@ def list_scripts():
 
 		tui.print_table(["ID", "Script Name", "Size", "Description"], rows,
 						widths=COLUMN_WIDTHS, truncate=False, cap=cap)
-		print(tui.style("Total scripts found:", fg="border-fg", bold=True, cap=cap),
-			  len(scripts))
+		# The footer is prose, not frame furniture: label and count both take
+		# the body `fg` ink so the total never borrows the border colour.
+		print(tui.style("Total scripts found:", fg="fg", bold=True, cap=cap),
+			  tui.style(len(scripts), fg="fg", cap=cap))
 		print()
 
 	except UnicodeEncodeError:
