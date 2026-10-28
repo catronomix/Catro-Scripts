@@ -41,6 +41,9 @@ import tui
 # wrapper inherits (minimal shells, services). POSIX-only: never read on Windows.
 SBIN_DIRS = ("/sbin", "/usr/sbin")
 
+# `tui.ask_text` returns this when stdin closes; a closed stdin is a quit.
+_EOF = object()
+
 def parse_duration(duration_str):
 	"""
 	Parses strings like '1d2h30m', '2h', '45m' into total seconds.
@@ -171,8 +174,10 @@ def schedule_shutdown(seconds, cap=None):
 				f"(argv: {' '.join(argv)}).", cap=cap))
 		return False
 
-	print("\n" + tui.status("ok", success, cap=cap))
-	print(tui.status("info", cancel_hint, cap=cap))
+	print("\n" + tui.panel(None, [
+		tui.status("ok", success, cap=cap),
+		tui.status("info", cancel_hint, cap=cap),
+	], cap=cap))
 	return True
 
 def main():
@@ -187,15 +192,14 @@ def main():
 	print("  - 90    (90 minutes - default unit)")
 
 	while True:
-		# The free-text delay stays on input(): the prompt string and the
-		# blank/EOF handling are part of the pinned interaction, so the label
-		# is styled in place with a palette role rather than swapped for
-		# tui.ask_text(), which would reword the prompt.
-		user_input = input(
-			tui.style("\nEnter shutdown delay (or 'q' to quit): ",
-					  fg="header-fg", bold=True, cap=cap)).strip()
-		
-		if user_input.lower() == 'q':
+		# The free-text delay goes through `tui.prompts` like every other
+		# prompt in the toolset; a closed stdin is a quit, not a re-prompt, so
+		# the 0041 EOF sentinel ends the loop instead of spinning on it.
+		print()
+		user_input = tui.ask_text("Enter shutdown delay (or 'q' to quit): ",
+								  eof=_EOF)
+
+		if user_input is _EOF or user_input.lower() == 'q':
 			break
 			
 		seconds = parse_duration(user_input)

@@ -184,5 +184,68 @@ class RandomsorterConfirmPanelTest(unittest.TestCase):
 			"\nProcessing complete.\n", out)
 
 
+class ShutdownResultPanelTest(unittest.TestCase):
+	"""The scheduled-shutdown result block is one panel; nothing is executed."""
+
+	def render(self, cap):
+		import shutdown
+
+		with mock.patch.object(shutdown.platform, "system",
+							   return_value="Windows"), \
+				mock.patch.object(shutdown.subprocess, "run",
+								  lambda *a, **k: None):
+			shutdown.schedule_shutdown(600, cap=cap)
+
+	def test_true_colour_frames_the_result(self):
+		out = capture(self.render, TTY_TRUE)
+		self.assertIn(FRAME, out, out)
+		self.assertIn("[ok] Shutdown scheduled in 600 seconds.",
+					  tui.strip_ansi(out), out)
+		self.assertIn("\x1b[38;2;", out)
+
+	def test_level_16_and_none_degrade_cleanly(self):
+		out16 = capture(self.render, TTY_16)
+		self.assertIn(FRAME, out16)
+		self.assertNotIn("38;2;", out16)
+		out = capture(self.render, TTY_NONE)
+		self.assertIn(FRAME, out, out)
+		self.assertNotIn("\x1b", out)
+
+	def test_plain_bytes_are_the_pre_sweep_bytes(self):
+		out = capture(self.render, PIPE)
+		self.assertEqual(
+			"\n[ok] Shutdown scheduled in 600 seconds.\n"
+			"[info] To cancel, type: shutdown /a\n", out)
+
+	def test_closed_stdin_quits_instead_of_reprompting(self):
+		"""EOF is a quit: the delay prompt must not loop on a closed stdin."""
+		import shutdown
+
+		with mock.patch.object(tui, "detect", lambda: TTY_TRUE), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(tui, "ask_text", return_value=shutdown._EOF), \
+				mock.patch.object(tui, "header", lambda *a, **k: "header"), \
+				contextlib.redirect_stdout(io.StringIO()):
+			shutdown.main()  # returns, never schedules, never spins
+
+
+class NoBareInputTest(unittest.TestCase):
+	"""Batch B2a scripts ask through `tui.prompts`, never `input()` directly."""
+
+	def test_no_bare_input_in_the_five_scripts(self):
+		import ast
+
+		for name in ("netconfig.py", "renamer.py", "randomsorter.py",
+					 "shutdown.py", "keygen.py"):
+			with self.subTest(script=name):
+				tree = ast.parse((REPO / name).read_text(encoding="utf-8"))
+				calls = [node for node in ast.walk(tree)
+						 if isinstance(node, ast.Call)
+						 and isinstance(node.func, ast.Name)
+						 and node.func.id == "input"]
+				self.assertEqual([], calls,
+								 "{} still calls input() directly".format(name))
+
+
 if __name__ == "__main__":
 	unittest.main()
