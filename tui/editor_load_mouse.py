@@ -8,6 +8,11 @@ still lives on the editor, the row click on the `ListBox`, and the load flow
 (validation, the dirty confirm, the engine write) in `tui.editor_store` via
 `tui.editoractions.load_key`.
 
+A press that hits a row loads it at once, exactly like Enter (`#38` item 10).
+A press that misses every row only consumes the event, so an invalid row, the
+dirty confirm and the popup staying open on error behave as they always did:
+those decisions are `load_key`'s, not this module's.
+
 `tui.editor_mouse` re-exports `load_mouse`, so `editor_mouse.load_mouse(...)`
 and the dispatch in `tui.editor_keys` keep resolving at their old path.
 """
@@ -17,12 +22,15 @@ from .mouse import DOUBLE
 
 
 def load_mouse(editor, kind, x, y, modifiers=()):
-	"""Load popup: a press selects a row, a double opens it (Enter's flow)."""
+	"""Load popup: a press on a row loads it; a miss only consumes the event."""
 	kind = editor.clicks.push(kind, x, y, modifiers)
 	if kind not in ("press", DOUBLE) or editor.load_box is None:
 		return False
-	if not editor.load_box.click(x, y):
+	box = editor.load_box
+	row = box.offset + int(y) - box.y
+	hits_row = box.hit_test(x, y) and 0 <= row < len(box.items)
+	if not box.click(x, y):
 		return False
-	if kind == DOUBLE:
+	if hits_row:
 		return editoractions.load_key(editor, "enter")
 	return True

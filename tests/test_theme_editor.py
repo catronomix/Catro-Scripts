@@ -426,18 +426,18 @@ class DoubleClickTests(EditorTestCase):
 		self.assertEqual(ed.prompt, "save")
 		self.assertFalse(ed.closed)
 
-	def test_a_double_press_on_a_load_row_opens_that_theme(self):
+	def test_a_single_press_on_a_load_row_opens_that_theme(self):
+		# Issue #38 item 10: one press loads the row (Enter's flow).
 		ed = self.make()
 		ed.load_popup()
 		ed.handle("mouse:press:0:0")
-		self.assertEqual(ed.prompt, "load")
 		self.assertEqual(ed.load_box.selected, 0)
-		ed.handle("mouse:press:0:0")
 		self.assertIsNone(ed.prompt)
 		self.assertIn("loaded", ed.message[1])
 
 	def test_a_double_press_on_an_invalid_load_row_only_selects_it(self):
 		(theme_engine.themes_dir() / "broken.json").write_text("{",
+
 															   encoding="utf-8")
 		ed = self.make()
 		ed.load_popup()
@@ -449,6 +449,26 @@ class DoubleClickTests(EditorTestCase):
 		self.assertEqual(ed.prompt, "load")
 		self.assertEqual(ed.load_box.selected, index)
 		self.assertIn("cannot load", ed.message[1])
+
+
+class LoadPressTests(EditorTestCase):
+	"""Issue #38 item 10: a single press on a Load row loads that theme."""
+
+	def test_a_press_on_an_extra_theme_row_loads_it(self):
+		document = theme_engine.document()
+		document["name"] = "extra"
+		theme_engine.save_theme(document, overwrite=True)
+		ed = self.make()
+		labels = ed.load_popup()
+		self.assertTrue(any("extra" in label for label in labels), labels)
+		index = next(index for index, entry in enumerate(ed.entries)
+					 if entry["slug"] == "extra")
+		ed.draw()
+		token = "mouse:press:{}:{}".format(ed.load_box.x,
+										   ed.load_box.y + index)
+		ed.handle(token)
+		self.assertEqual(ed.document["name"], "extra")
+		self.assertFalse(ed.dirty)
 
 
 class LookScopeTests(EditorTestCase):
