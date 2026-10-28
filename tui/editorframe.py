@@ -13,9 +13,8 @@ preview keeps its footprint and only the glyphs vanish. A console without
 Unicode degrades to `+ - |` first, then the document's `corner-char` lands on
 the four corners, exactly like a table.
 
-The edge is the look's own `border-fg` on its `border-bg` hex (the document
-under edit, whatever `theme.ini` selects), so all three previews stay
-theme-accurate.
+The edge is the look's own `border-fg` on `border-bg` (the document under edit,
+whatever `theme.ini` selects), so all three previews stay theme-accurate.
 """
 
 from . import frame_corners, palette, table
