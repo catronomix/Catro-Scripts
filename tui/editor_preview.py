@@ -15,7 +15,8 @@ currently selects.
 """
 
 from . import chrome, editorframe, palette, progress, widgets
-from .editor_nav import look_label, preview_title
+from .editor_nav import preview_title
+from .preview_plan import rows as plan_rows, texts as plan_texts
 from .text import pad, truncate
 
 
@@ -57,16 +58,16 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 				 active=False):
 	"""One kitchen-sink preview: frame, table, buttons, fields, status, bar.
 
-	The frame carries the document's own `border_style` glyphs (`none` draws
-	no frame at all, only the content) and its title sits in the top rule,
-	which is what keeps the whole kitchen sink inside a 12-row band at 90x24.
-	The progress bar is always the last inner row, so a short band drops
-	content from the middle instead of losing the bar.
+	The frame carries the document's own `border_style` glyphs; `none` is the
+	space family, which is painted as coloured spaces so the preview keeps the
+	same footprint. Its title sits in the top rule, and the progress bar is
+	always the last inner row, so a short band drops content from the middle
+	instead of losing the bar.
 	"""
 	colours = dict(document["looks"][look_id])
 	properties = document["properties"]
 	glyphs = glyphs_for(properties, cap)
-	framed = editorframe.framed(glyphs) and width >= 4 and height >= 4
+	framed = width >= 4 and height >= 4
 	inner_x, inner_y = x, y
 	inner_w, inner_h = width, height
 	if framed:
@@ -79,62 +80,17 @@ def draw_preview(canvas, x, y, width, height, document, look_id, *, cap,
 	def ink(role):
 		return colours.get(palette.role(role), role)
 
-	rows = []
-	if not framed:
-		# `none` keeps the old borderless band: header row, table rule, then
-		# the same rows. The frame's top rule replaces both when a frame is
-		# drawn, so the space is spent on content there.
-		rows.append(("header", "header-fg"))
-		rows.append(("rule", "border-fg"))
-	rows += [("name", "border-fg"), ("alpha", "fg"), ("beta", "fg")]
-	rows.append(("buttons", None))
-	rows += [("field", "fg"), ("look", "fg"), ("preview", "fg-accent"),
-			 ("menu", "fg"), ("ready", "fg-success")]
-	# One row is reserved for the progress bar; the closing table rule is
-	# therefore the first thing a 12-row band gives up.
-	if inner_h > len(rows) + 1:
-		rows.insert(3 if framed else 5, ("rule", "border-fg"))
-	while len(rows) + 1 > inner_h:
-		drop = next((name for name in ("rule", "header", "name", "alpha",
-									   "beta", "buttons", "field", "look",
-									   "preview", "menu", "ready")
-					 if any(row[0] == name for row in rows)), None)
-		if drop is None:
-			break
-		rows = [row for row in rows if row[0] != drop]
-
+	rows = plan_rows(inner_h)
+	texts = plan_texts(look_id, active)
 	table_style = str(properties.get("table_style", "box"))
 	borderless = table_style == "borderless"
 	zebra = "bg-stripe" if properties.get("table_zebra") else None
-	mark = " *" if active else ""
-	texts = {
-		"name": " name            value",
-		"alpha": " alpha            yes",
-		"beta": " beta             no",
-		"field": " field: hello___",
-		"look": " look  < {} >{}".format(look_label(look_id), mark),
-		"preview": "> 1. preview",
-		"menu": " 2. menu row",
-		"ready": "[ok] ready",
-	}
 	row = 0
 	for kind, role in rows:
 		if row >= max(0, inner_h - 1):
 			break
 		top = inner_y + row
-		if kind == "header":
-			header = " " + preview_title(document, look_id) + mark + " "
-			align = str(properties.get("header_align", "left"))
-			if align == "center":
-				header = header.center(inner_w)
-			elif align == "right":
-				header = header.rjust(inner_w)
-			canvas.draw_text(inner_x, top, pad(truncate(header, inner_w),
-											   inner_w),
-							 palette.prefix(fg=ink("header-fg"),
-											bg=ink("header-bg"), bold=True,
-											cap=cap))
-		elif kind == "rule":
+		if kind == "rule":
 			glyph = " " if borderless else glyphs["h"]
 			canvas.draw_text(inner_x, top, truncate(glyph * inner_w, inner_w),
 							 palette.prefix(fg=ink("border-fg"), cap=cap))

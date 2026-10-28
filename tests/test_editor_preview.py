@@ -189,6 +189,26 @@ class PreviewFrameTests(EditorTestCase):
 		self.assertEqual(band[0][0], " ")
 		self.assertEqual(band[-1][0], " ")
 
+	def test_border_style_none_keeps_the_preview_footprint(self):
+		# `none` is a space frame, not a dropped frame: same outer box, the
+		# same one-cell inset and the same row plan as a drawn frame.
+		none_canvas, _, none_band = self.preview("none")
+		framed_canvas, document, framed_band = self.preview("rounded")
+		self.assertEqual(len(none_band), len(framed_band))
+		for row in range(1, len(none_band) - 1):
+			self.assertEqual(none_band[row][1:-1], framed_band[row][1:-1])
+		self.assertEqual(none_band[0][0], " ")
+		self.assertEqual(none_band[-1][0], " ")
+		edge = palette.prefix(fg=document["looks"]["default"]["border-fg"],
+							  cap=self.cap)
+
+		def edge_cells(canvas):
+			return sum(1 for row in canvas._colors[2:2 + 12]
+					   for cell in row[1:1 + 29] if cell == edge)
+
+		# The painted space frame costs exactly the cells a drawn one does.
+		self.assertEqual(edge_cells(none_canvas), edge_cells(framed_canvas))
+
 	def test_a_filled_preview_button_paints_the_button_tokens(self):
 		document = copy.deepcopy(self.make().document)
 		look = document["looks"]["default"]
