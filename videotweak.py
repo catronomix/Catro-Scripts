@@ -41,6 +41,7 @@ import platform
 import subprocess
 import re
 import json
+import math
 
 import tui
 
@@ -112,21 +113,38 @@ def has_audio(filename):
 		pass
 	return False
 
+class DurationError(ValueError):
+	"""A target duration that cannot safely be used for time stretching."""
+
+
 def parse_duration(dur_str):
-	"""Parses strings like 1m30s, 2m, 45s into total seconds."""
-	total_seconds = 0
-	pattern = re.compile(r'(?:(\d+)m)?(?:(\d+)s)?')
-	match = pattern.match(dur_str.strip().lower())
-	if match:
-		minutes = int(match.group(1)) if match.group(1) else 0
-		seconds = int(match.group(2)) if match.group(2) else 0
-		total_seconds = (minutes * 60) + seconds
-	
+	"""Parse positive seconds, XmYs, mm:ss or hh:mm:ss; raise DurationError."""
+	value = dur_str.strip().lower()
+	if value.startswith("-"):
+		raise DurationError("Negative durations are not allowed.")
+
+	# Match the whole input so a valid prefix cannot hide trailing junk.
+	seconds_pattern = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+	if re.fullmatch(seconds_pattern, value):
+		total_seconds = float(value)
+	elif re.fullmatch(r"[0-9]+:[0-9]+(?::[0-9]+)?(?:\.[0-9]+)?", value):
+		parts = [float(part) for part in value.split(":")]
+		if any(part >= 60 for part in parts[1:]):
+			raise DurationError("Clock minutes and seconds must be less than 60.")
+		total_seconds = 0
+		for part in parts:
+			total_seconds = total_seconds * 60 + part
+	else:
+		match = re.fullmatch(r"(?:([0-9]+)m)?(?:([0-9]+)s)?", value)
+		if not value or match is None:
+			raise DurationError("Use seconds, XmYs, mm:ss or hh:mm:ss.")
+		minutes, seconds = match.groups()
+		total_seconds = float(minutes or 0) * 60 + float(seconds or 0)
+
+	if not math.isfinite(total_seconds):
+		raise DurationError("Duration must be finite.")
 	if total_seconds == 0:
-		try:
-			total_seconds = float(dur_str)
-		except ValueError:
-			return None
+		raise DurationError("Zero duration is not allowed.")
 	return total_seconds
 
 def _ask_float(prompt):
@@ -304,8 +322,9 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 	elif effect_id == 5: # Time Stretch
 		target_input = tui.ask_text(
 			f"Enter target duration (Orig: {orig_duration:.2f}s)", "")
+		if target_input is None:
+			return
 		target_dur = parse_duration(target_input)
-		if not target_dur or target_dur <= 0: return
 		speed_factor = target_dur / orig_duration
 		print()
 		print(tui.section("Interpolation Mode", cap=cap))
@@ -447,7 +466,11 @@ def main():
 		else:
 			target_ext = selected_ext
 
-		process_video(f, effect_id, args.directory, args.suffix, selected_codec, target_ext, selected_res_config, cap)
+		try:
+			process_video(f, effect_id, args.directory, args.suffix, selected_codec, target_ext, selected_res_config, cap)
+		except DurationError as exc:
+			print(tui.status("error", f"Invalid target duration: {exc}", cap=cap))
+			sys.exit(1)
 
 if __name__ == "__main__":
 	main()

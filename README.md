@@ -78,6 +78,15 @@
 
 - **`videotweak`**: A versatile video processing tool for changing FPS, reversing, bouncing, time stretching and/or general transcoding. _Requires: decord, ffmpeg_
 
+  Time Stretch accepts positive, finite durations as decimal seconds (`90`,
+  `0.5`), minute/second units (`1m30s`, `2m`, `45s`, case-insensitive),
+  `mm:ss` (`1:30`) or `hh:mm:ss` (`1:02:03`). Clock seconds may have a decimal
+  fraction; clock fields after the first must be less than 60. Surrounding
+  whitespace is ignored. Zero, negative values, scientific notation and trailing
+  junk are rejected with one error message and exit status 1, without encoding
+  the file or continuing the batch. Cancelling the duration prompt skips that
+  file.
+
 
 ## Language Composition
 
