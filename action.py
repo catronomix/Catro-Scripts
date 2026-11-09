@@ -431,6 +431,10 @@ def interactive_remove(target_name=None, cap=None):
 
 def main():
     args = sys.argv[1:]
+    # Enable VT processing on Windows before any styled output: without this the
+    # console prints raw ESC[...m codes. Capabilities are resolved once, after
+    # the console is ready, exactly as list.py does.
+    tui.init_ansi()
     cap = tui.detect()
 
     # Handle redundant 'action' prefix when invoked via wrapper (e.g. `catro-scripts action <macro>`)
