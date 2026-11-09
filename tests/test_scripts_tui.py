@@ -454,6 +454,41 @@ class ActionPlainTableTest(unittest.TestCase):
 		self.assertEqual(fields[3], "y" * 32 + "..")
 
 
+class ActionInitAnsiTest(unittest.TestCase):
+	"""action.main() must enable ANSI before it resolves capabilities.
+
+	A Windows console without VT processing prints literal ESC[...m codes, so the
+	console bootstrap has to run once before the first detect() call. The shared
+	recorder pins both the count and the order.
+	"""
+
+	def test_main_inits_ansi_once_before_first_detect(self):
+		import action as action_module
+		events = []
+		real_detect = tui.detect
+
+		def record_init_ansi():
+			events.append("init_ansi")
+
+		def record_detect(*args, **kwargs):
+			events.append("detect")
+			return real_detect(*args, **kwargs)
+
+		with mock.patch.dict(os.environ, clean_env(), clear=True), \
+				mock.patch.object(sys, "argv", ["action.py"]), \
+				mock.patch.object(action_module, "load_actions", return_value={}), \
+				mock.patch.object(action_module, "list_actions"), \
+				mock.patch.object(tui, "init_ansi", side_effect=record_init_ansi), \
+				mock.patch.object(tui, "detect", side_effect=record_detect):
+			action_module.main()
+
+		self.assertEqual(events.count("init_ansi"), 1,
+						 "main() did not call tui.init_ansi() exactly once")
+		self.assertIn("detect", events, "main() never resolved capabilities")
+		self.assertLess(events.index("init_ansi"), events.index("detect"),
+						"tui.init_ansi() must run before the first tui.detect()")
+
+
 class ScreensaverMenuTest(unittest.TestCase):
 	"""The menu decodes keys through tui.keys; a real terminal smoke is owed."""
 
