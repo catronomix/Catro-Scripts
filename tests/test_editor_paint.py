@@ -38,7 +38,7 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 
 setUpModule, tearDownModule = module_isolation()
 
-SHIPPED = REPO / "themes" / "cozypurple.json"
+SHIPPED = REPO / "tests" / "fixtures" / "themes" / "cozypurple.json"
 
 
 def make_cap(unicode=True, level="true"):

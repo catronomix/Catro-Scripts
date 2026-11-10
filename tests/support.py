@@ -56,6 +56,15 @@ def clean_env(**overrides):
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# Frozen copy of the shipped default theme. Tests render against this, never
+# the working-tree `themes/` directory, so an operator's uncommitted palette or
+# property edit cannot fail the suite; a deliberate palette change is verified
+# visually and lands with a matching fixture update.
+FIXTURE_THEMES = Path(__file__).resolve().parent / "fixtures" / "themes"
+# The shipped document the built-in fallback reads. The directory also keeps
+# migration inputs (`v1-cozypurple.json`), which must not be seeded as if they
+# shipped with the checkout.
+FIXTURE_THEME = FIXTURE_THEMES / "cozypurple.json"
 
 
 def isolate_checkout_config():
@@ -63,9 +72,10 @@ def isolate_checkout_config():
 
 	`tui.config.CONFIG_FILE`, `tui.theme_engine.THEME_FILE` and
 	`theme_engine.THEMES_DIR` are the supported seams (see their docstrings).
-	The temp folder gets copies of the shipped `themes/*.json`, so palette tests
-	keep reading the same documents while nothing can reach the checkout. The
-	returned callable is idempotent, so module cleanups may call it twice.
+	The temp folder gets copies of the frozen fixture themes, so palette tests
+	keep reading the same documents while nothing can reach the checkout and a
+	local `themes/*.json` edit cannot change the result. The returned callable
+	is idempotent, so module cleanups may call it twice.
 	"""
 	from tui import config, theme_engine
 
@@ -74,8 +84,7 @@ def isolate_checkout_config():
 	directory = tempfile.mkdtemp(prefix="catro-config-")
 	themes = Path(directory) / "themes"
 	themes.mkdir()
-	for source in sorted((REPO_ROOT / "themes").glob("*.json")):
-		shutil.copyfile(source, themes / source.name)
+	shutil.copyfile(FIXTURE_THEME, themes / FIXTURE_THEME.name)
 
 	def restore():
 		if state.pop("done", None):

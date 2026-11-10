@@ -28,7 +28,7 @@ setUpModule, tearDownModule = module_isolation()
 
 from tui import caps, color_levels, palette  # noqa: E402
 
-SHIPPED = REPO / "themes" / "cozypurple.json"
+SHIPPED = REPO / "tests" / "fixtures" / "themes" / "cozypurple.json"
 
 
 def shipped_looks():

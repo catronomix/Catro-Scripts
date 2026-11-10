@@ -29,7 +29,10 @@ if str(REPO) not in sys.path:
 
 from tui import config, theme_engine, theme_migrate  # noqa: E402  (import after sys.path setup)
 
-SHIPPED = REPO / "themes" / "cozypurple.json"
+SHIPPED = REPO / "tests" / "fixtures" / "themes" / "cozypurple.json"
+# The working-tree document is still checked for validity only: its palette and
+# properties are the operator's to edit, and rendering tests use the fixture.
+REAL_SHIPPED = REPO / "themes" / "cozypurple.json"
 
 
 def builtin():
@@ -73,13 +76,14 @@ class SeamCase(unittest.TestCase):
 
 
 class ShippedDocumentTests(SeamCase):
-	def test_the_shipped_file_is_valid_and_matches_the_builtin_table(self):
-		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
+	def test_the_real_shipped_file_is_valid_and_names_itself(self):
+		# Palette-agnostic: the operator may repaint or restyle this document,
+		# but it must stay a parseable schema-3 theme whose name is its stem,
+		# because it is the only copy of the built-in fallback.
+		document = json.loads(REAL_SHIPPED.read_text(encoding="utf-8"))
 		self.assertEqual(theme_engine.validate(document), [])
-		# The file is the current schema since the flip, so it is the built-in table.
 		self.assertEqual(document["schema"], theme_migrate.SCHEMA_CURRENT)
-		self.assertEqual(theme_migrate.migrate_doc(document), document)
-		self.assertEqual(document, builtin())
+		self.assertEqual(document["name"], REAL_SHIPPED.stem)
 
 	def test_every_look_carries_the_nineteen_tokens(self):
 		document = json.loads(SHIPPED.read_text(encoding="utf-8"))
@@ -105,7 +109,7 @@ class ShippedDocumentTests(SeamCase):
 		self.assertEqual(written, shipped)
 
 	def test_load_preserves_the_file_spelling(self):
-		theme_engine.THEMES_DIR = REPO / "themes"
+		theme_engine.THEMES_DIR = SHIPPED.parent
 		document = theme_engine.load_theme("cozypurple")
 		shipped = json.loads(SHIPPED.read_text(encoding="utf-8"))
 		# The load hands out the file's own spelling, not a canonicalised copy.
@@ -119,7 +123,7 @@ class ShippedDocumentTests(SeamCase):
 						 r'"#[0-9A-F]*[A-F][0-9A-F]*"')
 
 	def test_document_carries_the_pinned_key_order(self):
-		theme_engine.THEMES_DIR = REPO / "themes"
+		theme_engine.THEMES_DIR = SHIPPED.parent
 		document = theme_engine.load_theme("cozypurple")
 		self.assertEqual(list(document), ["schema", "name", "display",
 										  "properties", "looks"])
@@ -129,7 +133,7 @@ class ShippedDocumentTests(SeamCase):
 						 list(theme_engine.PALETTE_KEYS))
 
 	def test_list_themes_reads_the_directory(self):
-		theme_engine.THEMES_DIR = REPO / "themes"
+		theme_engine.THEMES_DIR = SHIPPED.parent
 		self.assertIn("cozypurple", theme_engine.list_themes())
 
 	def test_list_themes_is_empty_without_a_directory(self):

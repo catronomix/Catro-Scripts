@@ -30,7 +30,7 @@ from support import module_isolation  # noqa: E402  (test helper, not production
 
 setUpModule, tearDownModule = module_isolation()
 
-SHIPPED = REPO / "themes" / "cozypurple.json"
+SHIPPED = REPO / "tests" / "fixtures" / "themes" / "cozypurple.json"
 
 
 def _checkout_state(path):
@@ -455,9 +455,10 @@ class ThemeScriptTests(unittest.TestCase):
 		self.root = Path(self._td.name)
 		shutil.copytree(REPO / "tui", self.root / "tui",
 						ignore=shutil.ignore_patterns("__pycache__"))
-		# A real checkout carries the shipped document next to `tui/`; the
-		# built-in fallback reads it (issue #33).
-		shutil.copytree(REPO / "themes", self.root / "themes")
+		# The built-in fallback reads a shipped document next to `tui/`;
+		# the throwaway checkout gets the frozen fixture so a local palette
+		# edit cannot change the run.
+		shutil.copytree(SHIPPED.parent, self.root / "themes")
 		shutil.copy2(REPO / "theme.py", self.root / "theme.py")
 		self.env = dict(os.environ)
 		for name in ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CATRO_COLOR",

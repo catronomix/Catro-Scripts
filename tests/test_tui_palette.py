@@ -33,7 +33,7 @@ from support import isolate_checkout_config, module_isolation  # noqa: E402  (te
 
 setUpModule, tearDownModule = module_isolation()
 
-SHIPPED = REPO / "themes" / "cozypurple.json"
+SHIPPED = REPO / "tests" / "fixtures" / "themes" / "cozypurple.json"
 
 
 def shipped_looks():
@@ -281,10 +281,12 @@ class ThemeEngineAdapterTests(unittest.TestCase):
 
 	def setUp(self):
 		self._theme_file = theme_engine.THEME_FILE
+		self._themes_dir = theme_engine.THEMES_DIR
 
 	def tearDown(self):
 		theme_engine.THEME_FILE = self._theme_file
-		theme_engine.THEMES_DIR = None
+		theme_engine.THEMES_DIR = self._themes_dir
+		theme_engine._CACHE.clear()
 
 	def test_shipped_document_matches_the_published_tables(self):
 		# The adapter publishes exactly the shipped document, look for look.
@@ -358,6 +360,8 @@ class PropertyDocumentTests(unittest.TestCase):
 	"""`properties(theme=...)` follows the document, not a built-in default."""
 
 	def setUp(self):
+		self._themes_dir = theme_engine.THEMES_DIR
+		self._theme_file = theme_engine.THEME_FILE
 		self._temp = tempfile.TemporaryDirectory()
 		root = Path(self._temp.name)
 		themes = root / "themes"
@@ -368,8 +372,8 @@ class PropertyDocumentTests(unittest.TestCase):
 		theme_engine._CACHE.clear()
 
 	def tearDown(self):
-		theme_engine.THEMES_DIR = None
-		theme_engine.THEME_FILE = None
+		theme_engine.THEMES_DIR = self._themes_dir
+		theme_engine.THEME_FILE = self._theme_file
 		theme_engine._CACHE.clear()
 		self._temp.cleanup()
 

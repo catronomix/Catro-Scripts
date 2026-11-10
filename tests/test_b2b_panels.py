@@ -33,6 +33,9 @@ if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
 import tui  # noqa: E402  (import after sys.path setup)
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
 
 FRAME = "\u250c"
 BOX_GLYPHS = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c"

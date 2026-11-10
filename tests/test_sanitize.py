@@ -30,7 +30,9 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 import tui  # noqa: E402  (import after sys.path setup)
 import sanitize  # noqa: E402
-from support import clean_env  # noqa: E402  (test helper, not production)
+from support import clean_env, module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
 
 FRAME = "\u250c"
 TTY_TRUE = tui.Capabilities(level="true", unicode=True, width=80, isatty=True,

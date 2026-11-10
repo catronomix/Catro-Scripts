@@ -36,7 +36,7 @@ if str(REPO) not in sys.path:
 from tui import caps, chrome, config, palette, table, theme_engine  # noqa: E402
 from tui.text import display_width, strip_ansi  # noqa: E402
 
-SHIPPED = REPO / "themes" / "cozypurple.json"
+SHIPPED = REPO / "tests" / "fixtures" / "themes" / "cozypurple.json"
 
 # soft's truecolor codes, pinned literally (same values as the other tui tests).
 BORDER = "\033[38;2;163;146;192m"

@@ -36,6 +36,9 @@ if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
 import tui  # noqa: E402  (import after sys.path setup)
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
 
 # A box frame's top-left glyph; a framed block must carry one.
 FRAME = "\u250c"
