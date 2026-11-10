@@ -148,6 +148,19 @@ Look selectors: `soft`/`default` = `default`, `light`/`contrast-light` =
 `contrast-light`, `dark`/`contrast-dark` = `contrast-dark`. `theme toggle`
 cycles soft -> light -> dark -> soft.
 
+## Tests and the shipped document
+
+Rendering, golden-byte and behaviour tests do not read this folder. They render
+against the frozen copy in `tests/fixtures/themes/cozypurple.json`, so editing
+`themes/cozypurple.json` locally cannot fail the suite. The real document only
+has to stay a valid current-schema theme whose `name` matches its filename.
+
+Do not resync the fixture on every palette tweak. Refresh it only when a new
+palette or property set is accepted for release, together with the golden
+fixtures and the WCAG expectations that the same look drives. A structural
+change (schema, key, look or property) is the exception: tests should fail
+until the fixture and those expectations are updated in the same change.
+
 ## Sharing a theme
 
 Copy the JSON here, keep `name` equal to the filename, and select it in
