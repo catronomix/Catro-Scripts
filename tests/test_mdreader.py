@@ -174,7 +174,8 @@ class MdreaderPreflightTests(unittest.TestCase):
             calls.append((slot, red, green, blue))
 
         fake.init_color = init_color
-        with mock.patch.object(mdreader, "curses", fake):
+        with mock.patch.object(mdreader, "curses", fake), \
+                mock.patch.object(mdreader, "sys", mock.Mock(platform="linux")):
             mdreader.init_theme_colors(0)
         soft = mdreader.tui.palette.SOFT
         # Pair 1 is fg on bg, in the first two RGB slots above the base 16.
@@ -195,7 +196,8 @@ class MdreaderPreflightTests(unittest.TestCase):
         fake = _FakeCurses()
         fake.COLORS = 256
         fake.can_change_color = lambda: True
-        with mock.patch.object(mdreader, "curses", fake):
+        with mock.patch.object(mdreader, "curses", fake), \
+                mock.patch.object(mdreader, "sys", mock.Mock(platform="linux")):
             mdreader.init_theme_colors(0)
         self.assertEqual(
             [pair for pair, _fg, _bg in fake.pairs],
@@ -204,6 +206,38 @@ class MdreaderPreflightTests(unittest.TestCase):
         for _pair, fg, bg in fake.pairs:
             self.assertTrue(0 <= fg <= 255)
             self.assertTrue(0 <= bg <= 255)
+
+    def test_windows_init_color_is_not_trusted(self):
+        """Issue #54: Windows accepts init_color() and paints basic colours.
+
+        windows-curses/PDCurses reports `can_change_color()` true and returns
+        success from `init_color()` for every spare slot while the console keeps
+        its own sixteen colours, so the extended slots come out dark blue. The
+        reader must ignore that capability and still give each pair the nearest
+        xterm-256 index of the theme role.
+        """
+        fake = _FakeCurses()
+        fake.COLORS = 768  # what windows-curses reports on a real console
+        fake.can_change_color = lambda: True
+        redefined = []
+        fake.init_color = lambda slot, red, green, blue: redefined.append(slot)
+        with mock.patch.object(mdreader, "curses", fake), \
+                mock.patch.object(mdreader, "sys", mock.Mock(platform="win32")):
+            mdreader.init_theme_colors(0)
+        self.assertEqual(redefined, [], "no slot may be redefined on Windows")
+        colours = mdreader.tui.palette.palette("soft")
+        indices = {
+            role: mdreader._fold_index(
+                mdreader.tui.palette.index(colours[role], level="256"), 768)
+            for role in {role for _pair, fg, bg in mdreader.PAIR_ROLES
+                         for role in (fg, bg)}
+        }
+        self.assertEqual(
+            fake.pairs,
+            [(pair, indices[fg], indices[bg])
+             for pair, fg, bg in mdreader.PAIR_ROLES],
+            "every pair must use the theme's xterm-256 index, not a slot",
+        )
 
     def test_chrome_pairs_are_palette_roles(self):
         """Background, frame and both bars come from the shared palette keys.

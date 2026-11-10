@@ -212,7 +212,19 @@ def _init_pairs(pairs):
 
 
 def _can_redefine_colors():
-    """True when the terminal lets curses replace palette entries with RGB."""
+    """True when `init_color()` changes what the terminal actually paints.
+
+    `curses.can_change_color()` alone cannot be trusted on Windows. The
+    `windows-curses` build ships PDCurses, which answers True and accepts
+    `init_color()` for every extended slot, but only records the RGB in its own
+    table: the console still paints its fixed sixteen colours, so slots 16+
+    come out as the basic palette's dark blue (issue #54). Even
+    `color_content()` reads the stored value back, so no probe can tell the two
+    apart. The Windows console therefore never redefines slots and uses the
+    nearest xterm-256 index, which PDCurses does render (`38;5;n`).
+    """
+    if sys.platform == "win32":
+        return False
     try:
         return bool(curses.can_change_color())
     except Exception:
