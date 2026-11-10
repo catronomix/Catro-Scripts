@@ -271,6 +271,19 @@ class MdreaderPreflightTests(unittest.TestCase):
                     self.assertIn(fg, colours, "every pair is a palette role")
                     self.assertIn(bg, colours, "every pair is a palette role")
 
+    def test_chrome_attr_drops_bold_on_windows_only(self):
+        """Issue #54: A_BOLD shifts a PDCurses colour index, so Windows chrome
+        uses the exact pair and keeps bold on POSIX curses."""
+        fake = mock.Mock()
+        fake.color_pair = lambda pair: pair
+        fake.A_BOLD = 0x100
+        with mock.patch.object(mdreader, "curses", fake), \
+                mock.patch.object(mdreader, "sys", mock.Mock(platform="win32")):
+            self.assertEqual(mdreader.chrome_attr(6), 6)
+        with mock.patch.object(mdreader, "curses", fake), \
+                mock.patch.object(mdreader, "sys", mock.Mock(platform="linux")):
+            self.assertEqual(mdreader.chrome_attr(6), 6 | 0x100)
+
     def test_each_mode_paints_its_own_palette(self):
         fake = _FakeCurses()
         fake.COLORS = 256

@@ -187,6 +187,21 @@ CHROME_PAIRS = {
 }
 
 
+def chrome_attr(pair, bold=True):
+    """Curses attribute for one chrome pair.
+
+    PDCurses implements A_BOLD by adding eight to the foreground colour index,
+    so on Windows a bar drawn from an extended index silently changes ink
+    (the status line's dark `border-bg` turns into a fixed grey). The chrome
+    therefore keeps its exact pair colour and drops the decorative bold there;
+    POSIX curses keeps the bold.
+    """
+    attr = curses.color_pair(pair)
+    if bold and sys.platform != "win32":
+        attr |= curses.A_BOLD
+    return attr
+
+
 def theme_id(theme_mode=0):
     """Shared theme id for a display mode (mode 0 is soft)."""
     if 0 <= theme_mode < len(THEME_MODES):
@@ -355,8 +370,8 @@ def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
     bot_inner = "║ ├" + "─" * (width - 6) + "┤ ║"
     bot_outer = "╚═╧" + "═" * (width - 6) + "╧═╝"
 
-    border_attr = curses.color_pair(CHROME_PAIRS["frame"]) | curses.A_BOLD
-    thumb_attr = curses.color_pair(CHROME_PAIRS["thumb"]) | curses.A_BOLD
+    border_attr = chrome_attr(CHROME_PAIRS["frame"])
+    thumb_attr = chrome_attr(CHROME_PAIRS["thumb"])
 
     track_top = 2
     track_bottom = height - 3
@@ -782,7 +797,7 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
         try:
             stdscr.addstr(
                 status_y1, x_offset, status_bar,
-                curses.color_pair(CHROME_PAIRS["status"]) | curses.A_BOLD
+                chrome_attr(CHROME_PAIRS["status"])
             )
         except curses.error:
             pass
@@ -793,7 +808,7 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
         try:
             stdscr.addstr(
                 status_y2, x_offset, shortcuts_bar,
-                curses.color_pair(CHROME_PAIRS["shortcuts"]) | curses.A_BOLD
+                chrome_attr(CHROME_PAIRS["shortcuts"])
             )
         except curses.error:
             pass
