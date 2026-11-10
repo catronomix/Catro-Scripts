@@ -11,6 +11,7 @@
 import contextlib
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,11 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 import mdreader  # noqa: E402  (import after sys.path setup)
+from support import module_isolation  # noqa: E402  (test helper, not production)
+
+# The palette assertions below describe the three looks, not whatever an
+# operator may have left uncommitted in themes/cozypurple.json.
+setUpModule, tearDownModule = module_isolation()
 
 
 def run_script(*args):
@@ -505,6 +511,84 @@ class MdreaderColourMappingTests(unittest.TestCase):
         self.assertEqual(roles[11], ("fg-accent", "bg-inside"))
         self.assertEqual(len(roles), len(mdreader.PAIR_ROLES),
                          "pair numbers must stay unique")
+
+    def test_five_theme_cases_keep_distinct_slots_on_every_look(self):
+        """Hint bar, infobar, frame, accents and bold never share fg/bg slots.
+
+        Issue #54: a pair initialised with the same curses slot twice paints
+        invisible text. The check runs at 256, 16 and 8 colours so the
+        degradation paths (nearest index / fold) cannot collapse a pair.
+        """
+        cases = {
+            3: ("fg-warn", "bg"),               # bold inline text
+            6: ("border-bg", "border-fg"),      # infobar / status line
+            7: ("fg", "bg-stripe"),             # hint / shortcut bar
+            8: ("border-fg", "border-bg"),      # window frame
+            11: ("fg-accent", "bg-inside"),     # markdown accent / code
+        }
+        roles = {pair: (fg, bg) for pair, fg, bg in mdreader.PAIR_ROLES}
+        for pair, expected in cases.items():
+            self.assertEqual(roles[pair], expected)
+        for colors in (8, 16, 256):
+            fake = _FakeCurses()
+            fake.COLORS = colors
+            with mock.patch.object(mdreader, "curses", fake):
+                for mode in range(len(mdreader.THEME_MODES)):
+                    colours = mdreader.tui.palette.palette(
+                        mdreader.theme_id(mode))
+                    slots = mdreader._colour_slots(colours)
+                    with self.subTest(colors=colors, mode=mode):
+                        for pair, (fg, bg) in cases.items():
+                            self.assertNotEqual(
+                                slots[fg], slots[bg],
+                                "pair {} paints {} on itself".format(
+                                    pair, fg),
+                            )
+
+    def test_bold_inline_text_takes_the_warn_pair(self):
+        """`**bold**` is warn ink on the current ground, not body text.
+
+        Headings/table headers are bold too, but they carry their own colour
+        and are classified before the bare-bold fallback.
+        """
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        from rich.style import Style
+
+        for mode, theme in enumerate(mdreader.THEME_MODES):
+            colours = mdreader.tui.palette.palette(theme)
+            with self.subTest(mode=mode, style="bare bold"):
+                self.assertEqual(
+                    mdreader.segment_pair(Style(bold=True), colours), 3)
+            with self.subTest(mode=mode, style="bold heading"):
+                self.assertEqual(
+                    mdreader.segment_pair(
+                        Style(color=colours["button-bg-active"], bold=True),
+                        colours), 2)
+        doc = mdreader.process_markdown_rich(
+            "Plain text with **bold words** around it.\n", 50, 0)
+        bold = [seg for line in doc for seg in line.segments
+                if "bold words" in seg.text]
+        self.assertTrue(bold, "the bold run must stay in the text")
+        for seg in bold:
+            self.assertEqual(seg.color, 3)
+            self.assertTrue(seg.attr & mdreader.curses.A_BOLD)
+
+    def test_no_hardcoded_colour_literals_in_the_render_paths(self):
+        """Every reader colour is a palette role or the look's own hex."""
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"#[0-9a-fA-F]{6}\b",
+                            "mdreader must not carry literal hex colours")
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        for mode, theme in enumerate(mdreader.THEME_MODES):
+            allowed = {value.lower()
+                       for value in mdreader.tui.palette.palette(theme).values()}
+            for spec, style in mdreader.get_rich_theme(mode).styles.items():
+                with self.subTest(mode=mode, style=spec):
+                    for token in re.findall(r"#[0-9a-fA-F]{6}\b", str(style)):
+                        self.assertIn(token.lower(), allowed,
+                                      "{} leaves the active look".format(spec))
 
     def test_link_rewrite_leaves_fences_and_code_spans_alone(self):
         """A document that shows link syntax must render it as written."""

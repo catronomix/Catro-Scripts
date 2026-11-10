@@ -429,7 +429,15 @@ def segment_pair(style, colours):
             return 3   # secondary emphasis keeps the warn ink
         if is_dim:
             return 5
+        if style.bold:
+            # Inline `**bold**` carries only the bold attribute, not a colour
+            # (headings/headers have their own role and are matched above), so
+            # it takes the warn ink on the current ground instead of falling
+            # back to body text.
+            return 3
         return 1
+    if style.bold:
+        return 3
     return 5 if is_dim else 1
 
 
