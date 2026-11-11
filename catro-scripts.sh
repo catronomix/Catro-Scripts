@@ -17,8 +17,24 @@ C_GREEN='\033[92m'
 C_RED='\033[91m'
 C_BOLD='\033[1m'
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Get the directory where this script is located.
+# $0 may be a symlink (an `ln -s` install, a PATH shim), so walk the link
+# chain before taking the directory: otherwise the scripts are looked for next
+# to the link instead of next to the real file. Only plain `readlink` is used
+# (no -f) and the walk is bounded, because macOS bash 3.2 and busybox readlink
+# lack -f and a looping link must not hang the wrapper.
+SELF="$0"
+HOPS=0
+while [ -L "$SELF" ] && [ "$HOPS" -lt 40 ]; do
+    LINK="$(readlink "$SELF")"
+    case "$LINK" in
+        /*) SELF="$LINK" ;;                         # absolute target
+        *) SELF="$(dirname "$SELF")/$LINK" ;;       # relative to the link
+    esac
+    HOPS=$((HOPS + 1))
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SELF")" && pwd)"
+unset LINK HOPS
 
 # Resolve the Python interpreter once instead of assuming "python3" exists.
 # Prefer "python3", then fall back to "python". Used for every call below.
@@ -72,18 +88,49 @@ if [ -z "$1" ]; then
 fi
 
 # Check for shorthand '.' to invoke the 'action' script with a 'run' command.
+# The resolved path is exec'd so the shorthand still works through a symlink.
 if [ "$1" = "." ]; then
     shift # remove the '.'
-    exec "$0" action run "$@"
+    exec "$SELF" action run "$@"
 fi
 
 SCRIPT_NAME="$1"
 FULL_PATH="$SCRIPT_DIR/$SCRIPT_NAME.py"
 
-# Check if the .py file exists
+# Check if the .py file exists. An exact-case match is the normal path and
+# keeps its output byte-identical. Linux filesystems are case-sensitive while
+# Windows is not, so a typed "List" misses list.py here; fall back to a
+# case-insensitive scan of the script directory and report the real name.
+# `tr` lowercases instead of bash 4's case-modification expansion, which
+# macOS bash 3.2 does not support.
 if [ ! -f "$FULL_PATH" ]; then
-    echo -e "${C_RED}Error: Script \"$SCRIPT_NAME.py\" not found in $SCRIPT_DIR${C_RESET}"
-    exit 1
+    WANT="$(printf '%s' "$SCRIPT_NAME.py" | tr '[:upper:]' '[:lower:]')"
+    HITS=0
+    MATCH=""
+    MATCHES=""
+    for CANDIDATE in "$SCRIPT_DIR"/*.py; do
+        [ -f "$CANDIDATE" ] || continue
+        BASE="${CANDIDATE##*/}"
+        if [ "$(printf '%s' "$BASE" | tr '[:upper:]' '[:lower:]')" = "$WANT" ]; then
+            HITS=$((HITS + 1))
+            MATCH="$CANDIDATE"
+            MATCHES="$MATCHES $BASE"
+        fi
+    done
+
+    if [ "$HITS" -eq 1 ]; then
+        # One case variant: run it, but say so on stderr so a script that
+        # breaks under Linux's case rules is easy to spot.
+        echo "note: \"$SCRIPT_NAME\" matched \"${MATCH##*/}\"" >&2
+        FULL_PATH="$MATCH"
+    elif [ "$HITS" -gt 1 ]; then
+        echo -e "${C_RED}Error: \"$SCRIPT_NAME.py\" matches more than one script:$MATCHES${C_RESET}" >&2
+        exit 1
+    else
+        echo -e "${C_RED}Error: Script \"$SCRIPT_NAME.py\" not found in $SCRIPT_DIR${C_RESET}"
+        exit 1
+    fi
+    unset WANT HITS MATCH MATCHES CANDIDATE BASE
 fi
 
 # Shift the arguments so we can pass the rest to python

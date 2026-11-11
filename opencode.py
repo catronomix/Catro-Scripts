@@ -6,13 +6,15 @@ Wraps the `opencode` CLI for non-interactive runs (`opencode run "<instruction>"
 
 Features:
 	- Checks whether `opencode` is installed and shows install instructions when missing.
-	- Lists available models and variants when called without arguments.
+	- Shows the usage summary (plus the saved default model) when called without arguments.
+	- Lists available models and variants only through the `models` subcommand.
 	- Runs an instruction, optionally with a model override via `-m <model>`.
 	- Persists a default model in a sidecar file (`opencode.default`).
 	- Accepts bracketed/quoted or unbracketed instructions (joins and passes as one arg).
 
 Usage:
 	catro-scripts opencode
+	catro-scripts opencode models
 	catro-scripts opencode -m <provider/model[#variant]> "<instruction>"
 	catro-scripts opencode -m <provider/model[#variant]>
 	catro-scripts opencode "<instruction>"
@@ -20,6 +22,7 @@ Usage:
 
 Examples:
 	catro-scripts opencode
+	catro-scripts opencode models
 	catro-scripts opencode -m anthropic/claude-sonnet-4-5 "Explain this repository"
 	catro-scripts opencode -m openai/gpt-5.2#high Review the current changes
 	catro-scripts opencode Fix the failing tests in this folder
@@ -31,23 +34,7 @@ import os
 import subprocess
 import sys
 
-
-class Colors:
-	PURPLE = '\033[38;2;170;0;255m'
-	LIGHT_BLUE = '\033[38;2;173;216;230m'
-	BG_BLACK = '\033[48;2;0;0;0m'
-	BG_GREY = '\033[48;2;45;45;45m'
-	YELLOW = '\033[33m'
-	GREEN = '\033[32m'
-	RED = '\033[91m'
-	BOLD = '\033[1m'
-	END = '\033[0m'
-
-
-def init_ansi():
-	# Enable ANSI escape sequences on Windows consoles.
-	if os.name == 'nt':
-		os.system('')
+import tui
 
 
 def script_dir():
@@ -108,20 +95,34 @@ def run_opencode(opencode_bin, args):
 	return subprocess.run([opencode_bin] + args)
 
 
-def print_not_installed():
+def print_not_installed(cap=None):
 	# Install guidance shown when `opencode` is not on PATH.
-	c = Colors
-	print(f"\n{c.PURPLE}{c.BOLD}--- OPENCODE NOT FOUND ---{c.END}")
-	print(f"{c.RED}The `opencode` CLI is not installed or not on your PATH.{c.END}\n")
-	print(f"{c.BOLD}Get it here:{c.END} {c.LIGHT_BLUE}https://opencode.ai{c.END}")
-	print(f"{c.BOLD}Docs (CLI):{c.END} {c.LIGHT_BLUE}https://opencode.ai/docs/cli{c.END}\n")
-	print(f"{c.BOLD}Install options:{c.END}")
-	print(f"  {c.GREEN}curl -fsSL https://opencode.ai/install | bash{c.END}   (macOS/Linux)")
-	print(f"  {c.GREEN}npm i -g opencode-ai{c.END}                              (npm, cross-platform)")
-	print(f"  {c.GREEN}winget install opencode-ai.opencode{c.END}                (Windows winget)")
-	print(f"  {c.GREEN}choco install opencode{c.END}                             (Windows chocolatey)\n")
-	print("After installing, restart your shell so `opencode` is on PATH, then re-run:")
-	print(f"  {c.GREEN}catro-scripts opencode{c.END}\n")
+	cap = cap or tui.detect()
+	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
+	print()
+	print(tui.panel("--- OPENCODE NOT FOUND ---", [
+		tui.status("error",
+				   "The `opencode` CLI is not installed or not on your PATH.",
+				   cap=cap),
+		"",
+		tui.field("Get it here:", "https://opencode.ai", cap=cap),
+		tui.field("Docs (CLI):", "https://opencode.ai/docs/cli", cap=cap),
+		"",
+		tui.style("Install options:", fg="header-fg", bold=True, cap=cap),
+		"  {}   (macOS/Linux)".format(
+			command("curl -fsSL https://opencode.ai/install | bash")),
+		"  {}                              (npm, cross-platform)".format(
+			command("npm i -g opencode-ai")),
+		"  {}                (Windows winget)".format(
+			command("winget install opencode-ai.opencode")),
+		"  {}                             (Windows chocolatey)".format(
+			command("choco install opencode")),
+		"",
+		"After installing, restart your shell so `opencode` is on PATH, "
+		"then re-run:",
+		"  {}".format(command("catro-scripts opencode")),
+		"",
+	], cap=cap))
 
 
 def normalize_instruction(raw):
@@ -134,51 +135,68 @@ def normalize_instruction(raw):
 	return text
 
 
-def print_usage(default_model):
-	# Short usage block printed alongside the model list.
-	c = Colors
-	print(f"\n{c.PURPLE}{c.BOLD}--- USAGE ---{c.END}")
-	print(f"  {c.GREEN}catro-scripts opencode \"<instruction>\"{c.END}")
-	print(f"  {c.GREEN}catro-scripts opencode <unbracketed words>{c.END}  (script joins + quotes for you)")
-	print(f"  {c.GREEN}catro-scripts opencode -m <provider/model[#variant]> \"<instruction>\"{c.END}")
-	print(f"  {c.GREEN}catro-scripts opencode -m <provider/model[#variant]>{c.END}  (saves default)")
+def print_usage(default_model, cap=None):
+	# The page shown on a bare run: how to call the wrapper, then the saved default.
+	cap = cap or tui.detect()
+	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
+	body = [
+		"  {}".format(command('catro-scripts opencode "<instruction>"')),
+		"  {}  (script joins + quotes for you)".format(
+			command("catro-scripts opencode <unbracketed words>")),
+		"  {}".format(command(
+			'catro-scripts opencode -m <provider/model[#variant]> '
+			'"<instruction>"')),
+		"  {}  (saves default)".format(
+			command("catro-scripts opencode -m <provider/model[#variant]>")),
+		"  {}  (lists models)".format(
+			command("catro-scripts opencode models")),
+		"",
+	]
 	if default_model:
-		print(f"\n{c.BOLD}Default model:{c.END} {c.LIGHT_BLUE}{default_model}{c.END} (from opencode.default)")
+		body.append(tui.field(
+			"Default model:",
+			"{} (from opencode.default)".format(default_model), cap=cap))
 	else:
-		print(f"\n{c.BOLD}Default model:{c.END} (none saved yet)")
+		body.append(tui.field("Default model:", "(none saved yet)", cap=cap))
+	print()
+	print(tui.panel("--- USAGE ---", body, cap=cap))
 
 
-def list_models(opencode_bin):
-	# No-instruction path: show default + delegate to `opencode models`.
-	c = Colors
+def list_models(opencode_bin, cap=None):
+	# `models` subcommand only: show default + delegate to `opencode models`.
+	cap = cap or tui.detect()
 	default_model = read_default_model()
-	print(f"\n{c.PURPLE}{c.BOLD}--- AVAILABLE MODELS ---{c.END}")
+	print()
+	print(tui.header("--- AVAILABLE MODELS ---", cap=cap))
 	if default_model:
-		print(f"{c.BOLD}Default:{c.END} {c.LIGHT_BLUE}{default_model}{c.END}")
+		print(tui.field("Default:", default_model, cap=cap))
 	try:
 		result = run_opencode(opencode_bin, ['models'])
-		sys.exit(result.returncode)
+		exit_code = result.returncode
 	except OSError as e:
-		print(f"{c.RED}Failed to run `opencode models`: {e}{c.END}")
-		sys.exit(1)
-	finally:
-		print_usage(read_default_model())
+		print(tui.status("error", f"Failed to run `opencode models`: {e}",
+						 cap=cap))
+		exit_code = 1
+	# The usage summary always follows the list, so the `models` page replaces
+	# nothing the bare run shows.
+	print_usage(read_default_model(), cap)
+	sys.exit(exit_code)
 
 
-def run_instruction(opencode_bin, model, instruction):
+def run_instruction(opencode_bin, model, instruction, cap=None):
 	# Wrap `opencode run [-m model] "<instruction>"` via subprocess (no shell quoting needed).
-	c = Colors
+	cap = cap or tui.detect()
 	cmd = [opencode_bin, 'run']
 	if model:
 		cmd += ['-m', model]
 	cmd += [instruction]
 	label = f" with model {model}" if model else ""
-	print(f"{c.PURPLE}{c.BOLD}-> Running opencode{label}...{c.END}")
+	print(tui.status("info", f"Running opencode{label}...", cap=cap))
 	try:
 		result = run_opencode(opencode_bin, cmd[1:])
 		sys.exit(result.returncode)
 	except OSError as e:
-		print(f"{c.RED}Failed to launch opencode: {e}{c.END}")
+		print(tui.status("error", f"Failed to launch opencode: {e}", cap=cap))
 		sys.exit(1)
 
 
@@ -193,7 +211,10 @@ def parse_args(argv):
 		if token in ('-m', '--model'):
 			# Model flag consumes the next token as the model reference.
 			if i + 1 >= len(argv) or argv[i + 1].startswith('-'):
-				print(f"{Colors.RED}Error: -m requires a model argument (provider/model[#variant]).{Colors.END}")
+				print(tui.status(
+					"error",
+					"Error: -m requires a model argument "
+					"(provider/model[#variant])."))
 				sys.exit(2)
 			model = argv[i + 1].strip()
 			i += 2
@@ -208,28 +229,35 @@ def parse_args(argv):
 
 
 def main():
-	# Entrypoint: install check -> parse flags -> list models / save default / run.
-	init_ansi()
+	# Entrypoint: install check -> parse flags -> models / save default / usage / run.
+	tui.init_ansi()
+	cap = tui.detect()
 	opencode_bin = find_opencode()
 	if not opencode_bin:
-		print_not_installed()
+		print_not_installed(cap)
 		sys.exit(1)
 
 	model, instruction = parse_args(sys.argv[1:])
 
+	if not model and instruction == 'models':
+		# `models` subcommand: the only path that dumps the model list.
+		list_models(opencode_bin, cap)
+		return
+
 	if model and not instruction:
 		# `-m <model>` alone persists the default model for future runs.
 		write_default_model(model)
-		print(f"{Colors.GREEN}Saved default model: {model}{Colors.END} (opencode.default)")
+		print(tui.status(
+			"ok", f"Saved default model: {model} (opencode.default)", cap=cap))
 		return
 
 	if not instruction:
-		# No instruction at all: list available models and variants.
-		list_models(opencode_bin)
+		# Bare run: usage panel only, never a model dump.
+		print_usage(read_default_model(), cap)
 		return
 
 	effective_model = model or read_default_model()
-	run_instruction(opencode_bin, effective_model, instruction)
+	run_instruction(opencode_bin, effective_model, instruction, cap)
 
 
 if __name__ == '__main__':

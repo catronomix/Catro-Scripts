@@ -11,6 +11,7 @@ Features:
 	- Recursive scanning with adjustable depth limits.
 	- Human-readable size formatting or raw byte counts.
 	- Rainbow-coded output for visual clarity.
+	- Plain TAB-separated output when piped.
 	- Show hidden files/folders with the --all flag.
 
 Usage:
@@ -31,18 +32,18 @@ import sys
 import argparse
 from collections import defaultdict
 
-# ANSI Color Codes for the rainbow effect
-COLORS = [
-	"\033[91m",  # Red
-	"\033[33m",  # Yellow/Orange
-	"\033[93m",  # Bright Yellow
-	"\033[92m",  # Green
-	"\033[96m",  # Cyan
-	"\033[94m",  # Blue
-	"\033[95m",  # Magenta/Violet
-]
-RESET = "\033[0m"
-BOLD = "\033[1m"
+import tui
+
+# The rainbow is data handed to tui.style(): these base-ANSI hexes are exactly
+# the entries the old raw codes named (91, 33, 93, 92, 96, 94, 95), so a
+# 16-colour terminal keeps the same cycle.
+RAINBOW = ["#FF0000", "#808000", "#FFFF00", "#00FF00",
+		   "#00FFFF", "#0000FF", "#FF00FF"]
+
+NAME_WIDTH = 40
+COUNT_WIDTH = 10
+SIZE_WIDTH = 15
+
 
 def is_hidden(path):
 	"""Checks if a file or directory is hidden."""
@@ -170,10 +171,13 @@ def main():
 	parser.add_argument("directory", nargs="?", default=".", help="Target directory (default: current)")
 	
 	args = parser.parse_args()
+	cap = tui.detect()
 	target_path = os.path.abspath(args.directory)
 
 	if not os.path.isdir(target_path):
-		print(f"Error: '{target_path}' is not a valid directory.")
+		print(tui.status("error",
+						 f"Error: '{target_path}' is not a valid directory.",
+						 cap=cap))
 		sys.exit(1)
 
 	is_dir_mode = args.dirs is not None
@@ -186,29 +190,45 @@ def main():
 		mode = "files"
 		depth = args.subdirs if is_recursive else 0
 
-	print(f"\n{BOLD}Scanning:{RESET} {target_path}")
-	print(f"{BOLD}Target:{RESET} {'Directories' if is_dir_mode else 'File Extensions'}")
-	
+	print()
 	if is_dir_mode:
 		depth_desc = f"Directories at depth {depth}"
 	else:
 		depth_desc = f"Recursive (up to {depth} levels)" if is_recursive else "Current folder contents"
-	print(f"{BOLD}Mode:{RESET} {depth_desc}")
+
+	# The scan parameters are one key/value block: aligned muted keys on a
+	# terminal, the same space-joined lines as before on a pipe (the plain
+	# branch keeps the historical `key value` form, not a TAB record).
+	meta = [
+		("Scanning:", target_path),
+		("Target:", "Directories" if is_dir_mode else "File Extensions"),
+		("Mode:", depth_desc),
+	]
 	if args.all:
-		print(f"{BOLD}Options:{RESET} Including hidden items")
+		meta.append(("Options:", "Including hidden items"))
+	if cap.plain:
+		for key, value in meta:
+			print("{} {}".format(key, value))
+	else:
+		print(tui.key_values(None, meta, cap=cap))
 	print()
 
 	stats = get_stats(target_path, mode=mode, recursive=is_recursive, max_depth=depth, show_hidden=args.all)
 
 	if not stats:
-		print("No matches found.")
+		print(tui.status("warn", "No matches found.", cap=cap))
 		# Helpful tip if the directory isn't actually empty but just has subdirectories
 		try:
 			content = os.listdir(target_path)
 			if content and not is_recursive and not is_dir_mode:
 				dirs_only = [c for c in content if os.path.isdir(os.path.join(target_path, c))]
 				if dirs_only:
-					print(f"\n{BOLD}Tip:{RESET} Found {len(dirs_only)} subdirectories. Use '-s' to recurse or '-d' to list them.")
+					print()
+					print(tui.status(
+						"info",
+						"Found {} subdirectories. Use '-s' to recurse or '-d' "
+						"to list them.".format(len(dirs_only)),
+						cap=cap))
 		except:
 			pass
 		return
@@ -217,22 +237,37 @@ def main():
 
 	label = "Directory (Relative Path)" if is_dir_mode else "Extension"
 	count_label = "Files" if is_dir_mode else "Count"
-	print(f"{BOLD}{label:<40} {count_label:<10} {'Total Size':<15}{RESET}")
-	print("-" * 70)
-
-	for i, (name, data) in enumerate(sorted_data):
-		color = COLORS[i % len(COLORS)]
-		size_str = format_size(data['size'], raw=args.raw)
-		print(f"{color}{name:<40} {data['count']:<10} {size_str:<15}{RESET}")
+	rows = [(name, str(data["count"]), format_size(data["size"], raw=args.raw))
+			for name, data in sorted_data]
 
 	total_count = sum(d['count'] for d in stats.values())
 	total_size = sum(d['size'] for d in stats.values())
-	
-	print("-" * 70)
 	footer_label = "TOTAL (ALL LISTED)"
-	print(f"{BOLD}{footer_label:<40} {total_count:<10} {format_size(total_size, raw=args.raw):<15}{RESET}\n")
+
+	# One table for both modes: a pipe gets the same TAB records it always did
+	# (header, rows, TOTAL), a terminal the boxed table. The rows keep the
+	# pinned rainbow data colours as per-cell ink and the TOTAL row is bold,
+	# so the summary reads as a footer without a second frame.
+	headers = (label, count_label, "Total Size")
+	total_row = (footer_label, str(total_count), format_size(total_size, raw=args.raw))
+	row_styles = [{"fg": RAINBOW[i % len(RAINBOW)]} for i in range(len(rows))]
+	row_styles.append({"bold": True})
+	# The fixed widths are exact, so a name longer than NAME_WIDTH must be cut
+	# by the table seam (`..`): letting it overflow would break the frame. A
+	# pipe never reaches the truncation branch, so its records stay complete.
+	print(tui.render_table(headers, rows + [total_row],
+						   widths=(NAME_WIDTH, COUNT_WIDTH, SIZE_WIDTH),
+						   row_styles=row_styles, cap=cap))
+	if not cap.plain:
+		print()
 
 if __name__ == "__main__":
-	if os.name == 'nt':
-		os.system('color')
-	main()
+	tui.init_ansi()
+	try:
+		main()
+		sys.stdout.flush()
+	except BrokenPipeError:
+		# Downstream reader closed the pipe; exit quietly and point stdout at
+		# devnull so the interpreter's shutdown flush cannot raise again.
+		os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+		sys.exit(0)

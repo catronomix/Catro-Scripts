@@ -22,11 +22,14 @@ import os
 import time
 import ctypes
 
-def set_creation_time(path, timestamp):
+import tui
+
+def set_creation_time(path, timestamp, cap=None):
 	"""
 	Attempts to set the creation time of a file.
 	Note: This is highly OS-dependent (primarily Windows).
 	"""
+	cap = cap or tui.detect()
 	if os.name == 'nt':  # Windows
 		try:
 			# Convert python timestamp to Windows FILETIME
@@ -43,24 +46,30 @@ def set_creation_time(path, timestamp):
 				ctypes.windll.kernel32.SetFileTime(handle, ctypes.byref(ctime), None, None)
 				ctypes.windll.kernel32.CloseHandle(handle)
 		except Exception as e:
-			print(f"Warning: Could not set Windows creation time: {e}")
+			print(tui.status("warn", f"Could not set Windows creation time: {e}",
+							 cap=cap))
 	else:
 		# Linux/macOS generally do not support setting 'birth time' via standard APIs
-		print("Notice: Unix-based systems generally do not support setting file creation time (Birth Time). Skipping.")
+		print(tui.status("info", "Notice: Unix-based systems generally do not support "
+						 "setting file creation time (Birth Time). Skipping.",
+						 cap=cap))
 
-def copy_metadata(source_path, target_path):
+def copy_metadata(source_path, target_path, cap=None):
 	"""
 	Copies file system timestamps from source to target.
 	"""
+	cap = cap or tui.detect()
 	abs_source = os.path.abspath(source_path)
 	abs_target = os.path.abspath(target_path)
 
 	if not os.path.exists(abs_source):
-		print(f"Error: Source file '{abs_source}' does not exist.")
+		print(tui.status("error", f"Error: Source file '{abs_source}' does not exist.",
+						 cap=cap))
 		return
 
 	if not os.path.exists(abs_target):
-		print(f"Error: Target file '{abs_target}' does not exist.")
+		print(tui.status("error", f"Error: Target file '{abs_target}' does not exist.",
+						 cap=cap))
 		return
 
 	# --- Copy File System Timestamps ---
@@ -77,17 +86,23 @@ def copy_metadata(source_path, target_path):
 		os.utime(abs_target, (atime, mtime))
 		
 		# Set Creation time (Windows specific via kernel call)
-		set_creation_time(abs_target, ctime)
+		set_creation_time(abs_target, ctime, cap=cap)
 
-		print(f"Successfully synchronized system timestamps:")
-		print(f"  Created:  {time.ctime(ctime)}")
-		print(f"  Modified: {time.ctime(mtime)}")
-		print(f"  Accessed: {time.ctime(atime)}")
+		print(tui.section("Successfully synchronized system timestamps:", cap=cap))
+		print(tui.key_values(None, [
+			("Created", time.ctime(ctime)),
+			("Modified", time.ctime(mtime)),
+			("Accessed", time.ctime(atime)),
+		], cap=cap))
 		
 	except Exception as e:
-		print(f"An error occurred while copying system timestamps: {e}")
+		print(tui.status("error", f"An error occurred while copying system timestamps: {e}",
+						 cap=cap))
 
-if __name__ == "__main__":
+def main():
+	tui.init_ansi()
+	cap = tui.detect()
+
 	if len(sys.argv) != 3:
 		print("Usage: catro-scripts timecopy <source_path> <target_path>")
 		sys.exit(1)
@@ -95,4 +110,7 @@ if __name__ == "__main__":
 	source = sys.argv[1]
 	target = sys.argv[2]
 
-	copy_metadata(source, target)
+	copy_metadata(source, target, cap=cap)
+
+if __name__ == "__main__":
+	main()

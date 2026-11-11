@@ -10,55 +10,39 @@ Usage:
     catro-scripts mdreader [filename.md]
 
 Features:
-    - Markdown rendering powered by 'rich' with custom palettes & table boxes.
+    - Markdown rendering powered by 'rich' with the shared tui palettes and
+      table boxes: soft (mode 0), contrast light (mode 1), contrast dark (2).
     - Pinned 2-line bottom menu and status bar with page percentage.
     - Full scrolling support (Up/Down, PgUp/PgDn, Home/End, Left/Right file navigation).
-    - Viewport border toggle [H] and Contrast theme modes [C].
+    - Viewport border toggle [H] and theme cycling [C].
     - Displays raw URLs for links.
     - Aligned table rendering.
+    - Needs an interactive terminal: a pipe is refused with the tui contract's
+      one-line message and exit 2, before curses starts.
 
 Requirements:
     - python libraries rich, curses
-    - On Windows: 'windows-curses' (installed automatically if missing).
+    - On Windows: 'windows-curses'.
+    - Nothing is installed automatically: a missing library is reported on
+      stderr with the 'catro-scripts installdeps' / 'pip install' hint.
 
 Disclaimer: This script was generated with Gemini 3
 """
 
 import os
 import sys
-import platform
-import subprocess
+import argparse
 import re
 
-# Enable ANSI escape sequences on Windows
-if platform.system().lower() == "windows":
-    os.system("color")
+import tui
 
+# Dependencies are resolved exactly once here, without side effects: a missing
+# module only sets its name to None. Importing mdreader must never install
+# anything or touch the network (issue #11); main() reports missing packages.
 try:
     import curses
 except ImportError:
-    if os.name == "nt":
-        print(
-            "[Error] 'curses' module is missing on Windows. Trying to install it automatically."
-        )
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        installdeps_path = os.path.join(script_dir, "installdeps.py")
-        if os.path.exists(installdeps_path):
-            subprocess.run([sys.executable, installdeps_path, "curses"], check=False)
-        else:
-            subprocess.run(
-                ["catro-scripts", "installdeps", "curses"], shell=True, check=False
-            )
-        try:
-            import curses
-        except ImportError:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "windows-curses"], check=False
-            )
-            import curses
-    else:
-        print("[Error] 'curses' library is missing from Python environment.")
-        sys.exit(1)
+    curses = None
 
 try:
     from rich.console import Console
@@ -68,33 +52,16 @@ try:
     from rich import box
     from rich.text import Text
 except ImportError:
-    print("[Notice] 'rich' library is missing. Attempting automatic installation...")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    installdeps_path = os.path.join(script_dir, "installdeps.py")
-    if os.path.exists(installdeps_path):
-        subprocess.run([sys.executable, installdeps_path, "rich"], check=False)
-    else:
-        subprocess.run(
-            ["catro-scripts", "installdeps", "rich"], shell=True, check=False
-        )
-    try:
-        from rich.console import Console
-        from rich.markdown import Markdown, TableElement, Link
-        from rich.segment import Segment as RichSegment
-        from rich.theme import Theme
-        from rich import box
-        from rich.text import Text
-    except ImportError:
-        subprocess.run([sys.executable, "-m", "pip", "install", "rich"], check=False)
-        from rich.console import Console
-        from rich.markdown import Markdown, TableElement, Link
-        from rich.segment import Segment as RichSegment
-        from rich.theme import Theme
-        from rich import box
-        from rich.text import Text
+    Console = Markdown = TableElement = Link = None
+    RichSegment = Theme = box = Text = None
 
 try:
     _orig_table_console = TableElement.__rich_console__
+except AttributeError:
+    # rich is not installed; nothing to patch until it is.
+    _orig_table_console = None
+
+if _orig_table_console is not None:
 
     def _custom_table_console(self, console, options):
         from rich.table import Table
@@ -102,14 +69,29 @@ try:
         _orig_init = Table.__init__
 
         def _table_init(table_self, *args, **kwargs):
-            # Use HEAVY_EDGE or SQUARE to keep borders rigid.
-            # We must set collapse_padding=True and pad_edge=False to help prevent
-            # content from pushing the borders out of alignment when rendered to segments.
+            # Keep borders rigid: collapse_padding/pad_edge/show_edge stop the
+            # content from pushing them out of alignment when rendered to
+            # segments. Every colour comes from this console's theme, so the
+            # table follows the active mode instead of a baked-in palette.
+            cell = console.get_style("markdown.table.cell")
+            border = console.get_style("markdown.table.border")
+            header = console.get_style("markdown.table.header")
+            zebra = console.get_style("mdreader.table.zebra")
             kwargs["box"] = box.SQUARE
-            kwargs["row_styles"] = ["on #292238", "on #352b49"]
-            kwargs["border_style"] = "#9381B0 on #292238"
-            kwargs["header_style"] = "bold #F5CD68 on #292238"
-            kwargs["style"] = "on #292238"
+            kwargs["row_styles"] = [
+                "on {}".format(_colour_name(cell.bgcolor)),
+                "on {}".format(_colour_name(zebra.bgcolor)),
+            ]
+            # The border carries the theme's own ground (`border-bg`), so a
+            # table frame reads like a panel frame instead of borrowing the
+            # cell fill.
+            kwargs["border_style"] = "{} on {}".format(
+                _colour_name(border.color), _colour_name(border.bgcolor)
+            )
+            kwargs["header_style"] = "bold {} on {}".format(
+                _colour_name(header.color), _colour_name(cell.bgcolor)
+            )
+            kwargs["style"] = "on {}".format(_colour_name(cell.bgcolor))
             kwargs["collapse_padding"] = True
             kwargs["pad_edge"] = False
             kwargs["show_edge"] = True
@@ -122,8 +104,6 @@ try:
             Table.__init__ = _orig_init
 
     TableElement.__rich_console__ = _custom_table_console
-except Exception:
-    pass
 
 
 class Segment:
@@ -170,135 +150,359 @@ def slice_line_segments(segments, start_col, max_cols):
     return sliced
 
 
-def init_cozy_colors(theme_mode=0):
-    """Initializes curses theme colors."""
-    curses.start_color()
+# mdreader's three display modes map one-to-one onto the shared theme ids, so
+# every colour the reader draws - curses pairs and Rich alike - comes from the
+# same house palette, and the reader matches the other scripts.
+THEME_MODES = ("soft", "contrast-light", "contrast-dark")
 
-    if theme_mode == 1:
-        # High Contrast Light Mode
-        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(2, curses.COLOR_BLUE, curses.COLOR_WHITE)
-        curses.init_pair(3, curses.COLOR_MAGENTA, curses.COLOR_WHITE)
-        curses.init_pair(4, curses.COLOR_CYAN, curses.COLOR_WHITE)
-        curses.init_pair(5, curses.COLOR_BLUE, curses.COLOR_WHITE)
-        curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        curses.init_pair(7, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(8, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        curses.init_pair(9, curses.COLOR_BLACK, curses.COLOR_CYAN)
-        return
+# Pair number -> (foreground role, background role), using palette keys. The
+# numbers are the ones process_markdown_rich and the chrome hand to
+# color_pair(); because the roles are semantic, switching mode recolours the
+# content and the frame together.
+PAIR_ROLES = (
+    (1, "fg", "bg"),                              # body text
+    (2, "button-bg-active", "bg"),                # headings, bullets, numbers
+    (3, "fg-warn", "bg"),                         # links and secondary emphasis
+    (4, "fg", "bg-inside"),                       # table cells
+    (5, "fg-muted", "bg"),                        # dimmed text
+    (6, "border-bg", "border-fg"),                # status line, scroll thumb
+    (7, "fg", "bg-stripe"),                       # shortcut bar, alternate row
+    (8, "border-fg", "border-bg"),                # window frame band
+    (9, "button-bg-active", "bg-inside"),         # table header row
+    (10, "border-fg", "border-bg"),               # table borders
+    (11, "fg-accent", "bg-inside"),               # code spans and fenced code
+)
 
-    if theme_mode == 2:
-        # High Contrast Dark Mode
-        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        curses.init_pair(4, curses.COLOR_GREEN, curses.COLOR_BLACK)
-        curses.init_pair(5, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        curses.init_pair(8, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        curses.init_pair(9, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-        return
+# The full-screen furniture of the reader, named instead of numbered so the
+# frame and the bars cannot drift away from the palette roles: the window is
+# painted `bg`, the frame glyphs `border-fg` on the `border-bg` band, the
+# status line/thumb read as a chip (`border-bg` ink on a `border-fg` band) and
+# the shortcut bar stays `fg` on `bg-stripe`, exactly like a chrome page.
+CHROME_PAIRS = {
+    "window": 1,     # fg on bg: the whole-screen background fill
+    "frame": 8,      # border-fg on border-bg: viewport frame and scroll track
+    "thumb": 6,      # border-bg on border-fg: scroll thumb, like the status bar
+    "status": 6,     # border-bg on border-fg: the info line above the bar
+    "shortcuts": 7,  # fg on bg-stripe: shortcut bar
+}
 
-    # Mode 0: Cozy Purple
-    can_rgb = False
+
+def chrome_attr(pair, bold=True):
+    """Curses attribute for one chrome pair.
+
+    PDCurses implements A_BOLD by adding eight to the foreground colour index,
+    so on Windows a bar drawn from an extended index silently changes ink
+    (the status line's dark `border-bg` turns into a fixed grey). The chrome
+    therefore keeps its exact pair colour and drops the decorative bold there;
+    POSIX curses keeps the bold.
+    """
+    attr = curses.color_pair(pair)
+    if bold and sys.platform != "win32":
+        attr |= curses.A_BOLD
+    return attr
+
+
+def theme_id(theme_mode=0):
+    """Shared theme id for a display mode (mode 0 is soft)."""
+    if 0 <= theme_mode < len(THEME_MODES):
+        return THEME_MODES[theme_mode]
+    return THEME_MODES[0]
+
+
+def terminal_color_count():
+    """Number of colours the terminal offers (0 when unknown)."""
     try:
-        if curses.can_change_color():
-            can_rgb = True
+        return int(getattr(curses, "COLORS", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _init_pairs(pairs):
+    """Applies (pair, fg, bg) tuples, ignoring colours the terminal rejects."""
+    for pair, fg, bg in pairs:
+        try:
+            curses.init_pair(pair, fg, bg)
+        except curses.error:
+            pass
+
+
+def _can_redefine_colors():
+    """True when `init_color()` changes what the terminal actually paints.
+
+    `curses.can_change_color()` alone cannot be trusted on Windows. The
+    `windows-curses` build ships PDCurses, which answers True and accepts
+    `init_color()` for every extended slot, but only records the RGB in its own
+    table: the console still paints its fixed sixteen colours, so slots 16+
+    come out as the basic palette's dark blue (issue #54). Even
+    `color_content()` reads the stored value back, so no probe can tell the two
+    apart. The Windows console therefore never redefines slots and uses the
+    nearest xterm-256 index, which PDCurses does render (`38;5;n`).
+    """
+    if sys.platform == "win32":
+        return False
+    try:
+        return bool(curses.can_change_color())
     except Exception:
-        can_rgb = False
+        return False
 
-    if can_rgb:
-        curses.init_color(16, 106, 90, 149)  # Dark Velvet Purple BG (#1B1726)
-        curses.init_color(17, 160, 133, 220)  # Slate Purple Container BG (#292238)
-        curses.init_color(18, 100, 75, 60)  # Amethyst Status BG (#34254F)
-        curses.init_color(19, 831, 784, 921)  # Soft Lavender Text (#D4C8EB)
-        curses.init_color(20, 250, 250, 300)  # Muted Purple Secondary (#9381B0)
-        curses.init_color(21, 960, 803, 407)  # Glowing Gold Accent (#F5CD68)
-        curses.init_color(22, 878, 623, 300)  # Warm Amber / Rose Gold (#E09F67)
-        curses.init_color(23, 988, 933, 796)  # Pale Golden Cream (#FCEECB)
-        curses.init_color(24, 208, 168, 286)  # Alt Slate Purple Row BG (#352B49)
-        c_bg, c_slate, c_status = 16, 17, 18
-        c_text, c_muted, c_gold, c_amber, c_cream, c_slate_alt = 19, 20, 21, 22, 23, 24
-    else:
-        c_bg, c_slate, c_status = 235, 236, 237
-        c_text, c_muted, c_gold, c_amber, c_cream, c_slate_alt = (
-            252,
-            140,
-            220,
-            208,
-            230,
-            238,
+
+def _fold_index(index, limit):
+    """Fold an xterm index into the terminal's real range (bright -> normal)."""
+    if limit <= 0:
+        return 0
+    while index >= limit:
+        index -= 8 if limit >= 8 else limit
+    return max(0, index)
+
+
+def _colour_slots(colours):
+    """Map each palette role used by PAIR_ROLES to a curses colour number.
+
+    A terminal that can redefine colours gets exact RGB in spare slots above
+    the basic sixteen; otherwise the nearest xterm index (256, or the basic 16)
+    is used. Allocation order is fixed, so a theme always yields the same
+    slots.
+    """
+    limit = terminal_color_count() or 8
+    level = "256" if limit >= 256 else "16"
+
+    slots = {}
+    next_slot = 16
+    redefinable = level == "256" and _can_redefine_colors()
+    for _pair, fg_role, bg_role in PAIR_ROLES:
+        for role in (fg_role, bg_role):
+            if role in slots:
+                continue
+            if redefinable and next_slot < limit:
+                rgb = tui.palette.rgb(colours[role])
+                try:
+                    # curses spells RGB in 0..1000.
+                    curses.init_color(next_slot, *(
+                        int(round(channel * 1000 / 255)) for channel in rgb
+                    ))
+                except curses.error:
+                    # Some terminals claim they can redefine colours and then
+                    # refuse; stop trying and use the nearest index instead.
+                    redefinable = False
+                else:
+                    slots[role] = next_slot
+                    next_slot += 1
+                    continue
+            slots[role] = _fold_index(
+                tui.palette.index(colours[role], level=level), limit
+            )
+    return slots
+
+
+def init_theme_colors(theme_mode=0, cap=None):
+    """Initializes the curses colour pairs from the house palette of `theme_mode`.
+
+    Degrades safely: terminals that cannot redefine colours get the nearest
+    xterm index, 16/8-colour terminals get the nearest basic colour, and a pair
+    the terminal rejects is swallowed (curses then uses its default). With
+    `cap.level == "none"` (NO_COLOR, TERM=dumb) the layout is kept and only the
+    colour is dropped, as the tui contract requires.
+    """
+    try:
+        curses.start_color()
+    except curses.error:
+        return
+
+    if cap is not None and getattr(cap, "level", "") == "none":
+        default = getattr(curses, "COLOR_DEFAULT", -1)
+        _init_pairs(
+            tuple((pair, default, default) for pair, _fg, _bg in PAIR_ROLES)
         )
+        return
 
-    curses.init_pair(1, c_text, c_bg)
-    curses.init_pair(2, c_gold, c_bg)
-    curses.init_pair(3, c_amber, c_bg)
-    curses.init_pair(4, c_cream, c_slate)
-    curses.init_pair(5, c_muted, c_bg)
-    curses.init_pair(6, c_gold, c_status)
-    curses.init_pair(7, c_cream, c_slate_alt)
-    curses.init_pair(8, c_gold, c_slate)
-    curses.init_pair(9, c_gold, c_slate)
-    return
+    slots = _colour_slots(tui.palette.palette(theme_id(theme_mode)))
+    _init_pairs(
+        tuple(
+            (pair, slots[fg_role], slots[bg_role])
+            for pair, fg_role, bg_role in PAIR_ROLES
+        )
+    )
 
 
 def get_rich_theme(theme_mode=0):
-    """Generates a custom Rich Theme corresponding to the active mode."""
-    if theme_mode == 1:
-        # High Contrast Light
-        return Theme(
-            {
-                "markdown.h1": "bold blue",
-                "markdown.h2": "bold magenta",
-                "markdown.h3": "bold blue",
-                "markdown.code": "black on cyan",
-                "markdown.code_block": "black on cyan",
-                "markdown.block_quote": "blue dim",
-                "markdown.item.bullet": "bold blue",
-                "markdown.item.number": "bold blue",
-                "markdown.table.header": "bold black",
-                "markdown.table.border": "black",
-                "markdown.link": "underline magenta",
-            }
-        )
-    elif theme_mode == 2:
-        # High Contrast Dark
-        return Theme(
-            {
-                "markdown.h1": "bold yellow",
-                "markdown.h2": "bold cyan",
-                "markdown.h3": "bold yellow",
-                "markdown.code": "black on green",
-                "markdown.code_block": "black on green",
-                "markdown.block_quote": "cyan dim",
-                "markdown.item.bullet": "bold yellow",
-                "markdown.item.number": "bold yellow",
-                "markdown.table.header": "bold yellow",
-                "markdown.table.border": "cyan",
-                "markdown.link": "underline cyan",
-            }
-        )
-    else:
-        # Cozy Purple (Mode 0)
-        return Theme(
-            {
-                "markdown.h1": "bold #F5CD68",  # Glowing Gold
-                "markdown.h2": "bold #E09F67",  # Warm Rose Gold / Amber
-                "markdown.h3": "bold #F5CD68",  # Glowing Gold
-                "markdown.h4": "bold #9381B0",  # Muted Purple
-                "markdown.code": "#FCEECB on #292238",  # Pale Cream on Slate
-                "markdown.code_block": "#FCEECB on #292238",
-                "markdown.block_quote": "#9381B0 italic",
-                "markdown.item.bullet": "bold #F5CD68",
-                "markdown.item.number": "bold #F5CD68",
-                "markdown.hr": "#9381B0",
-                "markdown.table.header": "bold #F5CD68 on #292238",  # Gold Table Headers on Darker Slate BG
-                "markdown.table.cell": "default on #292238",  # Cell content on Darker Slate BG
-                "markdown.table.border": "#9381B0",  # Muted Purple borders
-                "markdown.link": "underline #E09F67",
-            }
-        )
+    """Generates a custom Rich Theme from the shared palette of the active mode."""
+    colours = tui.palette.palette(theme_id(theme_mode))
+    heading = "bold " + colours["button-bg-active"]
+    return Theme(
+        {
+            "markdown.h1": heading,
+            "markdown.h2": heading,
+            "markdown.h3": heading,
+            "markdown.h4": "bold " + colours["fg-muted"],
+            # Code was the text that never followed the theme (Rich used to
+            # paint it with a fixed green); it now takes the accent ink on the
+            # surface fill.
+            "markdown.code": (colours["fg-accent"] + " on "
+                              + colours["bg-inside"]),
+            "markdown.code_block": (colours["fg-accent"] + " on "
+                                    + colours["bg-inside"]),
+            "markdown.block_quote": colours["fg-muted"] + " italic",
+            "markdown.item.bullet": heading,
+            "markdown.item.number": heading,
+            "markdown.hr": colours["fg-muted"],
+            "markdown.table.header": ("bold " + colours["button-bg-active"]
+                                      + " on " + colours["bg-inside"]),
+            "markdown.table.cell": colours["fg"] + " on " + colours["bg-inside"],
+            "markdown.table.border": (colours["border-fg"] + " on "
+                                      + colours["border-bg"]),
+            "markdown.link": "underline " + colours["fg-warn"],
+            # Rich wraps hyperlinked urls in `markdown.link_url`, not
+            # `markdown.link`; without this the visible url stays body-coloured.
+            "markdown.link_url": "underline " + colours["fg-warn"],
+            # The table patch below reads this for the alternate row fill.
+            "mdreader.table.zebra": "on " + colours["bg-stripe"],
+        }
+    )
+
+
+def _hidden_columns(columns, visible_columns):
+    """How many of `columns` the terminal does not actually show.
+
+    The legacy Windows console (conhost) draws its vertical scrollbar inside
+    the window, so the text area is narrower than the screen buffer `curses`
+    reports: the last column ends up behind the bar. Windows Terminal, wezterm
+    and a console without a scrollbar show every reported column.
+
+    Garbage measurements (a hidden ConPTY pseudo-window, a stream with no
+    console) must never shrink the layout, so anything that is not a sane
+    one-or-two column deficit is treated as "nothing hidden".
+    """
+    if columns <= 0 or visible_columns <= 0 or visible_columns >= columns:
+        return 0
+    return min(columns - visible_columns, 2)
+
+
+def console_hidden_columns():
+    """`_hidden_columns()` for the real console, 0 when there is no console.
+
+    Measured from the console window itself: its client area (which excludes
+    the scrollbar) in pixels divided by the font's cell width. Only the real
+    conhost window reports a visible vertical scrollbar, so a Windows Terminal
+    or wezterm pane is never shaved.
+    """
+    if sys.platform != "win32":
+        return 0
+    try:
+        import ctypes
+    except ImportError:  # pragma: no cover - ctypes ships with CPython
+        return 0
+
+    class _COORD(ctypes.Structure):
+        _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class _POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    class _SMALL_RECT(ctypes.Structure):
+        _fields_ = [("Left", ctypes.c_short), ("Top", ctypes.c_short),
+                    ("Right", ctypes.c_short), ("Bottom", ctypes.c_short)]
+
+    class _CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+        _fields_ = [("dwSize", _COORD), ("dwCursorPosition", _COORD),
+                    ("wAttributes", ctypes.c_ushort), ("srWindow", _SMALL_RECT),
+                    ("dwMaximumWindowSize", _COORD)]
+
+    class _CONSOLE_FONT_INFOEX(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("nFont", ctypes.c_ulong),
+                    ("dwFontSize", _COORD), ("FontFamily", ctypes.c_uint),
+                    ("FontWeight", ctypes.c_uint), ("FaceName", ctypes.c_wchar * 32)]
+
+    class _SCROLLBARINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("rcScrollBar", _RECT),
+                    ("dxyLineButton", ctypes.c_int), ("xyThumbTop", ctypes.c_int),
+                    ("xyThumbBottom", ctypes.c_int), ("reserved", ctypes.c_int),
+                    ("rgstate", ctypes.c_ulong * 6)]
+
+    OBJID_VSCROLL = -5  # 0xFFFFFFFB as a signed LONG
+    STATE_SYSTEM_INVISIBLE = 0x00008000
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        kernel32.GetConsoleWindow.restype = ctypes.c_void_p
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        window = kernel32.GetConsoleWindow()
+        if not window:
+            return 0
+
+        bar = _SCROLLBARINFO()
+        bar.cbSize = ctypes.sizeof(bar)
+        if not user32.GetScrollBarInfo(window, OBJID_VSCROLL, ctypes.byref(bar)):
+            return 0
+        if bar.rgstate[0] & STATE_SYSTEM_INVISIBLE:
+            return 0
+
+        info = _CONSOLE_SCREEN_BUFFER_INFO()
+        if not kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
+            return 0
+
+        client = _RECT()
+        if not user32.GetClientRect(window, ctypes.byref(client)):
+            return 0
+        origin = _POINT(0, 0)
+        if not user32.ClientToScreen(window, ctypes.byref(origin)):
+            return 0
+
+        visible_width = client.right - client.left
+        if bar.rcScrollBar.left > origin.x:
+            # The scrollbar's left edge is where the text stops: conhost can
+            # draw the bar over the client area, in which case the last
+            # column is the one that disappears behind it.
+            visible_width = min(visible_width, bar.rcScrollBar.left - origin.x)
+
+        font = _CONSOLE_FONT_INFOEX()
+        font.cbSize = ctypes.sizeof(font)
+        if not kernel32.GetCurrentConsoleFontEx(handle, False, ctypes.byref(font)):
+            return 0
+        cell_width = font.dwFontSize.X
+        if cell_width <= 0:
+            return 0
+
+        return _hidden_columns(info.dwSize.X, visible_width // cell_width)
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
+def layout(width, height, show_border):
+    """Geometry of the reader for a `width` x `height` terminal.
+
+    The frame is three columns wide on each side (`║ │` on the left, `│ ║`
+    with the scroll track between on the right), so the text column starts at
+    `x_offset` and is `usable_width` wide. The inner border owns its own
+    column on each side: content must stop before it, which is why the width
+    is `width - 6` (three columns per side), not `width - 5`.
+
+    `width` is the drawable width: callers already removed any column the
+    terminal hides (see `console_hidden_columns()`).
+    """
+    if show_border and height >= 8 and width >= 12:
+        return {
+            "bordered": True,
+            "x_offset": 3,
+            "y_offset": 2,
+            "usable_width": max(1, width - 6),
+            "usable_height": max(1, height - 6),
+            "status_y1": height - 4,
+            "status_y2": height - 3,
+        }
+    return {
+        "bordered": False,
+        "x_offset": 0,
+        "y_offset": 0,
+        "usable_width": max(1, width),
+        "usable_height": max(1, height - 2),
+        "status_y1": height - 2,
+        "status_y2": height - 1,
+    }
 
 
 def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
@@ -311,8 +515,8 @@ def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
     bot_inner = "║ ├" + "─" * (width - 6) + "┤ ║"
     bot_outer = "╚═╧" + "═" * (width - 6) + "╧═╝"
 
-    border_attr = curses.color_pair(8) | curses.A_BOLD
-    thumb_attr = curses.color_pair(6) | curses.A_BOLD
+    border_attr = chrome_attr(CHROME_PAIRS["frame"])
+    thumb_attr = chrome_attr(CHROME_PAIRS["thumb"])
 
     track_top = 2
     track_bottom = height - 3
@@ -341,19 +545,195 @@ def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
         pass
 
 
+def _colour_name(colour):
+    """Lowercase "#rrggbb" (or colour name) for a Rich colour; "" when unset."""
+    if colour is None:
+        return ""
+    return str(getattr(colour, "name", None) or colour).lower()
+
+
+def segment_pair(style, colours):
+    """Curses pair number for a Rich segment style, chosen by palette role.
+
+    Roles come from `colours`, so the same classification works in all three
+    modes: body text, headings, links, code/table cell, muted and the zebra
+    row.
+    """
+    if style is None:
+        return 1
+
+    fg = _colour_name(style.color)
+    bg = _colour_name(style.bgcolor)
+    surface = colours["bg-inside"].lower()
+    zebra = colours["bg-stripe"].lower()
+    heading = colours["button-bg-active"].lower()
+    link = colours["fg-warn"].lower()
+    muted = colours["fg-muted"].lower()
+    is_dim = bool(style.dim) or fg == muted
+
+    if bg or fg in (surface, zebra):
+        # The border test runs before the accent test: contrast-dark's
+        # border-fg is its button-bg-active on the same ground, so the accent
+        # test would otherwise swallow the frame-coloured borders. The cost is
+        # that contrast-dark classifies a table header as a border too; the
+        # two roles are the same pixels there.
+        if fg == colours["border-fg"].lower() and fg != colours["fg"].lower():
+            return 10  # table borders: the frame colour on the border ground
+        if fg == heading:
+            return 9   # table header: the heading ink on the surface fill
+        if fg == colours["fg-accent"].lower():
+            return 11  # inline code: the accent ink on the surface fill
+        if bg not in (surface, zebra):
+            # Rich paints fenced code with its own syntax theme (monokai's
+            # fixed greens and blues) on its own ground. That foreign ink is
+            # exactly what "always dark green" meant, so the whole block takes
+            # the code pair instead of leaking the syntax palette.
+            return 11
+        if bg == zebra and zebra != surface:
+            return 7   # alternate table row: body text on the zebra fill
+        return 4       # table cells on the surface fill
+    if fg:
+        if style.underline and fg == link:
+            return 3   # links: the warn ink, underlined
+        if fg == heading:
+            return 2   # headings, bullets and numbers
+        if fg == link:
+            return 3   # secondary emphasis keeps the warn ink
+        if is_dim:
+            return 5
+        if style.bold:
+            # Inline `**bold**` carries only the bold attribute, not a colour
+            # (headings/headers have their own role and are matched above), so
+            # it takes the warn ink on the current ground instead of falling
+            # back to body text.
+            return 3
+        return 1
+    if style.bold:
+        return 3
+    return 5 if is_dim else 1
+
+
+_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_QUOTE = re.compile(r"^(?:[ \t]*>[ ]?)+")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+
+
+def _quote_body(line):
+    # Text of a line with any leading `>` markers removed, so a fence or an
+    # indented block inside a blockquote is recognised like a top-level one.
+    match = _QUOTE.match(line)
+    return line[match.end():] if match else line
+
+
+def _closing_run(line, start, width):
+    # Index of the next backtick run exactly `width` long, or -1. A longer run
+    # is its own delimiter, so it never closes a shorter span (CommonMark).
+    index = line.find("`", start)
+    while index >= 0:
+        end = index
+        while end < len(line) and line[end] == "`":
+            end += 1
+        if end - index == width:
+            return index
+        index = line.find("`", end)
+    return -1
+
+
+def _split_code(line):
+    # (text, is_code) pairs: every run of backticks of n >= 1 closes on the
+    # next run of exactly n, so ``code with ` tick`` stays one span.
+    parts = []
+    index = 0
+    while index < len(line):
+        if line[index] != "`":
+            end = line.find("`", index)
+            if end < 0:
+                parts.append((line[index:], False))
+                break
+            parts.append((line[index:end], False))
+            index = end
+            continue
+        end = index
+        while end < len(line) and line[end] == "`":
+            end += 1
+        width = end - index
+        close = _closing_run(line, end, width)
+        if close < 0:
+            parts.append((line[index:end], False))  # unmatched: literal
+            index = end
+            continue
+        parts.append((line[index:close + width], True))
+        index = close + width
+    return parts
+
+
+def _rewrite_links(text):
+    # `[text](url)` -> `[url](url)`, except when the bracket is escaped with an
+    # odd number of backslashes: `\[x](url)` shows link syntax, not a link.
+    def swap(match):
+        index = match.start() - 1
+        backslashes = 0
+        while index >= 0 and text[index] == "\\":
+            backslashes += 1
+            index -= 1
+        if backslashes % 2:
+            return match.group(0)
+        return "[%s](%s)" % (match.group(2), match.group(2))
+
+    return _LINK.sub(swap, text)
+
+
+def linkify(raw_content):
+    """Rewrite `[text](url)` as `[url](url)` outside code; code stays verbatim.
+
+    Skipped, and therefore rendered exactly as written: indented code blocks
+    (four spaces or a tab), fenced blocks opened by ``` or ~~~ (also behind a
+    `>` quote marker), spans delimited by a run of backticks of equal length,
+    and a link whose `[` is escaped as `\\[`. Everything else - headings,
+    paragraphs, list items, table cells - has its links rewritten.
+    """
+    out = []
+    fence = None  # (character, run length) of the open fence
+    for line in raw_content.splitlines(True):
+        body = _quote_body(line)
+        if fence is not None:
+            out.append(line)
+            closing = _FENCE_CLOSE.match(body)
+            if (closing and closing.group(1)[0] == fence[0]
+                    and len(closing.group(1)) >= fence[1]):
+                fence = None
+            continue
+        opening = _FENCE.match(body)
+        if opening:
+            fence = (opening.group(1)[0], len(opening.group(1)))
+            out.append(line)
+            continue
+        if body.startswith("    ") or body.startswith("\t"):
+            out.append(line)
+            continue
+        if not body.strip():
+            out.append(line)  # blank line: nothing to rewrite
+            continue
+        out.append("".join(part if is_code else _rewrite_links(part)
+                           for part, is_code in _split_code(line)))
+    return "".join(out)
+
+
 def process_markdown_rich(raw_content, width, theme_mode=0):
     """Parses and renders Markdown text into formatted lines using Rich."""
     rich_theme = get_rich_theme(theme_mode)
+    colours = tui.palette.palette(theme_id(theme_mode))
     console = Console(
         width=max(10, width), force_terminal=True, color_system="256", theme=rich_theme
     )
 
-    # Pre-process links: Convert [name](url) to just the raw url
-    # We use regex to find standard markdown links and replace them with the raw URL.
-    # This ensures that Rich doesn't try to hide the URL behind an obscure hyperlink protocol,
-    # making it directly clickable in most modern terminals, and also solves table alignment
-    # since the text length directly matches the visible URL.
-    processed_content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\2", raw_content)
+    # Pre-process links: keep the raw url as the *link text*, so the visible
+    # string stays the clickable URL (the reason for the rewrite) while Rich
+    # still applies the link styles - both `markdown.link` (the text) and
+    # `markdown.link_url` (the hyperlinked url Rich emits) paint the warn
+    # colour, so the reader shows links as links instead of plain body text.
+    processed_content = linkify(raw_content)
 
     # Disable justify to prevent table columns from drifting
     md = Markdown(processed_content, justify="left")
@@ -371,7 +751,6 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
                 continue
 
             attr = 0
-            color = 1
 
             if seg.style:
                 if seg.style.bold:
@@ -383,40 +762,9 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
                 if seg.style.dim:
                     attr |= curses.A_DIM
 
-                bg_name = (
-                    str(seg.style.bgcolor.name).lower() if seg.style.bgcolor else ""
-                )
-                cname = str(seg.style.color.name).lower() if seg.style.color else ""
-                has_bg = bool(seg.style.bgcolor) or any(
-                    k in cname for k in ["#292238", "#352b49", "#fceecb"]
-                )
-                is_dim = seg.style.dim or any(
-                    k in cname for k in ["dim", "gray", "grey", "#9381b0"]
-                )
-
-                if has_bg:
-                    if "#352b49" in bg_name:
-                        color = 7  # Alternate Table Row: Same text color on #352B49 BG
-                    elif any(k in cname for k in ["#f5cd68", "gold", "yellow"]):
-                        color = 9  # Table Header Gold on Slate BG
-                    else:
-                        color = 4  # Standard Table Row / Code on Slate BG
-                elif seg.style.color:
-                    if any(k in cname for k in ["#f5cd68", "gold", "yellow"]):
-                        color = 2  # Gold on Main BG
-                    elif any(
-                        k in cname
-                        for k in ["#e09f67", "amber", "cyan", "blue", "magenta"]
-                    ):
-                        color = 3  # Amber on Main BG
-                    elif is_dim:
-                        color = 5  # Muted on Main BG
-                    else:
-                        color = 1  # Standard Body Text on Main BG
-                elif is_dim:
-                    color = 5
-
-            line_segments.append(Segment(seg.text, attr, color))
+            line_segments.append(
+                Segment(seg.text, attr, segment_pair(seg.style, colours))
+            )
         formatted_doc.append(FormattedLine(line_segments))
 
     # Append blank lines + centered golden end-of-file marker
@@ -448,18 +796,32 @@ def get_directory_md_files(current_filepath):
         return folder, [os.path.basename(current_filepath)]
 
 
-def render_reader(stdscr, filepath, raw_content):
+def initial_theme_mode():
+    """Display mode for the configured theme (CATRO_THEME > config.ini > soft)."""
+    try:
+        return THEME_MODES.index(tui.theme())
+    except ValueError:
+        return 0
+
+
+def render_reader(stdscr, filepath, raw_content, cap=None):
     """Main TUI loop handling viewport rendering, input events, file switching, and status bar."""
+    # curses needs colour mode before use_default_colors() and the pair table:
+    # without this the reader aborts on the first call under ncurses/PDCurses.
+    try:
+        curses.start_color()
+    except curses.error:
+        pass
     curses.use_default_colors()
     curses.curs_set(0)
     stdscr.keypad(True)
 
     show_border = True
-    theme_mode = 0  # 0: Cozy Purple, 1: High Contrast Light, 2: High Contrast Dark
-    theme_names = ["Cozy Purple", "Contrast Light", "Contrast Dark"]
+    theme_mode = initial_theme_mode()
+    theme_names = [name.replace("-", " ") for name in THEME_MODES]
 
-    init_cozy_colors(theme_mode)
-    stdscr.bkgd(" ", curses.color_pair(1))
+    init_theme_colors(theme_mode, cap)
+    stdscr.bkgd(" ", curses.color_pair(CHROME_PAIRS["window"]))
 
     scroll_top = 0
     scroll_left = 0
@@ -483,24 +845,21 @@ def render_reader(stdscr, filepath, raw_content):
 
     while True:
         height, width = stdscr.getmaxyx()
+        # The legacy Windows console's scrollbar sits on top of the last
+        # column while curses still counts it; draw one column in so the
+        # frame is not clipped. Every other terminal reports 0 here.
+        frame_width = max(1, width - console_hidden_columns())
 
-        if show_border and height >= 8 and width >= 12:
-            y_offset = 2
-            x_offset = 3
-            usable_width = max(10, width - 5)
-            usable_height = max(1, height - 6)
-            status_y1 = height - 4
-            status_y2 = height - 3
-        else:
-            y_offset = 0
-            x_offset = 0
-            usable_width = max(10, width)
-            usable_height = max(1, height - 2)
-            status_y1 = height - 2
-            status_y2 = height - 1
+        geometry = layout(frame_width, height, show_border)
+        x_offset = geometry["x_offset"]
+        y_offset = geometry["y_offset"]
+        usable_width = geometry["usable_width"]
+        usable_height = geometry["usable_height"]
+        status_y1 = geometry["status_y1"]
+        status_y2 = geometry["status_y2"]
 
         content_width = max(
-            10, min(usable_width, int(usable_width * (zoom_level / 100.0)))
+            1, min(usable_width, int(usable_width * (zoom_level / 100.0)))
         )
         margin_left = x_offset + max(0, (usable_width - content_width) // 2)
 
@@ -531,8 +890,8 @@ def render_reader(stdscr, filepath, raw_content):
         stdscr.clear()
 
         # Render border
-        if show_border and height >= 8 and width >= 12:
-            draw_window_border(stdscr, height, width, scroll_top, max_scroll)
+        if geometry["bordered"]:
+            draw_window_border(stdscr, height, frame_width, scroll_top, max_scroll)
 
         # Render content
         for y in range(usable_height):
@@ -542,7 +901,9 @@ def render_reader(stdscr, filepath, raw_content):
 
             line = doc_lines[line_idx]
             x_pos = margin_left
-            max_x = x_offset + usable_width - 1
+            # Exclusive right edge: the text column ends where the inner
+            # frame border starts, so the border is never painted over.
+            max_x = x_offset + usable_width
             rendered_segments = slice_line_segments(
                 line.segments, scroll_left, usable_width
             )
@@ -575,21 +936,23 @@ def render_reader(stdscr, filepath, raw_content):
             f" | H-Scroll: {scroll_left}/{max_h_scroll}" if max_h_scroll > 0 else ""
         )
         status_info = f" * File: {filename} {file_count_str} | Theme: {theme_str} | Width: {zoom_level}%{h_scroll_str} | Lines: {scroll_top + 1}-{min(scroll_top + usable_height, total_lines)}/{total_lines} ({pct}%)"
-        status_bar = f"{status_info:<{usable_width - 1}}"[: usable_width - 1]
+        status_bar = f"{status_info:<{usable_width}}"[: usable_width]
 
         try:
             stdscr.addstr(
-                status_y1, x_offset, status_bar, curses.color_pair(6) | curses.A_BOLD
+                status_y1, x_offset, status_bar,
+                chrome_attr(CHROME_PAIRS["status"])
             )
         except curses.error:
             pass
 
         shortcuts = " [< / >] Prev/Next | [[ / ]] Horiz Scroll | [+ / -] Width | [H] Border | [C] Contrast | [UP/DN] Scroll | [Q] Quit"
-        shortcuts_bar = f"{shortcuts:<{usable_width - 1}}"[: usable_width - 1]
+        shortcuts_bar = f"{shortcuts:<{usable_width}}"[: usable_width]
 
         try:
             stdscr.addstr(
-                status_y2, x_offset, shortcuts_bar, curses.color_pair(7) | curses.A_BOLD
+                status_y2, x_offset, shortcuts_bar,
+                chrome_attr(CHROME_PAIRS["shortcuts"])
             )
         except curses.error:
             pass
@@ -605,9 +968,9 @@ def render_reader(stdscr, filepath, raw_content):
             show_border = not show_border
             stdscr.clear()
         elif key in (ord("c"), ord("C")):
-            theme_mode = (theme_mode + 1) % 3
-            init_cozy_colors(theme_mode)
-            stdscr.bkgd(" ", curses.color_pair(1))
+            theme_mode = (theme_mode + 1) % len(THEME_MODES)
+            init_theme_colors(theme_mode, cap)
+            stdscr.bkgd(" ", curses.color_pair(CHROME_PAIRS["window"]))
             stdscr.clear()
         elif key in (ord("["), ord("a"), ord("A"), curses.KEY_SLEFT):
             scroll_left = max(0, scroll_left - 4)
@@ -661,54 +1024,82 @@ def render_reader(stdscr, filepath, raw_content):
             stdscr.clear()
 
 
-def require_tty():
-    """Refuse to run when stdin/stdout is redirected: curses needs a terminal."""
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        return
-    sys.stderr.write("[Error] mdreader needs an interactive terminal "
-                     "(stdin/stdout is not a tty).\n")
-    raise SystemExit(2)
+def missing_dependencies():
+    """Returns one install hint per unavailable library (empty when ready)."""
+    hints = []
+    if curses is None:
+        package = "windows-curses" if os.name == "nt" else "curses"
+        hints.append(
+            "curses: catro-scripts installdeps curses"
+            f"  (or: python -m pip install {package})"
+        )
+    if Theme is None:
+        hints.append(
+            "rich: catro-scripts installdeps rich"
+            "  (or: python -m pip install rich)"
+        )
+    return hints
 
 
 def main():
-    require_tty()
+    parser = argparse.ArgumentParser(
+        prog="mdreader.py",
+        description="Read Markdown files in a scrollable terminal (curses) UI.",
+    )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        help="Markdown file to open (default: first .md file in the current directory)",
+    )
+    args = parser.parse_args()
 
-    filepath = None
+    # tui owns the refusal: one stderr line with the contract's wording, exit 2,
+    # and it runs before curses (or a file is even opened). The capability
+    # snapshot is taken once per run and carried into the renderer.
+    tui.require_tty("mdreader")
+    cap = tui.detect()
 
-    if len(sys.argv) == 1:
+    # mdreader never installs anything itself; it only reports what is missing.
+    hints = missing_dependencies()
+    if hints:
+        sys.stderr.write("[Error] mdreader cannot start: missing libraries.\n")
+        for hint in hints:
+            sys.stderr.write(f"  {hint}\n")
+        raise SystemExit(2)
+
+    filepath = args.file
+    if filepath is None:
         folder, md_files = get_directory_md_files(os.getcwd())
         if not md_files:
-            print("[Error] No .md files found in current working directory.")
-            sys.exit(1)
+            sys.stderr.write("[Error] No .md files found in current working directory.\n")
+            raise SystemExit(1)
         filepath = os.path.join(folder, md_files[0])
-    elif len(sys.argv) == 2:
-        filepath = sys.argv[1]
-    else:
-        print("Usage: python mdreader.py [filename.md]")
-        print("Or:    catro-scripts mdreader [filename.md]")
-        sys.exit(1)
 
     if not os.path.exists(filepath):
-        print(f"[Error] File not found: '{filepath}'")
-        sys.exit(1)
+        sys.stderr.write(f"[Error] File not found: '{filepath}'\n")
+        raise SystemExit(1)
 
     if not os.path.isfile(filepath):
-        print(f"[Error] '{filepath}' is not a valid file.")
-        sys.exit(1)
+        sys.stderr.write(f"[Error] '{filepath}' is not a valid file.\n")
+        raise SystemExit(1)
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             raw_content = f.read()
     except Exception as e:
-        print(f"[Error] Could not read file '{filepath}': {e}")
-        sys.exit(1)
+        sys.stderr.write(f"[Error] Could not read file '{filepath}': {e}\n")
+        raise SystemExit(1)
 
     try:
-        curses.wrapper(render_reader, filepath, raw_content)
+        tui.init_ansi()
+        curses.wrapper(render_reader, filepath, raw_content, cap)
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl-C quits cleanly with status 0, like 'q'.
     except Exception as e:
-        print(f"\n[Error] An unexpected error occurred while running mdreader: {e}")
+        sys.stderr.write(
+            f"\n[Error] An unexpected error occurred while running mdreader: {e}\n"
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

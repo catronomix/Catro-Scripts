@@ -35,6 +35,8 @@ import re
 import sys
 import platform
 
+import tui
+
 def expand_filenames(pattern):
 	"""
 	Recursively expands patterns like [001-010] or [a-z] into a list of strings.
@@ -99,10 +101,12 @@ def is_valid_name(name):
 			return False
 	return True
 
-def create_item(path, is_dir=False):
+def create_item(path, is_dir=False, cap=None):
 	"""Helper to create a single file or directory."""
+	cap = cap or tui.detect()
 	if not is_valid_name(path):
-		print(f"[Error] Invalid path: {path}")
+		print(tui.status("error", f"Invalid path: {path}", cap=cap),
+			  file=sys.stderr)
 		return False
 	try:
 		if is_dir:
@@ -110,7 +114,7 @@ def create_item(path, is_dir=False):
 				# Gracefully treat existing directory as if it were just created
 				return True
 			os.makedirs(path, exist_ok=True)
-			print(f"[Created] Directory: {path}")
+			print(tui.status("ok", f"Created Directory: {path}", cap=cap))
 		else:
 			if os.path.exists(path):
 				# Explicitly skip existing files
@@ -122,15 +126,20 @@ def create_item(path, is_dir=False):
 			
 			with open(path, 'a', encoding="utf-8"):
 				os.utime(path, None)
-			print(f"[Created] File: {path}")
+			print(tui.status("ok", f"Created File: {path}", cap=cap))
 		return True
 	except Exception as e:
-		print(f"[Error] Failed to create {path}: {e}")
+		print(tui.status("error", f"Failed to create {path}: {e}", cap=cap),
+			  file=sys.stderr)
 		return False
 
 def main():
+	tui.init_ansi()
+	cap = tui.detect()
+
 	if len(sys.argv) < 2:
-		print("Usage: python newfile.py [-d dirs...] [-sd subdirs...] [-f files...]")
+		print(tui.status("error", "Usage: python newfile.py [-d dirs...] [-sd subdirs...] [-f files...]",
+						 cap=cap))
 		return
 
 	# Manual parsing to maintain order of operations
@@ -160,7 +169,7 @@ def main():
 			for base in current_targets:
 				for d in expanded_values:
 					path = os.path.join(base, d)
-					if create_item(path, is_dir=True):
+					if create_item(path, is_dir=True, cap=cap):
 						new_targets.append(path)
 			current_targets = new_targets # Move context into these new dirs
 
@@ -169,7 +178,7 @@ def main():
 			for base in current_targets:
 				for sd in expanded_values:
 					path = os.path.join(base, sd)
-					if create_item(path, is_dir=True):
+					if create_item(path, is_dir=True, cap=cap):
 						new_targets.append(path)
 			current_targets = new_targets # Move context deeper
 
@@ -178,10 +187,10 @@ def main():
 			for base in current_targets:
 				for f in expanded_values:
 					path = os.path.join(base, f)
-					create_item(path, is_dir=False)
+					create_item(path, is_dir=False, cap=cap)
 			# Files do not change the directory context for subsequent flags
 		else:
-			print(f"[Warning] Unknown flag: {flag}")
+			print(tui.status("warn", f"Unknown flag: {flag}", cap=cap))
 
 if __name__ == "__main__":
 	main()

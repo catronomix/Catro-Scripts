@@ -28,30 +28,47 @@ import re
 import sys
 import stat
 
-# ANSI Colors
-C_PURPLE = '\033[38;2;170;0;255m'
-C_CYAN = '\033[96m'
-C_GREEN = '\033[92m'
-C_RED = '\033[91m'
-C_YELLOW = '\033[93m'
-C_BOLD = '\033[1m'
-C_RESET = '\033[0m'
+import tui
 
-def print_step(message):
-    print(f"{C_CYAN}{C_BOLD}>>{C_RESET} {message}")
 
-def print_success(message):
-    print(f"{C_GREEN}{C_BOLD}✓{C_RESET} {message}")
+def print_step(message, cap=None):
+    """One progress line through the shared `[info]` status kind."""
+    print(tui.status("info", message, cap=cap))
 
-def print_error(message):
-    print(f"{C_RED}{C_BOLD}Error:{C_RESET} {message}")
+def print_success(message, cap=None):
+    print(tui.status("ok", message, cap=cap))
+
+def print_error(message, cap=None):
+    print(tui.status("error", message, cap=cap))
 
 def remove_readonly(func, path, excinfo):
     """
-    Error handler for shutil.rmtree to handle read-only files on Windows.
+    Error handler for shutil.rmtree to handle read-only files.
+
+    `stat.S_IWRITE` is only the owner write bit (0o200), so assigning it with
+    os.chmod would replace the whole mode and drop owner read - and execute for
+    directories. OR it onto the mode read back from lstat instead: the retry
+    then works on POSIX and Windows keeps its read-only-flag behaviour.
     """
-    os.chmod(path, stat.S_IWRITE)
+    try:
+        os.chmod(path, stat.S_IMODE(os.lstat(path).st_mode) | stat.S_IWRITE)
+    except OSError:
+        # Let func() surface the real error if the mode could not be changed.
+        pass
     func(path)
+
+def remove_tree(path):
+    """
+    Removes a tree with remove_readonly as the error handler.
+
+    3.11 baseline uses `onerror`; 3.12 deprecated it in favour of `onexc`, so
+    the newer keyword is used only where it exists. The handler keeps its
+    3-argument signature, which both keywords accept.
+    """
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=remove_readonly)
+    else:
+        shutil.rmtree(path, onerror=remove_readonly)
 
 def check_project():
     """Verify if the current directory is a TS project."""
@@ -62,12 +79,18 @@ def check_project():
     return True, ""
 
 def main():
-    print(f"\n{C_PURPLE}{C_BOLD}--- TypeScript Project Export ---{C_RESET}\n")
+    # One detection per run, threaded through every helper: the colour level,
+    # Unicode decision and plain mode must not change mid-run.
+    cap = tui.detect()
+
+    print()
+    print(tui.header("TypeScript Project Export", cap=cap))
+    print()
 
     # 1. Validation
     is_valid, err = check_project()
     if not is_valid:
-        print_error(err)
+        print_error(err, cap)
         return
 
     # 2. Setup Export Directory
@@ -75,13 +98,13 @@ def main():
     if os.path.exists(export_dir):
         try:
             # Use the readonly handler to avoid common Windows permission errors
-            shutil.rmtree(export_dir, onerror=remove_readonly)
+            remove_tree(export_dir)
         except Exception as e:
-            print_error(f"Could not clear '{export_dir}' directory. Please ensure no files are open in other programs.\nDetails: {e}")
+            print_error(f"Could not clear '{export_dir}' directory. Please ensure no files are open in other programs.\nDetails: {e}", cap)
             return
             
     os.makedirs(export_dir)
-    print_step(f"Created clean '{export_dir}' directory.")
+    print_step(f"Created clean '{export_dir}' directory.", cap)
 
     # 3. Locate Binaries
     # Use .cmd on Windows, direct path on Unix
@@ -90,7 +113,7 @@ def main():
     esbuild_bin = os.path.join('node_modules', '.bin', f'esbuild{ext}')
 
     if not os.path.exists(tsc_bin):
-        print_error("TypeScript compiler (tsc) not found in node_modules.")
+        print_error("TypeScript compiler (tsc) not found in node_modules.", cap)
         return
 
     # 4. Compilation / Bundling
@@ -105,7 +128,7 @@ def main():
     os.makedirs(os.path.dirname(out_js), exist_ok=True)
 
     if os.path.exists(esbuild_bin):
-        print_step("Bundling with esbuild for 'file://' compatibility...")
+        print_step("Bundling with esbuild for 'file://' compatibility...", cap)
         try:
             subprocess.check_call([
                 esbuild_bin, main_ts, 
@@ -115,22 +138,22 @@ def main():
                 '--platform=browser',
                 '--target=es6'
             ], shell=(os.name == 'nt'))
-            print_success("Bundled JavaScript successfully.")
+            print_success("Bundled JavaScript successfully.", cap)
         except subprocess.CalledProcessError:
-            print_error("Bundling failed.")
+            print_error("Bundling failed.", cap)
             return
     else:
-        print_step("esbuild not found, falling back to standard tsc...")
+        print_step("esbuild not found, falling back to standard tsc...", cap)
         try:
             # Simple compile - might still have module issues if multi-file
             subprocess.check_call([tsc_bin, '--outDir', export_dir, '--target', 'ES6', '--module', 'none'], shell=(os.name == 'nt'))
-            print_success("Compiled JavaScript successfully.")
+            print_success("Compiled JavaScript successfully.", cap)
         except subprocess.CalledProcessError:
-            print_error("Compilation failed.")
+            print_error("Compilation failed.", cap)
             return
 
     # 5. Copy Assets
-    print_step("Copying styles and assets...")
+    print_step("Copying styles and assets...", cap)
     if os.path.exists('styles'):
         shutil.copytree('styles', os.path.join(export_dir, 'styles'))
     
@@ -147,10 +170,15 @@ def main():
         
         with open(os.path.join(export_dir, 'index.html'), 'w', encoding='utf-8') as f:
             f.write(content)
-        print_success("Processed index.html for local loading.")
+        print_success("Processed index.html for local loading.", cap)
 
-    print(f"\n{C_GREEN}{C_BOLD}✨ Export Complete!{C_RESET}")
-    print(f"You can now open {C_YELLOW}'{export_dir}/index.html'{C_RESET} directly in your browser.")
+    print()
+    print(tui.status_panel([
+        ("ok", "✨ Export Complete!"),
+        ("info", "You can now open '{}/index.html' directly in "
+                 "your browser.".format(export_dir)),
+    ], cap=cap))
 
 if __name__ == "__main__":
+    tui.init_ansi()
     main()

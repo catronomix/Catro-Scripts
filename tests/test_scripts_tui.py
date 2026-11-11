@@ -1,0 +1,790 @@
+# Regression tests for the migrated script rendering
+"""
+			SCRIPT MIGRATION SEAMS
+			======================
+Pins what the Phase A migration deliberately kept as data rather than as private
+ANSI strings:
+
+	- help.INDENT_STYLES: the indentation palette must still resolve to the old
+		16-colour codes (1;37, 0;36, 0;32, 0;33, 0;31), so a 16-colour terminal
+		sees the same colours it always did.
+	- count.RAINBOW: same idea for the old 91/33/93/92/96/94/95 cycle.
+	- action.list_actions(): fixed widths and its own `..` truncation survive,
+		while a pipe gets the library's plain TAB-separated records.
+	- list.py with NO_COLOR: colour off is not a pipe - a tty keeps the box and
+		loses only the escapes.
+	- No migrated script still carries a private escape sequence or its own
+		`Colors` class: that is the gate this migration has to keep closed.
+	- `ThemedOutputTest`: every in-scope script that prints output calls at
+		least one shared page-chrome/table helper (`tui.header`, `tui.panel`,
+		`tui.rule`, `tui.status`, `tui.field`, `tui.fill`, `tui.menu`, or the
+		table/section/key-values helpers) instead of printing bare headings.
+		The gate is strict: `PENDING_THEMING` is empty after the c1-c5 groups
+		merged, and the only exemptions are `SCREEN_RENDERERS` (full-screen
+		engines that paint their own frame) and `DELEGATES` (`theme.py`, whose
+		page is `tui/__main__.py`) - both explicit tuples, each checked to
+		really be what it claims.
+
+Run with:
+	python -m unittest discover -s tests -v
+"""
+import contextlib
+import io
+import json
+import ast
+import os
+import re
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+	sys.path.insert(0, str(REPO))
+if str(Path(__file__).resolve().parent) not in sys.path:
+	sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import tui  # noqa: E402  (import after sys.path setup)
+import keygen  # noqa: E402  (imported for its picker marker)
+from support import clean_env, module_isolation  # noqa: E402  (test helper, not production)
+
+setUpModule, tearDownModule = module_isolation()
+
+
+def cap16():
+	return tui.Capabilities(level="16", unicode=True, width=None,
+							isatty=True, plain=False, reason="test")
+
+
+def is_tui_call(node, name):
+	"""True for a `tui.<name>(...)` / `tui.chrome.<name>(...)` call node."""
+	if not isinstance(node, ast.Call):
+		return False
+	func = node.func
+	if not isinstance(func, ast.Attribute) or func.attr != name:
+		return False
+	owner = func.value
+	if isinstance(owner, ast.Name):
+		return owner.id == "tui"
+	return (isinstance(owner, ast.Attribute) and owner.attr == "chrome"
+			and isinstance(owner.value, ast.Name) and owner.value.id == "tui")
+
+
+class FakeTty:
+	"""A tty-able stdout: writes are captured, no file descriptor."""
+
+	def __init__(self, tty=True, encoding="utf-8"):
+		self._buffer = io.StringIO()
+		self._tty = tty
+		self.encoding = encoding
+
+	def write(self, text):
+		return self._buffer.write(text)
+
+	def flush(self):
+		pass
+
+	def isatty(self):
+		return self._tty
+
+	def getvalue(self):
+		return self._buffer.getvalue()
+
+
+class HelpIndentStylesTest(unittest.TestCase):
+	"""help.py's indentation mapping is data passed to tui.style()."""
+
+	def setUp(self):
+		import help as help_module
+		self.help = help_module
+
+	def test_each_level_keeps_its_16_colour_code(self):
+		expected = ["\033[37m", "\033[36m", "\033[32m", "\033[33m", "\033[31m"]
+		self.assertEqual(len(self.help.INDENT_STYLES), len(expected))
+		for level, code in enumerate(expected):
+			styled = tui.style("x", cap=cap16(),
+							   **self.help.INDENT_STYLES[level])
+			self.assertIn(code, styled,
+						  "indentation level {} lost its {} code: {!r}".format(
+							  level, code, styled))
+			self.assertTrue(styled.endswith("x" + tui.RESET))
+
+	def test_level_zero_is_still_bold(self):
+		styled = tui.style("x", cap=cap16(), **self.help.INDENT_STYLES[0])
+		self.assertIn("\033[1m", styled)
+
+
+class CountRainbowTest(unittest.TestCase):
+	"""count.py's rainbow is data passed to tui.style()."""
+
+	def test_each_row_keeps_its_16_colour_code(self):
+		import count as count_module
+		expected = ["\033[91m", "\033[33m", "\033[93m", "\033[92m",
+					"\033[96m", "\033[94m", "\033[95m"]
+		self.assertEqual(len(count_module.RAINBOW), len(expected))
+		for code, colour in zip(expected, count_module.RAINBOW):
+			styled = tui.style("x", fg=colour, cap=cap16())
+			self.assertIn(code, styled,
+						  "{} lost its {} code: {!r}".format(colour, code, styled))
+
+
+class NoPrivateAnsiTest(unittest.TestCase):
+	"""The gate: migrated scripts only style through tui."""
+
+	# Phase A scripts plus every Phase B script (seven crunch groups). Adding a
+	# script here is the price of moving it onto tui/: the gate below is what
+	# keeps a private escape sequence from creeping back in.
+	MIGRATED = ("list.py", "help.py", "action.py", "count.py",
+				"opencode.py", "sanitize.py", "screensaver.py",
+				# B1 interactive
+				"keygen.py", "fakeserver.py",
+				# B2 jsonl
+				"jsonl_monitor.py",
+				# B3 curses
+				"mdreader.py",
+				# B4 video
+				"videofade.py", "videoframes.py", "videojoin.py",
+				"videoloop.py", "videotweak.py",
+				# B5 media
+				"image_resizer.py", "audiosplit.py", "image_generator.py",
+				"ts_setup.py",
+				# B6 system/net
+				"netconfig.py", "gitpush.py", "ts_export.py",
+				"venvreplicator.py",
+				# B7 file tools
+				"renamer.py", "alias.py", "newfile.py", "getaudio.py",
+				"exifcopy.py", "timecopy.py", "randomsorter.py",
+				"shutdown.py", "installdeps.py",
+				# the theme command (delegates to tui.__main__)
+				"theme.py")
+
+	def test_migrated_scripts_have_no_private_ansi(self):
+		for name in self.MIGRATED:
+			source = (REPO / name).read_text(encoding="utf-8")
+			self.assertNotIn("\\033", source,
+							 "{} still hardcodes an escape sequence".format(name))
+			self.assertNotIn("class Colors", source,
+							 "{} still has a private Colors class".format(name))
+
+
+class ThemedOutputTest(unittest.TestCase):
+	"""Every in-scope script renders through the shared page chrome.
+
+	The rule is one line: a script that prints output must call a shared
+	chrome/table helper, so headings, rules, status lines and key/value blocks
+	look like the rest of the collection instead of being hand-printed. A
+	private escape sequence is `NoPrivateAnsiTest`; a bare `print("Title")` is
+	what this one catches.
+
+	Strict since the phase-C close-out: `PENDING_THEMING` is empty and the only
+	exemptions left are `SCREEN_RENDERERS` (full-screen engines) and
+	`DELEGATES` (an entrypoint whose page lives in `tui/__main__.py`).
+	"""
+
+	HELPERS = ("header", "panel", "rule", "status", "field", "fill",
+			   "banner", "section", "print_table", "key_values",
+			   "render_table", "menu")
+
+	# `tui.<helper>` (or `tui.chrome.<helper>`) and the `from tui import ...`
+	# spelling both count: the call, not the import style, is what matters.
+	CALL = re.compile(r"\btui\.(?:chrome\.)?(?:{})\b".format("|".join(HELPERS)))
+	IMPORT = re.compile(r"from\s+tui(?:\.chrome)?\s+import\s+[^\n]*\b(?:{})\b"
+						.format("|".join(HELPERS)))
+
+	# Closed at phase-C close-out: the c1-c5 groups are merged and every
+	# in-scope script now calls a shared helper, so this is empty on purpose.
+	# It stays as the one place a temporarily unthemed script may be named;
+	# adding a name here is a visible diff and needs a reason.
+	PENDING_THEMING = ()
+
+	# Entrypoints that only delegate. `theme.py` imports and calls
+	# `tui.__main__.main`, so its page is rendered in `tui/__main__.py` - a
+	# package module, not a root script - and the file-level regex below cannot
+	# see it. This is one explicit tuple rather than a silent skip: a test
+	# checks each name really is that delegate, so the exemption cannot be
+	# reused for a script that grows its own output.
+	DELEGATES = ("theme.py",)
+
+	# Full-screen engines: they own the whole screen (curses, the alternate
+	# screen or the plugin canvas) and paint their frame from the palette, so
+	# the inline page helper is the wrong seam. mdreader is pinned instead by
+	# tests/test_mdreader.py::test_chrome_pairs_are_palette_roles.
+	SCREEN_RENDERERS = ("fakeserver.py", "jsonl_monitor.py", "mdreader.py",
+						"screensaver.py")
+
+	def uses_chrome(self, name):
+		source = (REPO / name).read_text(encoding="utf-8")
+		return bool(self.CALL.search(source) or self.IMPORT.search(source))
+
+	def test_migrated_covers_every_script(self):
+		# The gate is only honest if the list it walks is the whole set: a new
+		# root script that is missing from MIGRATED would escape both checks.
+		scripts = {path.name for path in REPO.glob("*.py")}
+		self.assertEqual(scripts - set(NoPrivateAnsiTest.MIGRATED), set(),
+						 "new scripts must be added to MIGRATED (and themed)")
+
+	def test_skip_lists_stay_inside_migrated(self):
+		migrated = set(NoPrivateAnsiTest.MIGRATED)
+		self.assertEqual(set(self.PENDING_THEMING) - migrated, set(),
+						 "PENDING_THEMING names a script MIGRATED does not walk")
+		self.assertEqual(set(self.SCREEN_RENDERERS) - migrated, set(),
+						 "SCREEN_RENDERERS names a script MIGRATED does not walk")
+		self.assertEqual(set(self.DELEGATES) - migrated, set(),
+						 "DELEGATES names a script MIGRATED does not walk")
+		search = (set(self.PENDING_THEMING), set(self.SCREEN_RENDERERS),
+				  set(self.DELEGATES))
+		for index, first in enumerate(search):
+			for second in search[index + 1:]:
+				self.assertEqual(first & second, set(),
+								 "a script is exempt twice")
+
+	def test_delegates_are_really_pure_delegates(self):
+		# The exemption says "the page is in tui/__main__, not here". If one of
+		# these ever grows its own rendering, it has to pass the chrome gate
+		# instead of sliding through on a stale tuple entry.
+		for name in self.DELEGATES:
+			source = (REPO / name).read_text(encoding="utf-8")
+			self.assertIn("from tui.__main__ import", source,
+						  "{} is exempted as a delegate but no longer "
+						  "delegates to tui/__main__".format(name))
+
+	def test_in_scope_scripts_use_shared_chrome(self):
+		unthemed = [
+			name for name in NoPrivateAnsiTest.MIGRATED
+			if name not in self.PENDING_THEMING
+			and name not in self.SCREEN_RENDERERS
+			and name not in self.DELEGATES
+			and not self.uses_chrome(name)
+		]
+		self.assertEqual(
+			unthemed, [],
+			"these scripts print without a shared chrome helper "
+			"(tui.header/panel/rule/status/field/fill/menu or the table "
+			"helpers): {}".format(", ".join(unthemed)))
+
+
+class NoNestedSectionTest(unittest.TestCase):
+	"""A section inside a panel doubles the heading.
+
+	A `tui.panel` already frames its rows, so a `tui.section` in that slot
+	paints a second heading band inside the box; the page helper there is
+	`tui.style(..., fg="header-fg", bold=True)`.
+	"""
+
+	def test_no_script_puts_a_section_inside_a_panel(self):
+		offenders = []
+		for name in NoPrivateAnsiTest.MIGRATED:
+			tree = ast.parse((REPO / name).read_text(encoding="utf-8"))
+			for node in ast.walk(tree):
+				if not is_tui_call(node, "panel"):
+					continue
+				for arg in node.args:
+					for inner in ast.walk(arg):
+						if is_tui_call(inner, "section"):
+							offenders.append("{}:{}".format(name, inner.lineno))
+		self.assertEqual(offenders, [],
+						 "tui.section nested inside tui.panel: {}".format(
+							 ", ".join(offenders)))
+
+
+class ListNoColorTest(unittest.TestCase):
+	"""A monochrome tty keeps the table; a monochrome pipe stays plain."""
+
+	class Stream:
+		"""Minimal tty-able stdout: writes are captured, no file descriptor."""
+
+		def __init__(self, tty, encoding="utf-8"):
+			self._buffer = io.StringIO()
+			self._tty = tty
+			self.encoding = encoding
+
+		def write(self, text):
+			return self._buffer.write(text)
+
+		def flush(self):
+			pass
+
+		def getvalue(self):
+			return self._buffer.getvalue()
+
+		def isatty(self):
+			return self._tty
+
+		def fileno(self):
+			raise io.UnsupportedOperation("no file descriptor")
+
+	def render(self, tty, environ=None):
+		import importlib
+		list_module = importlib.import_module("list")
+		stream = self.Stream(tty)
+		env = {key: value for key, value in clean_env().items()
+			   if key not in ("TERM", "COLORTERM")}
+		env.update(environ or {"NO_COLOR": "1"})
+		with mock.patch.dict(os.environ, env, clear=True), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(sys, "stdout", stream):
+			list_module.list_scripts()
+		return stream.getvalue()
+
+	def test_no_color_tty_still_draws_the_box(self):
+		out = self.render(tty=True)
+		self.assertIn("\u250c", out, "a monochrome tty lost the top border:\n" + out[:400])
+		self.assertIn("\u2502", out)
+		self.assertIn("ID", out)
+		self.assertNotIn("\x1b", out, "NO_COLOR output still carries escapes")
+		self.assertNotIn("\t", out, "a tty degraded to TAB records")
+		self.assertIn("Total scripts found:", out)
+
+	def test_no_color_zero_still_disables_colour(self):
+		# no-color.org: any non-empty value means no colour, "0" included.
+		out = self.render(tty=True, environ={"NO_COLOR": "0"})
+		self.assertNotIn("\x1b", out)
+		self.assertIn("\u250c", out)
+
+	def test_ascii_glyphs_when_unicode_is_decided_off(self):
+		# A tty is where caps.unicode is the deciding factor: at a pipe the box
+		# is stripped because the layout is plain, not because of unicode, so a
+		# pipe test cannot tell the two apart. CATRO_ASCII on a tty must keep
+		# the box and swap its glyphs for ASCII equivalents.
+		out = self.render(tty=True, environ={"CATRO_ASCII": "1"})
+		self.assertIn("+", out, "ASCII box corners are missing:\n" + out[:400])
+		self.assertIn("|", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518":
+			self.assertNotIn(glyph, out, "CATRO_ASCII left a unicode glyph")
+		self.assertIn("ID", out)
+		self.assertIn("Total scripts found:", out)
+
+	def test_forced_colour_pipe_gets_the_full_styled_table(self):
+		# Contract invariant 2 (amended): an explicit request on a pipe turns
+		# plain OFF, so the pipe gets borders, padding and zebra rows - not bare
+		# TAB records with a styled banner on top.
+		out = self.render(tty=False, environ={"FORCE_COLOR": "3"})
+		self.assertIn("\x1b[38;2;163;146;192m\x1b[48;2;41;34;56m\u250c", out,
+					  "the top border is missing its accent colour")
+		self.assertIn("\u2502", out)
+		self.assertIn("\x1b[48;2;27;23;38m", out, "the zebra row lost its background")
+		self.assertIn("\x1b[48;2;41;34;56m", out)
+		self.assertIn(" ID   ", out, "the header lost its padding")
+		self.assertNotIn("\t", out, "a forced pipe fell back to TAB records")
+
+	def test_catro_color_16_pipe_is_decorated_with_16_colour_codes(self):
+		out = self.render(tty=False, environ={"CATRO_COLOR": "16"})
+		self.assertIn("\x1b[37m\x1b[40m\u250c", out)
+		self.assertNotIn("\x1b[38;2;", out, "16-colour output carried truecolor")
+		self.assertNotIn("\t", out)
+
+	def test_no_color_beats_force_color_on_a_pipe(self):
+		out = self.render(tty=False,
+						  environ={"FORCE_COLOR": "3", "NO_COLOR": "1"})
+		self.assertNotIn("\x1b", out, "NO_COLOR lost to FORCE_COLOR on a pipe")
+		self.assertIn("ID\tScript Name\tSize\tDescription", out)
+
+	def test_no_color_pipe_stays_tab_separated(self):
+		out = self.render(tty=False)
+		self.assertNotIn("\x1b", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+		header = "ID\tScript Name\tSize\tDescription"
+		self.assertIn(header, out)
+		record = out.split(header + "\n", 1)[1].splitlines()[0]
+		self.assertEqual(len(record.split("\t")), 4)
+
+
+class ActionPlainTableTest(unittest.TestCase):
+	"""action.list_actions() keeps its layout and emits plain records in a pipe."""
+
+	def render(self, actions):
+		import action as action_module
+		with tempfile.TemporaryDirectory() as td:
+			path = os.path.join(td, "actions.json")
+			with open(path, "w", encoding="utf-8") as handle:
+				json.dump(actions, handle)
+			buffer = io.StringIO()
+			with mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "ACTIONS_FILE", path):
+				with contextlib.redirect_stdout(buffer):
+					action_module.list_actions()
+		return buffer.getvalue()
+
+	def records(self, out):
+		lines = out.splitlines()
+		start = lines.index("ID\tAction Name\tCommand\tDescription") + 1
+		body = lines[start:]
+		end = next(index for index, line in enumerate(body)
+				   if line.startswith("Total macros saved:"))
+		return body[:end]
+
+	def test_list_actions_detects_capabilities_once(self):
+		import action as action_module
+		with tempfile.TemporaryDirectory() as td:
+			path = os.path.join(td, "actions.json")
+			with open(path, "w", encoding="utf-8") as handle:
+				json.dump({"ping": {"command": "ping", "description": "x"}}, handle)
+			buffer = io.StringIO()
+			with mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "ACTIONS_FILE", path), \
+					mock.patch.object(tui, "detect", wraps=tui.detect) as detect:
+				with contextlib.redirect_stdout(buffer):
+					action_module.list_actions()
+		self.assertEqual(detect.call_count, 1,
+						 "list_actions() re-detected the terminal")
+
+	def test_pipe_is_tab_separated_without_ansi_or_glyphs(self):
+		out = self.render({
+			"ping": {"command": "ping 127.0.0.1", "description": "Loopback"},
+		})
+		records = self.records(out)
+		self.assertEqual(len(records), 1, out)
+		self.assertEqual(records[0].split("\t"),
+						 ["1", "ping", "ping 127.0.0.1", "Loopback"])
+		self.assertNotIn("\x1b", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+
+	def test_long_cells_keep_the_table_truncation_rule(self):
+		command = "x" * 40
+		description = "y" * 40
+		out = self.render({
+			"long": {"command": command, "description": description},
+		})
+		fields = self.records(out)[0].split("\t")
+		self.assertEqual(fields[2], "x" * 28 + "..")
+		self.assertEqual(fields[3], "y" * 32 + "..")
+
+
+class ActionInitAnsiTest(unittest.TestCase):
+	"""action.main() must enable ANSI before it resolves capabilities.
+
+	A Windows console without VT processing prints literal ESC[...m codes, so the
+	console bootstrap has to run once before the first detect() call. The shared
+	recorder pins both the count and the order.
+	"""
+
+	def test_main_inits_ansi_once_before_first_detect(self):
+		import action as action_module
+		events = []
+		real_detect = tui.detect
+
+		def record_init_ansi():
+			events.append("init_ansi")
+
+		def record_detect(*args, **kwargs):
+			events.append("detect")
+			return real_detect(*args, **kwargs)
+
+		with mock.patch.dict(os.environ, clean_env(), clear=True), \
+				mock.patch.object(sys, "argv", ["action.py"]), \
+				mock.patch.object(action_module, "load_actions", return_value={}), \
+				mock.patch.object(action_module, "list_actions"), \
+				mock.patch.object(tui, "init_ansi", side_effect=record_init_ansi), \
+				mock.patch.object(tui, "detect", side_effect=record_detect):
+			action_module.main()
+
+		self.assertEqual(events.count("init_ansi"), 1,
+						 "main() did not call tui.init_ansi() exactly once")
+		self.assertIn("detect", events, "main() never resolved capabilities")
+		self.assertLess(events.index("init_ansi"), events.index("detect"),
+						"tui.init_ansi() must run before the first tui.detect()")
+
+
+class ScreensaverMenuTest(unittest.TestCase):
+	"""The menu decodes keys through tui.keys; a real terminal smoke is owed."""
+
+	class Stream:
+		def __init__(self, tty=True):
+			self._buffer = io.StringIO()
+			self._tty = tty
+
+		def write(self, text):
+			return self._buffer.write(text)
+
+		def flush(self):
+			pass
+
+		def isatty(self):
+			return self._tty
+
+		def getvalue(self):
+			return self._buffer.getvalue()
+
+	def setUp(self):
+		import screensaver as module
+		self.screensaver = module
+
+	def test_step_wraps_up_and_down(self):
+		self.assertEqual(self.screensaver.menu_step(3, 0, "up"), ("move", 2))
+		self.assertEqual(self.screensaver.menu_step(3, 2, "down"), ("move", 0))
+		self.assertEqual(self.screensaver.menu_step(3, 1, "up"), ("move", 0))
+
+	def test_step_enter_selects_and_escape_exits(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "enter"),
+						 ("select", 1))
+		for key in ("esc", "ctrl-c"):
+			self.assertEqual(self.screensaver.menu_step(3, 1, key),
+							 ("exit", 1))
+
+	def test_step_unknown_key_redraws_in_place(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "x"), ("move", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 1, None), ("move", 1))
+
+	def test_step_digit_selects_the_row_it_labels(self):
+		self.assertEqual(self.screensaver.menu_step(3, 0, "2"), ("select", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 2, "1"), ("select", 0))
+		self.assertEqual(self.screensaver.menu_step(3, 0, "3"), ("select", 2))
+
+	def test_step_out_of_range_digit_redraws_in_place(self):
+		self.assertEqual(self.screensaver.menu_step(3, 1, "4"), ("move", 1))
+		self.assertEqual(self.screensaver.menu_step(3, 1, "0"), ("move", 1))
+
+	def test_draw_menu_marks_only_the_selected_row(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
+		out = stream.getvalue()
+		self.assertEqual(out.count("> "), 1, out)
+		self.assertIn("> 2. beta", out)
+		self.assertNotIn("> 1. alpha", out)
+		self.assertIn("Use UP/DOWN arrows", out)
+
+	def test_selected_row_uses_the_shared_menu_bar(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap16())
+		out = stream.getvalue()
+		bar = tui.prefix(fg="fg-accent", bg="bg-inside-active", bold=True,
+						 cap=cap16())
+		self.assertIn(bar, out, "the picker lost the shared selected-row bar")
+
+	def test_menu_paints_on_cp1252(self):
+		# Regression: draw_menu hardcoded U+2500 glyphs and ignored cap.unicode,
+		# so a cp1252 console died with UnicodeEncodeError before the frame.
+		stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+		cap = tui.Capabilities(level="16", unicode=False, width=None,
+							   isatty=True, plain=False, reason="test")
+		self.screensaver.draw_menu(stream, ["alpha", "beta"], 1, cap)
+		stream.flush()
+		out = stream.buffer.getvalue().decode("cp1252")
+		out.encode("ascii")  # pure ASCII: the frame degraded, nothing raised
+		self.assertIn("+", out)
+		self.assertIn("|", out)
+		self.assertNotIn("\u2500", out)
+
+	def test_menu_keeps_the_box_frame_when_unicode_is_allowed(self):
+		stream = self.Stream()
+		self.screensaver.draw_menu(stream, ["alpha"], 0, cap16())
+		out = stream.getvalue()
+		self.assertEqual(out.count("\u250c"), 1, out)
+		self.assertIn("SCREENSAVERS", out.splitlines()[0])
+		for glyph in "\u2500\u2502\u2514\u2518":
+			self.assertIn(glyph, out)
+
+	def test_select_returns_the_file_through_the_decoded_keys(self):
+		stream = self.Stream()
+		keys = iter(["down", "enter"])
+		with mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(tui.keys, "read_key",
+								  side_effect=lambda *a, **k: next(keys)), \
+				mock.patch.object(tui.keys, "raw_mode",
+								  return_value=contextlib.nullcontext()):
+			chosen = self.screensaver.get_menu_selection(
+				["alpha.screensaver", "beta.screensaver"])
+		self.assertTrue(chosen.endswith("beta.screensaver"), chosen)
+		self.assertIn(tui.screen.CURSOR_HIDE, stream.getvalue())
+		self.assertIn(tui.screen.ALT_SCREEN_ON, stream.getvalue())
+
+	def test_escape_leaves_with_status_zero_and_restores_the_cursor(self):
+		stream = self.Stream()
+		with mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(tui.keys, "read_key", return_value="esc"), \
+				mock.patch.object(tui.keys, "raw_mode",
+								  return_value=contextlib.nullcontext()):
+			with self.assertRaises(SystemExit) as caught:
+				self.screensaver.get_menu_selection(["alpha.screensaver"])
+		self.assertEqual(caught.exception.code, 0)
+		out = stream.getvalue()
+		self.assertIn(tui.screen.CURSOR_SHOW, out)
+		self.assertIn(tui.screen.ALT_SCREEN_OFF, out)
+
+
+class KeygenMarkerTests(unittest.TestCase):
+	"""The picker pointer must survive a legacy codepage.
+
+	`cap.unicode` only proves the box glyphs encode. cp437/cp850 draw boxes but
+	cannot take U+25B6, so the old unconditional marker raised
+	`UnicodeEncodeError` inside the picker; the ASCII `>` is the fallback.
+	"""
+
+	def cap(self, unicode=True):
+		return mock.Mock(unicode=unicode, plain=False, level="256")
+
+	def test_utf8_stream_keeps_the_pointer(self):
+		stream = mock.Mock(encoding="utf-8")
+		self.assertEqual(keygen.marker_for(stream, self.cap()), "\u25b6")
+
+	def test_legacy_codepage_falls_back_to_ascii(self):
+		stream = mock.Mock(encoding="cp437")
+		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+	def test_no_unicode_capability_falls_back_to_ascii(self):
+		stream = mock.Mock(encoding="utf-8")
+		self.assertEqual(keygen.marker_for(stream, self.cap(unicode=False)), ">")
+
+	def test_unknown_encoding_falls_back_to_ascii(self):
+		stream = mock.Mock(encoding="no-such-codec")
+		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+	def test_stream_without_an_encoding_falls_back_to_ascii(self):
+		stream = mock.Mock(spec=["write"])
+		self.assertEqual(keygen.marker_for(stream, self.cap()), ">")
+
+
+class HelpPanelTest(unittest.TestCase):
+	"""help.py composes its page from one `tui.panel`, not a border loop."""
+
+	DOC = "COUNT\n=====\n\nBody line\n\tIndented line\n"
+
+	def render(self, doc, cap):
+		import help as help_module
+		stream = FakeTty()
+		with contextlib.redirect_stdout(stream):
+			help_module.print_colored_docstring(doc, cap)
+		return stream.getvalue()
+
+	def test_docstring_is_one_panel_with_the_title_in_the_rule(self):
+		out = self.render(self.DOC, cap16())
+		self.assertEqual(out.count("\u250c"), 1, out)
+		self.assertEqual(out.count("\u2514"), 1, out)
+		self.assertIn("COUNT", out.splitlines()[0])
+		self.assertNotIn("=====", out, "the header underline leaked into the page")
+
+	def test_indent_colours_survive_inside_the_panel(self):
+		out = self.render(self.DOC, cap16())
+		indented = [line for line in out.splitlines() if "Indented line" in line]
+		self.assertEqual(len(indented), 1, out)
+		self.assertIn("\033[36m", indented[0], "level 1 lost its cyan ink")
+
+	def test_ascii_frame_when_unicode_is_off(self):
+		cap = tui.Capabilities(level="16", unicode=False, width=None,
+							   isatty=True, plain=False, reason="test")
+		out = self.render(self.DOC, cap)
+		self.assertIn("+", out)
+		self.assertIn("|", out)
+		self.assertNotIn("\u2500", out)
+
+	def test_plain_docstring_keeps_its_lines_and_no_frame(self):
+		cap = tui.Capabilities(level="16", unicode=True, width=None,
+							   isatty=False, plain=True, reason="test")
+		out = self.render(self.DOC, cap)
+		self.assertEqual(out, "COUNT\n\nBody line\n    Indented line\n")
+
+	def test_title_near_the_body_width_is_not_cut_off(self):
+		# The title is two cells wider than the longest body line, which is
+		# exactly the case where the panel's top-rule margin used to eat it.
+		title = "A TITLE SLIGHTLY WIDER THAN THE BODY"
+		doc = "{}\n{}\n\nBody is narrower\n".format(title, "=" * len(title))
+		out = self.render(doc, cap16())
+		top = out.splitlines()[0]
+		self.assertIn(title, top, "the frame cut the title: {!r}".format(top))
+		widths = {tui.display_width(line) for line in out.splitlines() if line}
+		self.assertEqual(len(widths), 1, "the frame is ragged: {}".format(widths))
+
+
+class CountTableTest(unittest.TestCase):
+	"""count.py renders one `render_table` with a bold TOTAL last row."""
+
+	def setUp(self):
+		import count as count_module
+		self.count = count_module
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		root = Path(self.tmp.name)
+		(root / "a.txt").write_text("x" * 10, encoding="utf-8")
+		(root / "b.py").write_text("y" * 5, encoding="utf-8")
+
+	def render(self, tty, argv=None):
+		stream = FakeTty(tty)
+		env = clean_env()
+		if tty:
+			env["FORCE_COLOR"] = "3"
+		with mock.patch.dict(os.environ, env, clear=True), \
+				mock.patch.object(tui, "init_ansi"), \
+				mock.patch.object(sys, "stdout", stream), \
+				mock.patch.object(sys, "argv",
+								  argv or ["count.py", self.tmp.name]):
+			self.count.main()
+		return stream.getvalue()
+
+	def test_total_is_the_last_row_and_is_bold(self):
+		out = self.render(tty=True)
+		lines = out.splitlines()
+		indexes = [i for i, line in enumerate(lines) if "TOTAL (ALL LISTED)" in line]
+		self.assertEqual(len(indexes), 1, out)
+		total = indexes[0]
+		self.assertIn("\033[1m", lines[total], "TOTAL lost its bold ink")
+		closing = lines[total + 1]
+		self.assertIn("\u2514", closing, "TOTAL is not the last table row")
+		self.assertNotIn("TOTAL", "".join(lines[total + 2:]))
+
+	def test_data_rows_keep_the_rainbow(self):
+		out = self.render(tty=True)
+		self.assertIn("\033[38;2;255;0;0m", out, "the first row lost its red ink")
+
+	def test_pipe_is_unchanged_tab_records(self):
+		out = self.render(tty=False)
+		self.assertNotIn("\x1b", out)
+		for glyph in "\u2500\u2502\u250c\u2510\u2514\u2518\u253c":
+			self.assertNotIn(glyph, out)
+		lines = [line for line in out.splitlines() if line.strip()]
+		self.assertEqual(lines[-4], "Extension\tCount\tTotal Size")
+		self.assertEqual(lines[-3], ".txt\t1\t10.00 B")
+		self.assertEqual(lines[-2], ".py\t1\t5.00 B")
+		self.assertEqual(lines[-1], "TOTAL (ALL LISTED)\t2\t15.00 B")
+
+	def test_long_label_is_truncated_and_the_box_stays_square(self):
+		long_name = "a-rather-long-directory-name-that-overflows-the-column"
+		subdir = Path(self.tmp.name) / long_name
+		subdir.mkdir()
+		(subdir / "payload.bin").write_text("z" * 3, encoding="utf-8")
+		out = self.render(tty=True, argv=["count.py", self.tmp.name, "-d"])
+		frame = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u253c"
+		boxed = [line for line in out.splitlines()
+				 if any(glyph in line for glyph in frame)]
+		self.assertTrue(boxed, out)
+		widths = {tui.display_width(line) for line in boxed}
+		self.assertEqual(len(widths), 1,
+						 "a long label broke the box: widths {}".format(widths))
+		self.assertIn("a-rather-long-directory-name", out)
+		self.assertIn("..", out, "the long label was not cut at the table seam")
+
+	def test_long_label_pipe_record_keeps_the_full_name(self):
+		long_name = "a-rather-long-directory-name-that-overflows-the-column"
+		subdir = Path(self.tmp.name) / long_name
+		subdir.mkdir()
+		(subdir / "payload.bin").write_text("z" * 3, encoding="utf-8")
+		out = self.render(tty=False, argv=["count.py", self.tmp.name, "-d"])
+		self.assertIn(long_name + "\t", out)
+
+
+class ActionResultBlockTest(unittest.TestCase):
+	"""action.py reports a saved macro in a panel (no flow change)."""
+
+	def test_saved_macro_is_reported_in_a_panel(self):
+		import action as action_module
+		with tempfile.TemporaryDirectory() as td:
+			path = os.path.join(td, "actions.json")
+			stream = FakeTty()
+			with mock.patch.object(action_module, "ACTIONS_FILE", path), \
+					mock.patch.dict(os.environ, clean_env(), clear=True), \
+					mock.patch.object(action_module, "prompt_input_with_default",
+									  side_effect=["echo hi", "A description"]), \
+					contextlib.redirect_stdout(stream):
+				action_module.interactive_add("newmac", cap=cap16())
+		out = stream.getvalue()
+		self.assertIn("\u250c", out, out)
+		self.assertIn("ACTION SAVED", out)
+		self.assertIn("echo hi", out)
+		self.assertIn("newmac", out)
+
+
+if __name__ == "__main__":
+	unittest.main()

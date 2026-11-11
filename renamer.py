@@ -57,16 +57,21 @@ import re
 import functools
 import ctypes
 
-# Initialize environment for ANSI colors on Windows
-if os.name == "nt":
-    os.system("color")
+import tui
 
-# Color Constants
-CLR_ORANGE = "\033[93m"
-CLR_GREEN = "\033[92m"
-CLR_BLUE = "\033[94m"
-CLR_RED = "\033[91m"
-CLR_RESET = "\033[0m"
+# One capability probe per run. The `__main__` block resolves it before the
+# first styled line, so the colour level, the Unicode decision and the
+# plain/pipe mode cannot disagree between two prints of the same run.
+CAP = None
+
+
+def get_cap():
+    """Capabilities for this run, detected once and reused."""
+    global CAP
+    if CAP is None:
+        CAP = tui.detect()
+    return CAP
+
 
 # Path for the undo file in the script's directory
 UNDO_FILE = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "renamer.undo")
@@ -125,10 +130,12 @@ FORBIDDEN_EXTENSIONS = (
 
 
 class ColoredArgumentParser(argparse.ArgumentParser):
-    """Custom ArgumentParser that outputs errors in red."""
+    """Custom ArgumentParser that reports errors through the shared status line."""
 
     def error(self, message):
-        sys.stderr.write(f"{CLR_RED}error: {message}{CLR_RESET}\n")
+        sys.stderr.write(
+            tui.status("error", message, cap=get_cap()) + "\n"
+        )
         self.print_usage(sys.stderr)
         sys.exit(2)
 
@@ -140,13 +147,18 @@ def save_undo_data(history):
             for old, new in history:
                 f.write(f"{old}|{new}\n")
     except Exception as e:
-        sys.stderr.write(f"{CLR_RED}Could not save undo data: {e}{CLR_RESET}\n")
+        sys.stderr.write(
+            tui.status("error", f"Could not save undo data: {e}", cap=get_cap())
+            + "\n"
+        )
 
 
 def perform_undo():
     """Reverses the last rename operation in reverse order."""
+    cap = get_cap()
+
     if not os.path.exists(UNDO_FILE):
-        print(f"{CLR_RED}No undo history found.{CLR_RESET}")
+        print(tui.status("error", "No undo history found.", cap=cap))
         return
 
     history = []
@@ -157,38 +169,54 @@ def perform_undo():
                 if len(parts) == 2:
                     history.append(parts)
     except Exception as e:
-        sys.stderr.write(f"{CLR_RED}Error reading undo file: {e}{CLR_RESET}\n")
+        sys.stderr.write(
+            tui.status("error", f"Error reading undo file: {e}", cap=cap) + "\n"
+        )
         return
 
     if not history:
-        print("Undo history is empty.")
+        print(tui.status("info", "Undo history is empty.", cap=cap))
         return
 
-    print(f"Undoing last operation ({len(history)} files)...\n")
+    print(tui.status("info", f"Undoing last operation ({len(history)} files)...",
+                     cap=cap))
+    print()
 
     # Reverse history to undo in reverse order
     for old_path, new_path in reversed(history):
         if not os.path.exists(new_path):
-            print(
-                f"{CLR_RED}Missing: {new_path}{CLR_RESET} (cannot restore to {os.path.basename(old_path)})"
-            )
+            print(tui.status(
+                "error",
+                "Missing: {} (cannot restore to {})".format(
+                    new_path, os.path.basename(old_path)),
+                cap=cap,
+            ))
             continue
 
         try:
             os.rename(new_path, old_path)
-            print(
-                f"Restored: {CLR_ORANGE}{os.path.basename(new_path)}{CLR_RESET} -> {CLR_GREEN}{os.path.basename(old_path)}{CLR_RESET}"
-            )
+            print(tui.status(
+                "ok",
+                "Restored: {} -> {}".format(
+                    os.path.basename(new_path), os.path.basename(old_path)),
+                cap=cap,
+            ))
         except Exception as e:
-            sys.stderr.write(f"{CLR_RED}Failed to restore {new_path}: {e}{CLR_RESET}\n")
+            sys.stderr.write(
+                tui.status("error", f"Failed to restore {new_path}: {e}",
+                           cap=cap) + "\n"
+            )
 
     # Clear history
     try:
         os.remove(UNDO_FILE)
     except Exception as e:
-        sys.stderr.write(f"{CLR_RED}Failed to clear undo file: {e}{CLR_RESET}\n")
+        sys.stderr.write(
+            tui.status("error", f"Failed to clear undo file: {e}", cap=cap) + "\n"
+        )
 
-    print("\nUndo complete.")
+    print()
+    print(tui.status("info", "Undo complete.", cap=cap))
 
 
 def get_directories_at_depth(base_dir, target_depth, pattern=None):
@@ -215,7 +243,8 @@ def get_directories_at_depth(base_dir, target_depth, pattern=None):
                     scan_depth(subdir.path, current_depth + 1)
         except OSError as e:
             sys.stderr.write(
-                f"{CLR_RED}Error scanning {current_path}: {e}{CLR_RESET}\n"
+                tui.status("error", f"Error scanning {current_path}: {e}", cap=get_cap())
+                + "\n"
             )
 
     scan_depth(base_dir, 1)
@@ -272,7 +301,10 @@ def get_target_files(
 
                         items.append(filename)
     except OSError as e:
-        sys.stderr.write(f"{CLR_RED}Error accessing directory: {e}{CLR_RESET}\n")
+        sys.stderr.write(
+            tui.status("error", f"Error accessing directory: {e}", cap=get_cap())
+            + "\n"
+        )
         sys.exit(1)
 
     return items
@@ -335,6 +367,7 @@ def rename_files(
     is_folder_mode=False,
 ):
     """Performs the sequential renaming/copying. Returns history for undo."""
+    cap = get_cap()
     history = []
     rel_folder = os.path.relpath(folder_path, os.getcwd())
     folder_display = (
@@ -344,7 +377,9 @@ def rename_files(
     )
 
     if not files:
-        print(f"No matching items found in '{folder_display}'. Nothing to do.")
+        print(tui.status("warn",
+                         f"No matching items found in '{folder_display}'. Nothing to do.",
+                         cap=cap))
         return history
 
     num_files = len(files)
@@ -354,35 +389,52 @@ def rename_files(
     if striponly_str is None:
         if digit_count is None:
             digit_count = required_digits
-            print(f"[{folder_display}] Auto-calculated digit padding: {digit_count}")
+            print(tui.status("info",
+                             f"[{folder_display}] Auto-calculated digit padding: {digit_count}",
+                             cap=cap))
         elif digit_count > 0:
             if digit_count < required_digits:
                 sys.stderr.write(
-                    f"{CLR_RED}Error: Specified digits ({digit_count}) is too small for {num_files} files in '{folder_display}'.{CLR_RESET}\n"
+                    tui.status(
+                        "error",
+                        f"Specified digits ({digit_count}) is too small for {num_files} files in '{folder_display}'.",
+                        cap=cap,
+                    )
+                    + "\n"
                 )
                 sys.stderr.write(f"Required digits: {required_digits}\n")
                 sys.exit(1)
         elif digit_count == 0:
             if is_folder_mode:
-                print(
-                    f"[{folder_display}] Numbering disabled. Using original folder names."
-                )
+                print(tui.status(
+                    "info",
+                    f"[{folder_display}] Numbering disabled. Using original folder names.",
+                    cap=cap,
+                ))
             else:
-                print(
-                    f"[{folder_display}] Numbering disabled. Using original filenames."
-                )
+                print(tui.status(
+                    "info",
+                    f"[{folder_display}] Numbering disabled. Using original filenames.",
+                    cap=cap,
+                ))
     else:
         if is_folder_mode:
-            print(
-                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from folder names."
-            )
+            print(tui.status(
+                "info",
+                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from folder names.",
+                cap=cap,
+            ))
         else:
-            print(
-                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from filenames."
-            )
+            print(tui.status(
+                "info",
+                f"[{folder_display}] Strip-only mode: Removing '{striponly_str}' from filenames.",
+                cap=cap,
+            ))
 
     item_type_str = "folders" if is_folder_mode else "files"
-    print(f"Processing {num_files} {item_type_str} in '{folder_display}'...\n")
+    print(tui.header(f"Processing {num_files} {item_type_str} in '{folder_display}'...",
+                     cap=cap))
+    print()
 
     for i, filename in enumerate(files, start=1):
         if is_folder_mode:
@@ -418,7 +470,7 @@ def rename_files(
 
         # Check if the name hasn't changed at all
         if filename == new_name:
-            print(f"Skipping: {CLR_ORANGE}{filename}{CLR_RESET} (no change)")
+            print(tui.status("warn", f"Skipping: {filename} (no change)", cap=cap))
             continue
 
         # Handle collisions with incrementing suffix
@@ -434,7 +486,9 @@ def rename_files(
             final_name = f"{base_new_name}({counter}){extension}"
 
         new_path = os.path.join(folder_path, final_name)
-        display_color = CLR_BLUE if is_collision else CLR_GREEN
+        # A collision-renamed target is an info line (accent), a plain
+        # rename/copy an ok line (success).
+        new_kind = "info" if is_collision else "ok"
 
         try:
             if keep:
@@ -442,23 +496,28 @@ def rename_files(
                     shutil.copytree(old_path, new_path)
                 else:
                     shutil.copy2(old_path, new_path)
-                print(
-                    f"Copied: {CLR_ORANGE}{filename}{CLR_RESET} -> {display_color}{final_name}{CLR_RESET}"
-                )
+                print(tui.status(
+                    new_kind, f"Copied: {filename} -> {final_name}", cap=cap))
             else:
                 os.rename(old_path, new_path)
-                print(
-                    f"Renamed: {CLR_ORANGE}{filename}{CLR_RESET} -> {display_color}{final_name}{CLR_RESET}"
-                )
+                print(tui.status(
+                    new_kind, f"Renamed: {filename} -> {final_name}", cap=cap))
                 history.append((os.path.abspath(old_path), os.path.abspath(new_path)))
         except Exception as e:
-            sys.stderr.write(f"{CLR_RED}Failed to process {filename}: {e}{CLR_RESET}\n")
+            sys.stderr.write(
+                tui.status("error", f"Failed to process {filename}: {e}", cap=cap)
+                + "\n"
+            )
 
     print()  # Spacer between folders
     return history
 
 
 if __name__ == "__main__":
+    # Windows ANSI bootstrap plus the single capability probe for the run.
+    tui.init_ansi()
+    CAP = tui.detect()
+
     parser = ColoredArgumentParser(
         description="Sequentially rename files in the current folder or subdirectories."
     )
@@ -659,9 +718,19 @@ if __name__ == "__main__":
 
     # Handle confirmation for --all flag
     if args.all:
-        confirm = input(
-            f"{CLR_RED}WARNING: You are using the --all flag. This will process system files and scripts.{CLR_RESET}\nAre you sure? (y/n): "
-        )
+        # The confirmation is the one interactive step: refuse a piped or
+        # closed stdin with the shared one-line preflight instead of letting
+        # input() raise EOFError halfway through a destructive run.
+        tui.require_tty("renamer --all")
+        print(tui.panel("Confirm", [
+            tui.status(
+                "error",
+                "You are using the --all flag.",
+                cap=get_cap(),
+            ),
+            "This will process system files and scripts.",
+        ], cap=get_cap()))
+        confirm = tui.ask_text("Are you sure? (y/n): ")
         if confirm.lower() != "y":
             print("Operation cancelled.")
             sys.exit()

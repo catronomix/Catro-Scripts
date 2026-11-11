@@ -45,9 +45,7 @@ import argparse
 import subprocess
 import platform
 
-def init_ansi():
-	if platform.system().lower() == "windows":
-		os.system('color')
+import tui
 
 # Optional dependencies, imported on demand inside main() so that --help works
 # without pillow/decord installed.
@@ -75,19 +73,19 @@ def check_ffmpeg():
 	except FileNotFoundError:
 		return False
 
-def get_ffmpeg_instructions():
+def get_ffmpeg_instructions(cap):
 	return (
-		"\n\033[0;33mFFmpeg is missing or not found.\033[0m\n"
+		"\n" + tui.status("warn", "FFmpeg is missing or not found.", cap=cap) + "\n"
 		"Decord requires FFmpeg/LibAV. Place ffmpeg in the script folder or add it to PATH.\n"
 	)
 
-def extract_frames(video_path, frame_id=None, use_keyframe=False, interval=None, total=None):
+def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=None, total=None):
 	if not os.path.exists(video_path):
-		print(f"\033[0;31mError: File '{video_path}' not found.\033[0m")
+		print(tui.status("error", f"File '{video_path}' not found.", cap=cap))
 		return
 
 	if not check_ffmpeg():
-		print(get_ffmpeg_instructions())
+		print(get_ffmpeg_instructions(cap))
 		return
 
 	try:
@@ -100,7 +98,7 @@ def extract_frames(video_path, frame_id=None, use_keyframe=False, interval=None,
 			# Get indices of keyframes (I-frames) only
 			pool = vr.get_key_indices()
 			if not pool:
-				print("\033[0;31mError: Could not retrieve keyframes from this video.\033[0m")
+				print(tui.status("error", "Could not retrieve keyframes from this video.", cap=cap))
 				return
 		else:
 			pool = list(range(total_frames))
@@ -117,48 +115,51 @@ def extract_frames(video_path, frame_id=None, use_keyframe=False, interval=None,
 					try:
 						target_idx = int(frame_id)
 					except ValueError:
-						print(f"\033[0;31mError: Invalid frame ID '{frame_id}'.\033[0m")
+						print(tui.status("error", f"Invalid frame ID '{frame_id}'.", cap=cap))
 						return
 			else:
 				target_idx = frame_id
 
 			if target_idx < 0 or target_idx >= total_frames:
-				print(f"\033[0;31mError: Frame index {target_idx} out of range.\033[0m")
+				print(tui.status("error", f"Frame index {target_idx} out of range.", cap=cap))
 				return
 
 			# If -k is on, snap target_idx to nearest keyframe
 			if use_keyframe:
 				nearest_idx = min(pool, key=lambda x: abs(x - target_idx))
 				if nearest_idx != target_idx:
-					print(f"Snapping frame {target_idx} to nearest keyframe {nearest_idx}...")
+					print(tui.status("info", f"Snapping frame {target_idx} to nearest keyframe {nearest_idx}...", cap=cap))
 					target_idx = nearest_idx
 
-			print(f"Extracting frame {target_idx} from {os.path.basename(video_path)}...")
+			print(tui.header(f"Extracting frame {target_idx} from {os.path.basename(video_path)}...", cap=cap))
 			frame = vr[target_idx].asnumpy()
 			img = Image.fromarray(frame)
 			output_name = f"{base_name}_frame_{target_idx}.png"
 			img.save(output_name)
-			print(f"\033[0;32m[Success] Frame saved as: {output_name}\033[0m")
+			print(tui.panel(None, [tui.status(
+				"ok", f"Frame saved as: {output_name}", cap=cap)], cap=cap))
 
 		# Case 2: Interval-based extraction
 		elif interval is not None:
 			target_indices = [pool[i] for i in range(0, len(pool), interval)]
-			print(f"Extracting {len(target_indices)} frames with interval={interval}...")
+			print(tui.header(f"Extracting {len(target_indices)} frames with interval={interval}...", cap=cap))
 			
 			for idx in target_indices:
 				frame = vr[idx].asnumpy()
 				img = Image.fromarray(frame)
 				output_name = f"{base_name}_frame_{idx}.png"
 				img.save(output_name)
-				print(f"Saved: {output_name}")
+				print(tui.status("info", f"Saved: {output_name}", cap=cap))
 			
-			print(f"\033[0;32m[Success] Successfully extracted {len(target_indices)} frames.\033[0m")
+			print(tui.panel(None, [tui.status(
+				"ok", f"Successfully extracted {len(target_indices)} frames.",
+				cap=cap)], cap=cap))
 
 		# Case 3: Total evenly spread extraction
 		elif total is not None:
 			pool_len = len(pool)
 			if total > pool_len:
-				print(f"\033[0;33mWarning: Requested {total} frames, but only {pool_len} are available in the pool. Extracting all {pool_len}.\033[0m")
+				print(tui.status("warn", f"Requested {total} frames, but only {pool_len} are available in the pool. Extracting all {pool_len}.", cap=cap))
 				total = pool_len
 
 			if total == 1:
@@ -167,22 +168,24 @@ def extract_frames(video_path, frame_id=None, use_keyframe=False, interval=None,
 				selected_pool_indices = [int(round(i * (pool_len - 1) / (total - 1))) for i in range(total)]
 
 			target_indices = [pool[idx] for idx in selected_pool_indices]
-			print(f"Extracting {len(target_indices)} evenly spread frames...")
+			print(tui.header(f"Extracting {len(target_indices)} evenly spread frames...", cap=cap))
 
 			for idx in target_indices:
 				frame = vr[idx].asnumpy()
 				img = Image.fromarray(frame)
 				output_name = f"{base_name}_frame_{idx}.png"
 				img.save(output_name)
-				print(f"Saved: {output_name}")
+				print(tui.status("info", f"Saved: {output_name}", cap=cap))
 
-			print(f"\033[0;32m[Success] Successfully extracted {len(target_indices)} frames.\033[0m")
+			print(tui.panel(None, [tui.status(
+				"ok", f"Successfully extracted {len(target_indices)} frames.",
+				cap=cap)], cap=cap))
 
 	except Exception as e:
-		print(f"\033[0;31mAn error occurred during extraction: {e}\033[0m")
+		print(tui.status("error", f"An error occurred during extraction: {e}", cap=cap))
 
 def main():
-	init_ansi()
+	tui.init_ansi()
 	parser = argparse.ArgumentParser(description="Extract video frames using Decord.")
 	parser.add_argument("filename", help="Path to the video file")
 	parser.add_argument("frame_id", nargs="?", help="Frame index (number, 'first', or 'last')")
@@ -193,19 +196,22 @@ def main():
 	group.add_argument("-t", "--total", type=int, help="Extract N evenly spaced frames spanning the video")
 
 	args = parser.parse_args()
+	# Capabilities are resolved once: one colour level, unicode decision and
+	# plain/tty mode for the whole run.
+	cap = tui.detect()
 
 	# Both dependencies are only needed for an actual run, not for --help.
 	global Image, VideoReader, cpu
 	try:
 		from PIL import Image
 	except ImportError:
-		print("\033[0;31mError: 'pillow' library is not installed.\033[0m")
+		print(tui.status("error", "'pillow' library is not installed.", cap=cap))
 		print(f"Please install it using: {sys.executable} -m pip install pillow")
 		sys.exit(1)
 	try:
 		from decord import VideoReader, cpu
 	except ImportError:
-		print("\033[0;31mError: 'decord' library is not installed.\033[0m")
+		print(tui.status("error", "'decord' library is not installed.", cap=cap))
 		print("Please install it using: pip install decord")
 		sys.exit(1)
 
@@ -220,7 +226,7 @@ def main():
 	if args.total is not None and args.total <= 0:
 		parser.error("total count must be a positive integer greater than 0")
 
-	extract_frames(args.filename, frame_id=args.frame_id, use_keyframe=args.keyframe, interval=args.interval, total=args.total)
+	extract_frames(args.filename, frame_id=args.frame_id, use_keyframe=args.keyframe, interval=args.interval, total=args.total, cap=cap)
 
 if __name__ == "__main__":
 	main()

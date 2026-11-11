@@ -4,12 +4,22 @@
 # Explicitly enforce LF for shell scripts (prevents "invalid option / missing file" errors on Linux)
 *.sh text eol=lf
 
+# Python sources are LF everywhere: core.autocrlf=true on Windows kept handing
+# the index CRLF (and once a stray lone CR) for files this branch touched, which
+# turned a small change into a 500-line diff.
+*.py text eol=lf
+
 # The extension-less 'cs' dispatcher is a bash script too, but matches no
 # *.sh pattern, so Windows tooling kept saving it as CRLF and bash choked on
-# the shebang. Pin both the alias and its .sh twin to LF.
+# the shebang. Pin the dispatcher itself to LF.
 cs text eol=lf
-cs.sh text eol=lf
 
 # Explicitly enforce CRLF for Windows batch scripts
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Byte fixtures are data, not lines: the golden files under
+# tests/fixtures/ pin exact renderer output, so no EOL conversion may touch
+# them (a Windows checkout would otherwise materialise CRLF and the "bytes"
+# assertion would silently be comparing normalised text).
+*.tty -text
