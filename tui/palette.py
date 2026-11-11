@@ -4,9 +4,10 @@
 			===========================
 Three hand-authored looks with identical semantic keys, none derived from
 another (no inversion, no hue rotation). SOFT is the default: `mdreader` mode 0,
-"Cozy Purple", with `fg-muted`/`border-fg` nudged from #9381B0 to #A392C0 so
-every foreground clears the WCAG AA gate on both backgrounds. CONTRAST_LIGHT and
-CONTRAST_DARK are `mdreader` modes 1 and 2, so the reader and the scripts agree.
+"Cozy Purple", with `fg-muted`/`border-fg` nudged from #9381B0 to #A392C0 for a
+softer frame. CONTRAST_LIGHT and CONTRAST_DARK are `mdreader` modes 1 and 2, so
+the reader and the scripts agree. The hexes are a matter of taste: the tests
+only check that each role reaches the renderer, never how much they contrast.
 
 The hexes themselves belong to `tui.theme_engine` (and `themes/cozypurple.json`);
 this module stays the public API and the only place that emits SGR codes. The

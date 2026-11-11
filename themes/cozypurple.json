@@ -15,18 +15,18 @@
   },
   "looks": {
     "default": {
-      "bg": "#1c0222",
+      "bg": "#0f0222",
       "bg-inside": "#290066",
       "bg-inside-active": "#333399",
-      "bg-stripe": "#432077",
+      "bg-stripe": "#1d0e33",
       "fg": "#D4C8EB",
       "fg-muted": "#9281aa",
       "fg-accent": "#7fabee",
       "fg-success": "#3ebb3e",
       "fg-warn": "#ee6910",
       "fg-error": "#ff0000",
-      "border-bg": "#222222",
-      "border-fg": "#3994aa",
+      "border-bg": "#0e0022",
+      "border-fg": "#299983",
       "border-bg-active": "#352B49",
       "border-fg-active": "#F5CD68",
       "header-fg": "#1ba9cc",
@@ -57,8 +57,8 @@
       "button-bg-active": "#da44ff"
     },
     "contrast-light": {
-      "bg": "#f1bbff",
-      "bg-inside": "#f8ddff",
+      "bg": "#fbeeff",
+      "bg-inside": "#f1bbff",
       "bg-inside-active": "#e8d9e5",
       "bg-stripe": "#f874de",
       "fg": "#1d0444",
