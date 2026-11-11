@@ -15,24 +15,35 @@
 		- House-style key/value blocks; plain TAB output when piped.
 		- With the secret omitted, reads it at a masked prompt (no echo) and
 		  blanks the prompt row when it is done.
+		- The secret is never taken from argv or handed to a child process:
+		  prompt, --stdin or --env only (issue 0050).
 
 	Usage:
-		python sanitize.py "<secret>" ["<placeholder>"] [--yes]
-		python sanitize.py [--yes]                      # prompts for the secret
+		python sanitize.py [--placeholder "<text>"] [--yes]
+		python sanitize.py --stdin --yes                 # secret on stdin
+		python sanitize.py --env [VAR] [--yes]           # secret in env
 
 	Note:
-		Always quote both values. Secrets/placeholders often contain shell
-		metacharacters ([ ] ( ) & ! % < >); unquoted, the shell eats them
-		before Python ever runs (e.g. bare <redacted> is input redirection
-		and fails with "The syntax of the command is incorrect").
+		The secret is never accepted as a command-line argument. argv is
+		visible in shell history and to every other process on the machine
+		(ps, Task Manager, EDR tooling) while the run is alive, and in the
+		history file long after. Read it from the masked prompt (default), a
+		pipe (--stdin) or an environment variable (--env VAR); the variable
+		is removed from the process environment before any git subprocess
+		starts. The placeholder is not sensitive and stays a normal option.
+		Quote the placeholder: it may contain shell metacharacters
+		([ ] ( ) & ! % < >); unquoted, the shell eats them before Python runs
+		(e.g. bare <redacted> is input redirection).
 		The masked prompt guarantees the typed secret is not echoed and the
 		prompt row is cleared; it cannot scrub a scrollback the terminal has
 		already committed by other means.
 
 	Examples:
-		- python sanitize.py "Mypassword123" "<redacted-pass1>"
-		- python sanitize.py "Mypassword123" "***" --yes
-		- python sanitize.py                      (prompts, default placeholder)
+		- python sanitize.py                              (prompts, default placeholder)
+		- python sanitize.py --placeholder "<redacted-pass1>"
+		- type secret.txt | python sanitize.py --stdin --yes
+		- python sanitize.py --env MY_SECRET --yes        (variable already set,
+		  e.g. by a secret manager; not assigned inline on the command line)
 
 	Requirements:
 		- No external Python libraries required; uses standard modules only.
@@ -55,6 +66,16 @@ import tui
 # Width of the centred plan/summary panels; narrower terminals win.
 PLAN_WIDTH = 60
 
+# Default variable read by a bare `--env`: a name, never the secret itself.
+DEFAULT_SECRET_ENV = "SANITIZE_SECRET"
+
+# Refusal for anything positional: the value may be the secret, so it is never
+# echoed back and only the safe sources are named.
+ARGV_REFUSAL = (
+	"the secret is not accepted as a command-line argument: it leaks through "
+	"the process list and shell history. Use the masked prompt, --stdin, or "
+	"--env [VAR] instead; pass the placeholder with --placeholder.")
+
 
 def run(cmd, **kwargs):
 	# Thin wrapper: capture stdout/stderr as text so callers can inspect it.
@@ -71,26 +92,45 @@ def run_bytes(cmd, **kwargs):
 
 
 def parse_args(argv):
-	# Parse CLI input into secret/placeholder plus a non-interactive flag. Both
-	# positionals are optional so the secret can be read at a masked prompt:
-	# argv supplies them for automation, a terminal can be prompted. A lone
-	# positional is refused rather than guessed - the prompt form takes none, so
-	# it would silently be read as the secret and could rewrite history in place.
+	# Parse CLI input into a placeholder plus one secret source. No value that
+	# could be the secret is ever accepted on the command line, so any stray
+	# positional (or unknown option, which argparse would otherwise echo back)
+	# is refused with ARGV_REFUSAL. Keeping a hidden positional lets a legacy
+	# invocation be recognised and rejected by name instead of being dropped.
 	parser = argparse.ArgumentParser(
-		description="Replace a secret with a placeholder across full git history.")
-	parser.add_argument("secret", nargs="?", default=None,
-						help="Secret string to remove (must not be empty). "
-							 "Omit it on a terminal to be prompted (no echo).")
-	parser.add_argument("placeholder", nargs="?", default=None,
+		description="Replace a secret with a placeholder across full git history.",
+		usage="%(prog)s [--placeholder TEXT] [--stdin | --env [VAR]] [--yes]",
+		epilog="The secret is read from the masked prompt, stdin (--stdin) or "
+			   "an environment variable (--env [VAR]); it is never accepted as "
+			   "an argument.")
+	parser.add_argument("-p", "--placeholder", default=None,
 						help="Replacement text, e.g. '<redacted>' "
 							 "(default: '<redacted>').")
+	parser.add_argument("--stdin", action="store_true",
+						help="Read the secret from stdin (needs --yes, off a tty).")
+	parser.add_argument("--env", metavar="VAR", nargs="?", default=None,
+						const=DEFAULT_SECRET_ENV,
+						help="Read the secret from environment variable VAR "
+							 "(default: %s)." % DEFAULT_SECRET_ENV)
 	parser.add_argument("--yes", "-y", action="store_true",
 						help="Skip confirmation prompts (for automation).")
-	args = parser.parse_args(argv)
-	if (args.secret is None) != (args.placeholder is None):
-		parser.error("pass both the secret and the placeholder, or neither "
-					 "of them to be prompted for the secret")
+	parser.add_argument("legacy", nargs="*", help=argparse.SUPPRESS)
+	args, unknown = parser.parse_known_args(argv)
+	# Report a single refusal whenever anything positional or unrecognised is
+	# left: the token itself is never printed (it may be the secret).
+	if args.legacy or unknown:
+		parser.error(ARGV_REFUSAL)
+	if args.stdin and args.env is not None:
+		parser.error("--stdin and --env are different sources; pick one")
 	return args
+
+
+def secret_from_env(name):
+	# Read and drop the variable in the same step: every git/filter-repo child
+	# inherits the environment, so leaving it set would widen the leak we are
+	# closing (a child's environ is readable too).
+	secret = os.environ.pop(name, None)
+	return secret
 
 
 def _vt_ready(stream):
@@ -196,6 +236,23 @@ def iter_blob_oids():
 			yield oid
 
 
+def tree_contains(needle, rev="HEAD"):
+	# Scan one tree in-process. `git grep -F <secret>` would hand the secret to
+	# a child's argv, which is exactly the exposure this script now refuses, so
+	# the blobs are listed by object id and inspected here instead.
+	tree = run(["git", "ls-tree", "-r", "-z", rev])
+	if tree.returncode != 0:
+		return False
+	for entry in (tree.stdout or "").split("\0"):
+		meta, _, _path = entry.partition("\t")
+		parts = meta.split()
+		if len(parts) < 3 or parts[1] != "blob" or parts[0] == "160000":
+			continue
+		if blob_contains(parts[2], needle):
+			return True
+	return False
+
+
 def secret_in_history(secret):
 	# Search commit diffs/messages first (fast path), then every blob (slow path).
 	v = run(["git", "log", "--all", "-p", "--format=%B"])
@@ -258,17 +315,42 @@ def main(argv=None) -> int:
 	tui.init_ansi()
 	cap = tui.detect()
 	args = parse_args(sys.argv[1:] if argv is None else argv)
-	secret, placeholder = args.secret, args.placeholder
+	secret, placeholder = None, args.placeholder
 	if placeholder is None:
 		placeholder = "<redacted>"
 
-	# Masked intake: argv wins; otherwise a terminal may be prompted. Off a
-	# terminal there is nobody to answer, so refuse rather than block.
-	if secret is None:
+	# Secret intake: never argv. --stdin reads a pipe (a terminal would echo the
+	# typed value and is also where the y/n confirmations come from, so that
+	# combination is refused); --env reads a variable and drops it before any
+	# child starts. The default is the masked prompt, which needs a terminal.
+	if args.stdin:
+		if not args.yes:
+			sys.stderr.write(
+				"[Error] sanitize --stdin needs --yes: stdin is the secret, so "
+				"there is no terminal left to confirm the rewrite.\n")
+			return 2
+		try:
+			echoing = sys.stdin.isatty()
+		except (AttributeError, ValueError, OSError):
+			echoing = False
+		if echoing:
+			sys.stderr.write(
+				"[Error] sanitize --stdin refuses a terminal: the secret would "
+				"be echoed. Omit --stdin to use the masked prompt.\n")
+			return 2
+		secret = sys.stdin.read().rstrip("\r\n")
+	elif args.env is not None:
+		secret = secret_from_env(args.env)
+		if secret is None:
+			sys.stderr.write(
+				f"[Error] environment variable {args.env} is not set.\n")
+			return 2
+	else:
 		if not sys.stdin.isatty():
 			sys.stderr.write(
 				"[Error] sanitize needs an interactive terminal to prompt for "
-				"the secret (stdin is not a tty).\n")
+				"the secret (stdin is not a tty). Use --stdin or --env [VAR] "
+				"for automation.\n")
 			return 2
 		# The prompt (and its erase) land on stderr, so its capability - not the
 		# page's stdout - decides whether the erase escapes may be written.
@@ -390,9 +472,10 @@ def main(argv=None) -> int:
 							 cap=cap))
 
 		# Verify the secret is gone: searchable history plus a blob-by-blob scan.
+		# The scan is in-process on purpose; the secret must never reach a
+		# child's argv (see tree_contains).
 		print(tui.status("info", "Verifying rewrite...", cap=cap))
 		v = run(["git", "log", "--all", "-p", "--", "."])
-		g = run(["git", "grep", "-F", secret, "--", "HEAD"])
 		leaks = []
 		needle = secret.encode("utf-8", "ignore")
 		for oid in iter_blob_oids():
@@ -401,7 +484,7 @@ def main(argv=None) -> int:
 				break
 
 		history_still_has_it = secret in (v.stdout or "")
-		head_has_it = g.returncode == 0 and g.stdout.strip()
+		head_has_it = tree_contains(needle)
 		if history_still_has_it or leaks or head_has_it:
 			print(tui.status("error",
 							 "Secret string still found after rewrite!",

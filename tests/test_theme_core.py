@@ -134,8 +134,11 @@ def render_opencode():
 def render_sanitize():
 	import sanitize
 	ok = mock.Mock(returncode=0, stdout="", stderr="")
+	# The secret comes from --env, never argv (#50); the plan is the only page
+	# this driver needs to render.
 	with mock.patch.object(sys, "argv",
-						   ["sanitize.py", "SECRET", "<redacted>", "--yes"]), \
+						   ["sanitize.py", "--env", "SANITIZE_SECRET", "--yes"]), \
+			mock.patch.dict(os.environ, {"SANITIZE_SECRET": "SECRET"}), \
 			mock.patch.object(sanitize, "find_repo_root",
 							  return_value=(Path("/tmp/repo"), "")), \
 			mock.patch.object(sanitize, "find_filter_repo",
