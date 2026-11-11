@@ -317,6 +317,110 @@ class MdreaderPreflightTests(unittest.TestCase):
         self.assertFalse(mdreader.layout(11, 8, True)["bordered"])
         self.assertFalse(mdreader.layout(80, 7, True)["bordered"])
 
+    def test_scrollbar_column_is_only_hidden_when_the_console_is_narrower(self):
+        """A scrollbar eats exactly the deficit, and garbage is ignored."""
+        self.assertEqual(mdreader._hidden_columns(107, 106), 1)
+        self.assertEqual(mdreader._hidden_columns(107, 105), 2)
+        self.assertEqual(mdreader._hidden_columns(107, 100), 2, "capped")
+        self.assertEqual(mdreader._hidden_columns(107, 107), 0)
+        self.assertEqual(mdreader._hidden_columns(107, 0), 0, "no client area")
+        self.assertEqual(mdreader._hidden_columns(107, 500), 0, "silly metrics")
+        self.assertEqual(mdreader._hidden_columns(0, 0), 0)
+
+    def test_console_probe_is_silent_off_windows(self):
+        with mock.patch.object(mdreader, "sys", mock.Mock(platform="linux")):
+            self.assertEqual(mdreader.console_hidden_columns(), 0)
+
+    def test_console_probe_survives_a_missing_console(self):
+        """A redirected stream has no screen buffer; the probe must not raise."""
+        fake_kernel32 = mock.Mock()
+        fake_kernel32.GetConsoleScreenBufferInfo.return_value = 0
+        with mock.patch.object(mdreader, "sys", mock.Mock(platform="win32")), \
+                mock.patch("ctypes.windll", mock.Mock(kernel32=fake_kernel32),
+                           create=True):
+            self.assertEqual(mdreader.console_hidden_columns(), 0)
+
+    @staticmethod
+    def _fake_console(bar_left, cols=107, cell=8, client=856, bar_state=0,
+                      buffer_ok=1, scrollbar_ok=1):
+        """A console window whose text stops `bar_left` px into the client."""
+        kernel32 = mock.Mock()
+        kernel32.GetConsoleWindow.return_value = 4242
+        kernel32.GetStdHandle.return_value = 1
+
+        def buffer_info(_handle, ref):
+            ref._obj.dwSize.X = cols
+            return buffer_ok
+
+        def font_info(_handle, _flag, ref):
+            ref._obj.dwFontSize.X = cell
+            return 1
+
+        kernel32.GetConsoleScreenBufferInfo.side_effect = buffer_info
+        kernel32.GetCurrentConsoleFontEx.side_effect = font_info
+
+        user32 = mock.Mock()
+
+        def scrollbar_info(_window, _objid, ref):
+            ref._obj.rcScrollBar.left = bar_left
+            ref._obj.rgstate[0] = bar_state
+            return scrollbar_ok
+
+        def client_rect(_window, ref):
+            ref._obj.right = client
+            ref._obj.left = 0
+            return 1
+
+        user32.GetScrollBarInfo.side_effect = scrollbar_info
+        user32.GetClientRect.side_effect = client_rect
+        user32.ClientToScreen.return_value = 1
+        return mock.Mock(kernel32=kernel32, user32=user32)
+
+    def test_console_probe_reads_the_scrollbar_column(self):
+        """The bar's left edge says how many columns the text really has."""
+        cases = (
+            (856, 0),   # no bar over the text: every reported column is visible
+            (848, 1),   # one 8px column hidden behind the scrollbar
+            (840, 2),
+            (800, 2),   # a huge deficit is capped, never trusted blindly
+        )
+        for bar_left, expected in cases:
+            with mock.patch.object(mdreader, "sys", mock.Mock(platform="win32")), \
+                    mock.patch("ctypes.windll",
+                               self._fake_console(bar_left), create=True):
+                self.assertEqual(
+                    mdreader.console_hidden_columns(), expected,
+                    "scrollbar left edge at %d px" % bar_left,
+                )
+
+    def test_console_probe_ignores_an_invisible_scrollbar(self):
+        fake = self._fake_console(848, bar_state=0x00008000)
+        with mock.patch.object(mdreader, "sys", mock.Mock(platform="win32")), \
+                mock.patch("ctypes.windll", fake, create=True):
+            self.assertEqual(mdreader.console_hidden_columns(), 0)
+
+    def test_console_probe_ignores_a_hidden_conpty_window(self):
+        """A ConPTY pseudo-window has no scrollbar and no sane client area."""
+        fake = self._fake_console(0, client=0)
+        with mock.patch.object(mdreader, "sys", mock.Mock(platform="win32")), \
+                mock.patch("ctypes.windll", fake, create=True):
+            self.assertEqual(mdreader.console_hidden_columns(), 0)
+
+    def test_frame_stays_out_of_the_hidden_column(self):
+        """With a scrollbar the frame's last cell is one in from `width`."""
+        width = 107
+        hidden = mdreader._hidden_columns(width, 106)
+        box = mdreader.layout(width - hidden, 46, True)
+        self.assertEqual(
+            box["x_offset"] + box["usable_width"] + 3, width - hidden,
+            "inner border, track and outer border fill the drawable width",
+        )
+        self.assertLess(
+            box["x_offset"] + box["usable_width"] + 3,
+            width,
+            "the outer border must not land on the scrollbar column",
+        )
+
     def test_each_mode_paints_its_own_palette(self):
         fake = _FakeCurses()
         fake.COLORS = 256

@@ -360,6 +360,118 @@ def get_rich_theme(theme_mode=0):
     )
 
 
+def _hidden_columns(columns, visible_columns):
+    """How many of `columns` the terminal does not actually show.
+
+    The legacy Windows console (conhost) draws its vertical scrollbar inside
+    the window, so the text area is narrower than the screen buffer `curses`
+    reports: the last column ends up behind the bar. Windows Terminal, wezterm
+    and a console without a scrollbar show every reported column.
+
+    Garbage measurements (a hidden ConPTY pseudo-window, a stream with no
+    console) must never shrink the layout, so anything that is not a sane
+    one-or-two column deficit is treated as "nothing hidden".
+    """
+    if columns <= 0 or visible_columns <= 0 or visible_columns >= columns:
+        return 0
+    return min(columns - visible_columns, 2)
+
+
+def console_hidden_columns():
+    """`_hidden_columns()` for the real console, 0 when there is no console.
+
+    Measured from the console window itself: its client area (which excludes
+    the scrollbar) in pixels divided by the font's cell width. Only the real
+    conhost window reports a visible vertical scrollbar, so a Windows Terminal
+    or wezterm pane is never shaved.
+    """
+    if sys.platform != "win32":
+        return 0
+    try:
+        import ctypes
+    except ImportError:  # pragma: no cover - ctypes ships with CPython
+        return 0
+
+    class _COORD(ctypes.Structure):
+        _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class _POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    class _SMALL_RECT(ctypes.Structure):
+        _fields_ = [("Left", ctypes.c_short), ("Top", ctypes.c_short),
+                    ("Right", ctypes.c_short), ("Bottom", ctypes.c_short)]
+
+    class _CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+        _fields_ = [("dwSize", _COORD), ("dwCursorPosition", _COORD),
+                    ("wAttributes", ctypes.c_ushort), ("srWindow", _SMALL_RECT),
+                    ("dwMaximumWindowSize", _COORD)]
+
+    class _CONSOLE_FONT_INFOEX(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("nFont", ctypes.c_ulong),
+                    ("dwFontSize", _COORD), ("FontFamily", ctypes.c_uint),
+                    ("FontWeight", ctypes.c_uint), ("FaceName", ctypes.c_wchar * 32)]
+
+    class _SCROLLBARINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("rcScrollBar", _RECT),
+                    ("dxyLineButton", ctypes.c_int), ("xyThumbTop", ctypes.c_int),
+                    ("xyThumbBottom", ctypes.c_int), ("reserved", ctypes.c_int),
+                    ("rgstate", ctypes.c_ulong * 6)]
+
+    OBJID_VSCROLL = -5  # 0xFFFFFFFB as a signed LONG
+    STATE_SYSTEM_INVISIBLE = 0x00008000
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        kernel32.GetConsoleWindow.restype = ctypes.c_void_p
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        window = kernel32.GetConsoleWindow()
+        if not window:
+            return 0
+
+        bar = _SCROLLBARINFO()
+        bar.cbSize = ctypes.sizeof(bar)
+        if not user32.GetScrollBarInfo(window, OBJID_VSCROLL, ctypes.byref(bar)):
+            return 0
+        if bar.rgstate[0] & STATE_SYSTEM_INVISIBLE:
+            return 0
+
+        info = _CONSOLE_SCREEN_BUFFER_INFO()
+        if not kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
+            return 0
+
+        client = _RECT()
+        if not user32.GetClientRect(window, ctypes.byref(client)):
+            return 0
+        origin = _POINT(0, 0)
+        if not user32.ClientToScreen(window, ctypes.byref(origin)):
+            return 0
+
+        visible_width = client.right - client.left
+        if bar.rcScrollBar.left > origin.x:
+            # The scrollbar's left edge is where the text stops: conhost can
+            # draw the bar over the client area, in which case the last
+            # column is the one that disappears behind it.
+            visible_width = min(visible_width, bar.rcScrollBar.left - origin.x)
+
+        font = _CONSOLE_FONT_INFOEX()
+        font.cbSize = ctypes.sizeof(font)
+        if not kernel32.GetCurrentConsoleFontEx(handle, False, ctypes.byref(font)):
+            return 0
+        cell_width = font.dwFontSize.X
+        if cell_width <= 0:
+            return 0
+
+        return _hidden_columns(info.dwSize.X, visible_width // cell_width)
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
 def layout(width, height, show_border):
     """Geometry of the reader for a `width` x `height` terminal.
 
@@ -368,6 +480,9 @@ def layout(width, height, show_border):
     `x_offset` and is `usable_width` wide. The inner border owns its own
     column on each side: content must stop before it, which is why the width
     is `width - 6` (three columns per side), not `width - 5`.
+
+    `width` is the drawable width: callers already removed any column the
+    terminal hides (see `console_hidden_columns()`).
     """
     if show_border and height >= 8 and width >= 12:
         return {
@@ -730,8 +845,12 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
 
     while True:
         height, width = stdscr.getmaxyx()
+        # The legacy Windows console's scrollbar sits on top of the last
+        # column while curses still counts it; draw one column in so the
+        # frame is not clipped. Every other terminal reports 0 here.
+        frame_width = max(1, width - console_hidden_columns())
 
-        geometry = layout(width, height, show_border)
+        geometry = layout(frame_width, height, show_border)
         x_offset = geometry["x_offset"]
         y_offset = geometry["y_offset"]
         usable_width = geometry["usable_width"]
@@ -771,8 +890,8 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
         stdscr.clear()
 
         # Render border
-        if show_border and height >= 8 and width >= 12:
-            draw_window_border(stdscr, height, width, scroll_top, max_scroll)
+        if geometry["bordered"]:
+            draw_window_border(stdscr, height, frame_width, scroll_top, max_scroll)
 
         # Render content
         for y in range(usable_height):
