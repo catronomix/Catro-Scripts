@@ -284,6 +284,39 @@ class MdreaderPreflightTests(unittest.TestCase):
                 mock.patch.object(mdreader, "sys", mock.Mock(platform="linux")):
             self.assertEqual(mdreader.chrome_attr(6), 6 | 0x100)
 
+    def test_layout_keeps_content_inside_the_frame(self):
+        """Content and both bars stop at the inner border, never on top of it.
+
+        A full terminal column would be clipped on the right: the frame is
+        three columns per side, so the text column is `width - 6` wide, the
+        inner border owns `width - 3`, and the outer border the last cell.
+        """
+        for width, height in ((12, 8), (80, 24), (100, 30), (211, 57)):
+            box = mdreader.layout(width, height, True)
+            last_text_column = box["x_offset"] + box["usable_width"]
+            self.assertEqual(last_text_column, width - 3)
+            self.assertEqual(box["usable_width"], width - 6)
+            self.assertEqual(
+                box["y_offset"] + box["usable_height"], box["status_y1"],
+                "content rows must stop before the status line",
+            )
+            self.assertEqual(box["status_y2"], height - 3)
+            self.assertEqual(box["y_offset"] + box["usable_height"], height - 4)
+
+    def test_layout_without_a_frame_uses_the_whole_screen(self):
+        box = mdreader.layout(80, 24, False)
+        self.assertFalse(box["bordered"])
+        self.assertEqual(box["x_offset"], 0)
+        self.assertEqual(box["usable_width"], 80)
+        self.assertEqual(box["usable_height"], 22)
+        self.assertEqual(box["status_y1"], 22)
+        self.assertEqual(box["status_y2"], 23)
+
+    def test_tiny_terminal_keeps_a_positive_text_column(self):
+        """Under the frame minimum the layout degrades to no frame."""
+        self.assertFalse(mdreader.layout(11, 8, True)["bordered"])
+        self.assertFalse(mdreader.layout(80, 7, True)["bordered"])
+
     def test_each_mode_paints_its_own_palette(self):
         fake = _FakeCurses()
         fake.COLORS = 256

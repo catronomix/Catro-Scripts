@@ -360,6 +360,36 @@ def get_rich_theme(theme_mode=0):
     )
 
 
+def layout(width, height, show_border):
+    """Geometry of the reader for a `width` x `height` terminal.
+
+    The frame is three columns wide on each side (`║ │` on the left, `│ ║`
+    with the scroll track between on the right), so the text column starts at
+    `x_offset` and is `usable_width` wide. The inner border owns its own
+    column on each side: content must stop before it, which is why the width
+    is `width - 6` (three columns per side), not `width - 5`.
+    """
+    if show_border and height >= 8 and width >= 12:
+        return {
+            "bordered": True,
+            "x_offset": 3,
+            "y_offset": 2,
+            "usable_width": max(1, width - 6),
+            "usable_height": max(1, height - 6),
+            "status_y1": height - 4,
+            "status_y2": height - 3,
+        }
+    return {
+        "bordered": False,
+        "x_offset": 0,
+        "y_offset": 0,
+        "usable_width": max(1, width),
+        "usable_height": max(1, height - 2),
+        "status_y1": height - 2,
+        "status_y2": height - 1,
+    }
+
+
 def draw_window_border(stdscr, height, width, scroll_top=0, max_scroll=0):
     """Draws a 2-character wide decorated border with a scroll indicator."""
     if height < 6 or width < 10:
@@ -701,23 +731,16 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
     while True:
         height, width = stdscr.getmaxyx()
 
-        if show_border and height >= 8 and width >= 12:
-            y_offset = 2
-            x_offset = 3
-            usable_width = max(10, width - 5)
-            usable_height = max(1, height - 6)
-            status_y1 = height - 4
-            status_y2 = height - 3
-        else:
-            y_offset = 0
-            x_offset = 0
-            usable_width = max(10, width)
-            usable_height = max(1, height - 2)
-            status_y1 = height - 2
-            status_y2 = height - 1
+        geometry = layout(width, height, show_border)
+        x_offset = geometry["x_offset"]
+        y_offset = geometry["y_offset"]
+        usable_width = geometry["usable_width"]
+        usable_height = geometry["usable_height"]
+        status_y1 = geometry["status_y1"]
+        status_y2 = geometry["status_y2"]
 
         content_width = max(
-            10, min(usable_width, int(usable_width * (zoom_level / 100.0)))
+            1, min(usable_width, int(usable_width * (zoom_level / 100.0)))
         )
         margin_left = x_offset + max(0, (usable_width - content_width) // 2)
 
@@ -759,7 +782,9 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
 
             line = doc_lines[line_idx]
             x_pos = margin_left
-            max_x = x_offset + usable_width - 1
+            # Exclusive right edge: the text column ends where the inner
+            # frame border starts, so the border is never painted over.
+            max_x = x_offset + usable_width
             rendered_segments = slice_line_segments(
                 line.segments, scroll_left, usable_width
             )
@@ -792,7 +817,7 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
             f" | H-Scroll: {scroll_left}/{max_h_scroll}" if max_h_scroll > 0 else ""
         )
         status_info = f" * File: {filename} {file_count_str} | Theme: {theme_str} | Width: {zoom_level}%{h_scroll_str} | Lines: {scroll_top + 1}-{min(scroll_top + usable_height, total_lines)}/{total_lines} ({pct}%)"
-        status_bar = f"{status_info:<{usable_width - 1}}"[: usable_width - 1]
+        status_bar = f"{status_info:<{usable_width}}"[: usable_width]
 
         try:
             stdscr.addstr(
@@ -803,7 +828,7 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
             pass
 
         shortcuts = " [< / >] Prev/Next | [[ / ]] Horiz Scroll | [+ / -] Width | [H] Border | [C] Contrast | [UP/DN] Scroll | [Q] Quit"
-        shortcuts_bar = f"{shortcuts:<{usable_width - 1}}"[: usable_width - 1]
+        shortcuts_bar = f"{shortcuts:<{usable_width}}"[: usable_width]
 
         try:
             stdscr.addstr(
