@@ -8,11 +8,13 @@ escapes are spelled out literally so the fixed emission order (foreground,
 background, attributes, text, reset) cannot drift; the table renderer and the
 golden fixture both depend on it.
 
-Also pins the alias/legacy map (old `dark` configs resolve to soft), the WCAG AA
-gate recomputed from the hexes for all three themes, and the degradation paths
-(16-colour, pipe, NO_COLOR on a tty). The numeric twin (`rgb()`/`index()` and
-the xterm tables) moved to `tui/color_levels.py`; its cases live in
-`tests/test_tui_color_levels.py`.
+Also pins the alias/legacy map (old `dark` configs resolve to soft), the role
+wiring of every drawn surface (each component paints its own palette key, with
+the selected look's own values), and the degradation paths (16-colour, pipe,
+NO_COLOR on a tty). Colours are a matter of taste, so no contrast ratio is
+asserted anywhere: a palette passes when the right role reaches the right
+pixel. The numeric twin (`rgb()`/`index()` and the xterm tables) moved to
+`tui/color_levels.py`; its cases live in `tests/test_tui_color_levels.py`.
 """
 
 import json
@@ -28,7 +30,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-from tui import caps, config, palette, table, theme_engine, theme_migrate  # noqa: E402  (import after sys.path setup)
+from tui import caps, chrome, config, palette, table, theme_engine, theme_migrate  # noqa: E402  (import after sys.path setup)
 from support import isolate_checkout_config, module_isolation  # noqa: E402  (test helper, not production)
 
 setUpModule, tearDownModule = module_isolation()
@@ -396,44 +398,81 @@ class PropertyDocumentTests(unittest.TestCase):
 		self.assertNotEqual(palette.properties("soft")["header_align"], "right")
 
 
-def _luminance(colour):
-	"""WCAG 2.x relative luminance for a #rrggbb colour."""
-	def channel(value):
-		value = value / 255.0
-		return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
-	r, g, b = (int(colour[index:index + 2], 16) for index in (1, 3, 5))
-	return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+class RoleWiringTests(unittest.TestCase):
+	"""Every drawn surface paints the role the schema assigns to it.
 
+	The palette is cosmetic, so nothing here computes a contrast ratio: a look
+	passes when the component under test emits that look's own hexes for the
+	key it owns. A frame takes `border-fg` on `border-bg`, a masthead
+	`header-fg` on `header-bg`, status markers their `fg-*` role, zebra rows
+	`fg` on `bg-stripe`, a selected menu row `fg-accent` on
+	`bg-inside-active`, a filled button `button-fg` on `button-bg`.
+	"""
 
-def _contrast(first, second):
-	high, low = sorted((_luminance(first), _luminance(second)), reverse=True)
-	return (high + 0.05) / (low + 0.05)
+	def prefix(self, theme, fg, bg, **attrs):
+		return palette.prefix(fg=fg, bg=bg, cap=TRUE, theme=theme, **attrs)
 
+	def test_the_frame_paints_border_fg_on_border_bg(self):
+		for theme in palette.THEMES:
+			with self.subTest(theme=theme):
+				out = chrome.panel("Info", ["body"], width=16, cap=TRUE,
+								   theme=theme)
+				self.assertIn(self.prefix(theme, "border-fg", "border-bg"), out)
 
-class ContrastGateTests(unittest.TestCase):
-	"""Every theme clears WCAG AA on both backgrounds, recomputed from hexes."""
+	def test_the_masthead_paints_header_fg_on_header_bg(self):
+		for theme in palette.THEMES:
+			with self.subTest(theme=theme):
+				out = chrome.header("T", width=10, cap=TRUE, theme=theme)
+				self.assertIn(
+					self.prefix(theme, "header-fg", "header-bg", bold=True), out)
 
-	FOREGROUND = ("fg", "fg-muted", "fg-accent", "fg-success", "fg-warn",
-				  "fg-error", "border-fg", "header-fg")
+	def test_status_markers_paint_their_semantic_role(self):
+		for kind, role in (("ok", "fg-success"), ("warn", "fg-warn"),
+						   ("error", "fg-error"), ("info", "fg-accent")):
+			for theme in palette.THEMES:
+				with self.subTest(theme=theme, kind=kind):
+					out = chrome.status(kind, "v", cap=TRUE, theme=theme)
+					self.assertIn(
+						self.prefix(theme, role, "bg", bold=True), out)
 
-	def test_all_three_themes_clear_wcag_aa(self):
-		for name, colours in palette.THEMES.items():
-			for key in self.FOREGROUND:
-				for backdrop in ("bg", "bg-stripe"):
-					ratio = _contrast(colours[key], colours[backdrop])
-					self.assertGreaterEqual(
-						ratio, 4.5, "{} {} on {} is {:.2f}:1".format(
-							name, key, backdrop, ratio))
+	def test_zebra_rows_paint_fg_on_bg_stripe(self):
+		for theme in palette.THEMES:
+			with self.subTest(theme=theme):
+				out = table.render_table(["A", "B"], [["1", "2"], ["3", "4"]],
+										 cap=TRUE, theme=theme)
+				self.assertIn(self.prefix(theme, "fg", "bg-stripe"), out)
 
-	def test_the_button_pairs_clear_wcag_aa(self):
-		# A filled button is its own pair: `button-fg` on `button-bg`, and on
-		# the focused ground.
-		for name, colours in palette.THEMES.items():
-			for backdrop in ("button-bg", "button-bg-active"):
-				ratio = _contrast(colours["button-fg"], colours[backdrop])
-				self.assertGreaterEqual(
-					ratio, 4.5, "{} button-fg on {} is {:.2f}:1".format(
-						name, backdrop, ratio))
+	def test_the_selected_menu_row_paints_fg_accent_on_bg_inside_active(self):
+		for theme in palette.THEMES:
+			with self.subTest(theme=theme):
+				out = chrome.menu(["one", "two"], selected=1, width=12,
+								  cap=TRUE, theme=theme)
+				self.assertIn(
+					self.prefix(theme, "fg-accent", "bg-inside-active"), out)
+
+	def test_a_filled_button_paints_button_fg_on_button_bg(self):
+		properties = {"button_style": "filled", "button_decoration": "brackets",
+					  "focus_style": "accent"}
+		for theme in palette.THEMES:
+			with self.subTest(theme=theme), \
+					mock.patch.object(palette, "properties",
+									  return_value=properties):
+				out = chrome.button("OK", cap=TRUE, theme=theme)
+				self.assertIn(
+					self.prefix(theme, "button-fg", "button-bg"), out)
+
+	def test_a_look_never_borrows_another_looks_hexes(self):
+		"""The frame prefix of one look never leaks into another look's render."""
+		frames = {theme: self.prefix(theme, "border-fg", "border-bg")
+				  for theme in palette.THEMES}
+		self.assertEqual(len(set(frames.values())), len(palette.THEMES))
+		for theme, own in frames.items():
+			with self.subTest(theme=theme):
+				out = chrome.panel("Info", ["body"], width=16, cap=TRUE,
+								   theme=theme)
+				for other, prefix in frames.items():
+					if other != theme:
+						self.assertNotIn(prefix, out)
 
 
 class ThemeAliasTests(unittest.TestCase):

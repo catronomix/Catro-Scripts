@@ -157,15 +157,15 @@ has to stay a valid current-schema theme whose `name` matches its filename.
 
 Do not resync the fixture on every palette tweak. Refresh it only when a new
 palette or property set is accepted for release, together with the golden
-fixtures and the WCAG expectations that the same look drives. A structural
-change (schema, key, look or property) is the exception: tests should fail
-until the fixture and those expectations are updated in the same change.
+fixtures the same look drives. A structural change (schema, key, look or
+property) is the exception: tests should fail until the fixture and those
+expectations are updated in the same change.
 
 ## Sharing a theme
 
 Copy the JSON here, keep `name` equal to the filename, and select it in
 `theme.ini` (`catro-scripts theme set theme.name <name>`) or with the editor's
-Load popup. Keep every non-background colour at or above 4.5:1 contrast against
-both `bg` and `bg-stripe` if you want it to stay readable for everyone: the
-shipped looks meet that threshold and are pinned by a test, while the editor's
-colour picker only warns about a custom file below it.
+Load popup. The palette is cosmetic, so any colours are fine; the editor's
+colour picker only warns below 4.5:1 contrast against `bg`/`bg-stripe` as a
+readability hint, and nothing enforces it. Tests check that each role reaches
+the renderer, not how much the colours contrast.
