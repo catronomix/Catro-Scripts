@@ -14,6 +14,7 @@ REQUIREMENTS:
 
 import os
 import sys
+import math
 import argparse
 from datetime import datetime
 
@@ -32,10 +33,48 @@ INTERPOLATION_OPTIONS = ('nearest', 'bilinear', 'bicubic', 'lanczos')
 # target resolution.
 MAX_DIMENSION = 32768
 
+# Print artwork (posters, exhibition TIFFs) is a normal input for this script,
+# so Pillow's decompression-bomb guard is raised far above its 89 Mpixel
+# default. It is raised rather than disabled so a corrupt header still fails
+# loudly instead of feeding the resampler garbage.
+MAX_SOURCE_PIXELS = 1_000_000_000
+
+# Above this many source pixels the image is pre-shrunk with fast integer
+# reduce steps before the final resize: same visual result for a downscale,
+# but a fraction of the memory a single full-frame LANCZOS pass needs.
+PRESCALE_PIXEL_BUDGET = 64_000_000
+
 # --- Image Resizing Logic ---
+def _prescale_source(img, target_width, target_height):
+	"""Box-reduce an oversized source before the final resize.
+
+	Pillow resamples the whole frame in one pass, so a 200+ Mpixel source can
+	be slow or raise MemoryError. `Image.reduce()` shrinks the frame with the
+	cheap box filter and a large integer factor; doing that first keeps the
+	quality of a downscale while cutting the memory the final resample needs.
+	The aspect ratio is preserved, so the fit/crop/pad maths below still holds
+	up to a pixel of integer rounding.
+	"""
+	width, height = img.size
+	pixels = width * height
+	if pixels <= PRESCALE_PIXEL_BUDGET:
+		return img
+	# Never shrink smaller than the requested target: that would turn the
+	# final resize into an upscale.
+	limit_x = max(1, width // max(1, target_width))
+	limit_y = max(1, height // max(1, target_height))
+	factor = min(math.isqrt(pixels // PRESCALE_PIXEL_BUDGET), limit_x, limit_y)
+	if factor <= 1:
+		return img
+	return img.reduce(factor)
+
+
 def resize_and_fit_image(image_path, output_path, target_width, target_height, fit_option, interpolation_method, cap=None):
 	try:
 		with Image.open(image_path) as img:
+			# Work on a reduced copy when the source is huge; every fit mode
+			# below only depends on the frame it is resizing from.
+			img = _prescale_source(img, target_width, target_height)
 			original_width, original_height = img.size
 
 			if fit_option == 'resize':
@@ -191,6 +230,10 @@ def main():
 						 cap=cap))
 		print("Please install it using: pip install pillow")
 		sys.exit(1)
+
+	# Raise Pillow's decompression-bomb guard before any image is opened:
+	# poster-sized artwork is a normal input for this script, not an attack.
+	Image.MAX_IMAGE_PIXELS = MAX_SOURCE_PIXELS
 
 	resize_images_in_folder(cap)
 

@@ -39,7 +39,7 @@ catro-scripts list            # the same catalogue with file sizes
 - **`gitpush`** - stages, commits and pushes in one step.
 - **`help`** - shows help and usage for a script.
 - **`image_generator`** - produces test images with solid colours and noise.
-- **`image_resizer`** - batch-resizes images (fit, crop, pad or limit).
+- **`image_resizer`** - batch-resizes images (fit, crop, pad or limit), including very large poster-sized sources.
 - **`installdeps`** - finds and installs missing third-party Python packages.
 - **`jsonl_monitor`** - watches JSONL files or streams and filters new entries.
 - **`keygen`** - interactive random-key generator.
