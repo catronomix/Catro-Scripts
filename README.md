@@ -1,8 +1,9 @@
 # Catro-Scripts
 
-A collection of personal Python scripts for everyday chores: media files, images, git, networks and the terminal. Use at your own peril.
+**A collection of personal Python scripts for everyday chores: media files, images, git, networks and the terminal.**
+- *Zero warranty! Use at your own peril.*
 
-<img width="934" height="1014" alt="image" src="https://github.com/user-attachments/assets/24244c88-0ee7-40ae-afe1-dc0e7c67adbc" />
+<img width="819" height="700" alt="scripts overview" src="https://github.com/user-attachments/assets/4a1d9f09-d711-4278-871b-5e0b4fd79278" />
 
 ## Installation
 
@@ -11,8 +12,8 @@ A collection of personal Python scripts for everyday chores: media files, images
 3. Run a script with the launcher for your platform:
 
 ```bash
-catro-scripts.bat <script> [arguments]    # Windows
-catro-scripts.sh  <script> [arguments]    # Linux / macOS
+catro-scripts <script> [arguments]    # Windows
+catro-scripts <script> [arguments]    # Linux / macOS
 ```
 
 Scripts are standard-library first. A few use optional packages (Pillow, pydub, piexif, decord, ffmpeg, git-filter-repo); `catro-scripts installdeps` installs the Python ones, and each script names what it needs in its own help.
@@ -24,7 +25,6 @@ Every script is self-documenting:
 ```bash
 catro-scripts help            # list the scripts and how to use them
 catro-scripts help <script>   # usage for one script
-catro-scripts list            # the same catalogue with file sizes
 ```
 
 ## Scripts
@@ -63,6 +63,13 @@ catro-scripts list            # the same catalogue with file sizes
 - **`videojoin`** - joins video files with FFmpeg.
 - **`videoloop`** - builds a seamless, crossfaded loop from a video.
 - **`videotweak`** - changes FPS, reverses, bounces or transcodes video.
+
+## Themes
+
+Catro-Scripts has a minimal theme engine to style UI elements. To customize the look and make your own themes, simply use `catro-scripts theme edit`
+
+<img width="923" height="766" alt="image" src="https://github.com/user-attachments/assets/fe373818-a43f-452a-bd9b-4589fb3832a1" />
+
 
 ## Development
 
