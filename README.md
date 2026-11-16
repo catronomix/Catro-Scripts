@@ -74,9 +74,9 @@
 
 - **`videojoin`**: Concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. Provides interactive codec selection and options to maintain audio sync. Batch (`--dir`) runs show one reused progress box (current operation + overall progress + growing ok/fail list).
 
-- **`videoloop`**: Creates a seamless, crossfaded loop from a single video file by fading the end of the clip into the beginning. Features a "Timeline Shift" option to specify the starting position for the loop.
+- **`videoloop`**: Creates a seamless, crossfaded loop from a single video file by fading the end of the clip into the beginning. Features a "Timeline Shift" option to specify the starting position for the loop. Multi-file and directory runs show one reused progress box (current file + overall progress + growing ok/warn list); a single file prints as before.
 
-- **`videotweak`**: A versatile video processing tool for changing FPS, reversing, bouncing, time stretching and/or general transcoding. _Requires: decord, ffmpeg_
+- **`videotweak`**: A versatile video processing tool for changing FPS, reversing, bouncing, time stretching and/or general transcoding. Multi-file runs show one reused progress box (current file + overall progress + growing ok/fail list); a single file prints as before. _Requires: decord, ffmpeg_
 
 
 ## Language Composition
