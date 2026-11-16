@@ -42,11 +42,17 @@ NO_COLOR_TTY = tui.Capabilities(level="none", unicode=True, width=72,
 
 UP = re.compile(r"\x1b\[\d+A\r")
 ANY_UP = re.compile(r"\x1b\[(\d+)A")
+BOX_TITLE = "Tweaking 2 files"
 
 
 def cursor_row(text):
 	"""Net vertical movement a terminal would have applied to this byte stream."""
 	return text.count("\n") - sum(int(n) for n in ANY_UP.findall(text))
+
+
+def box_cursor_row(text):
+	"""Cursor travel since the first box paint; earlier prompts don't count."""
+	return cursor_row(text[text.index(BOX_TITLE):])
 
 
 class FakeReader:
@@ -141,13 +147,15 @@ class TweakBatchBoxTest(unittest.TestCase):
 
 		def ask(prompt, default="", eof=None):
 			asked.append(prompt)
-			sys.stdout.write(prompt)  # `input()` shows the label, no newline
+			sys.stdout.write(prompt + "\n")  # a real terminal ends the label
 			return "12"
 
 		text = run_main(TTY, effect=3, ask=ask)
 		frames = UP.split(text)
 		self.assertEqual(len(asked), 2, "one question per file, before the box")
-		self.assertEqual(cursor_row(text),
+		self.assertLess(text.index(asked[0]), text.index(BOX_TITLE),
+						"the prompt must be printed before the box exists")
+		self.assertEqual(box_cursor_row(text),
 						 len(frames[-1].strip("\n").split("\n")),
 						 "a prompt must not shift every later repaint")
 		self.assertIn("Batch finished: 2/2 files saved",
@@ -157,6 +165,7 @@ class TweakBatchBoxTest(unittest.TestCase):
 		answers = iter(["", "12"])  # first file cancels, second answers
 
 		def ask(prompt, default="", eof=None):
+			sys.stdout.write(prompt + "\n")
 			return next(answers)
 
 		text = run_main(TTY, effect=3, ask=ask)
@@ -164,8 +173,9 @@ class TweakBatchBoxTest(unittest.TestCase):
 		self.assertIn("[warn] Skipped a.mp4", last)
 		self.assertIn("[ok] Saved to", last)
 		self.assertIn("Batch finished: 1/2 files saved", last)
-		self.assertEqual(cursor_row(text),
-						 len(UP.split(text)[-1].strip("\n").split("\n")))
+		self.assertEqual(box_cursor_row(text),
+						 len(UP.split(text)[-1].strip("\n").split("\n")),
+						 "a cancelled prompt must not move the frame")
 
 	def test_single_file_prints_no_box(self):
 		text = run_main(TTY, clip_names=("only.mp4",))
