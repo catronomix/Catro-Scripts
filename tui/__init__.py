@@ -30,7 +30,7 @@ Layout:
 	widgets   buttons, fields, list, scrollbar (re-exports widgetkit)
 	progress  Spinner, ProgressBar, LiveRegion
 	pager     paged output
-	hyperlink OSC 8 clickable links (wrap/supported/is_openable)
+	hyperlink OSC 8 clickable links (wrap/supported/paint/is_openable)
 	loop      FrameLoop, ScreensaverHost
 
 Importing this package is inert: no printing, no config write, no terminal mode

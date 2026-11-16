@@ -898,6 +898,12 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
             draw_window_border(stdscr, height, frame_width, scroll_top, max_scroll)
 
         # Render content
+        # A curses cell is one character: escape bytes handed to addstr would be
+        # counted (and shown as ^[). So curses paints the visible text only and
+        # the link runs are re-emitted through tui.hyperlink after the refresh,
+        # where the sequence cannot eat a column or be clipped before its close.
+        links_on = tui.hyperlink.supported(cap)
+        link_runs = []
         for y in range(usable_height):
             line_idx = scroll_top + y
             if line_idx >= total_lines:
@@ -917,22 +923,18 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
                     break
                 available_space = max_x - x_pos
                 printable_text = seg.text[:available_space]
-                # Escape bytes are zero-width: x_pos still counts the visible
-                # text only. tui.hyperlink owns the sequence and the support
-                # decision; a None target (or unsupported terminal) is a no-op.
-                painted_text = (
-                    tui.hyperlink.wrap(seg.url, printable_text, cap)
-                    if seg.url else printable_text
-                )
                 try:
                     stdscr.addstr(
                         y_offset + y,
                         x_pos,
-                        painted_text,
+                        printable_text,
                         seg.attr | curses.color_pair(seg.color),
                     )
                 except curses.error:
                     pass
+                if links_on and seg.url and printable_text:
+                    link_runs.append((y_offset + y, x_pos, printable_text,
+                                      seg.url, seg.attr, seg.color))
                 x_pos += len(printable_text)
 
         # Render status bars
@@ -969,6 +971,10 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
             pass
 
         stdscr.refresh()
+
+        # After the frame is on screen: rewrite each visible link run in place.
+        for y_screen, x_screen, text, url, attr, pair in link_runs:
+            tui.hyperlink.paint(y_screen, x_screen, text, url, attr, pair, cap)
 
         # Handle input
         key = stdscr.getch()

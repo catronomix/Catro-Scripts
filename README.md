@@ -127,7 +127,10 @@ page looks like every other script. `mdreader` keeps its curses/rich renderer
 but maps its three display modes onto the same three palettes (mode 0 `soft`,
 mode 1 `contrast-light`, mode 2 `contrast-dark`) and paints its window
 background, frame, status bar and shortcut bar from `bg`, `border-fg`,
-`bg-inside` and `bg-stripe`.
+`bg-inside` and `bg-stripe`. Links render as their visible URL and, on a
+terminal where OSC 8 is proven to survive the curses paint, are emitted as
+OSC 8 hyperlinks, so Ctrl-click (or the terminal's open-link gesture) opens
+them; elsewhere the same text stays underlined and unchanged.
 
 A pipe stays plain by default: no ANSI escapes, no box glyphs, no padding - table
 rows become TAB-separated fields, which keeps `list`, `count`, `action list` and
