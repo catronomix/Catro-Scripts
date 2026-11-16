@@ -498,10 +498,10 @@ def main():
 		print("Cancelled.")
 		return
 
-	# Several files share one reused box: each file moves the current
-	# operation line, adds its outcome row and advances the i/N bar. Every
-	# per-file question is asked in this pre-pass, before the box exists, so no
-	# prompt can land inside the box's own cursor region.
+	# Every run with work shares one box, including a single file: each file
+	# moves the current operation line, adds its outcome row and advances the
+	# i/N bar. Every per-file question is asked in this pre-pass, before the box
+	# exists, so no prompt can land inside the box's own cursor region.
 	jobs = []
 	for f in sorted(files):
 		if not args.codec:
@@ -513,35 +513,31 @@ def main():
 		media = probe_media(f)
 		jobs.append((f, target_ext, media, ask_effect(effect_id, media, cap)))
 
-	box = (tui.progress.BatchBox(f"Tweaking {len(jobs)} files", len(jobs), cap=cap)
-		   if len(jobs) > 1 else None)
+	box = tui.progress.BatchBox(
+		"Tweaking {} file{}".format(len(jobs), "" if len(jobs) == 1 else "s"),
+		len(jobs), cap=cap)
 	gate = tui.OverwriteGate(cap=cap, box=box)
 	for index, (f, target_ext, media, answers) in enumerate(jobs, 1):
-		if box is not None:
-			box.update(op=os.path.basename(f), done=index - 1)
+		box.update(op=os.path.basename(f), done=index - 1)
 		if answers is None:
 			# A cancelled or unparsable answer still owns one row, so `done`
 			# and the row list agree and the summary names the skipped file.
 			skipped = "Skipped {}: no effect setting given".format(
 				os.path.basename(f))
-			if box is None:
-				print(tui.status("warn", skipped, cap=cap))
-			else:
-				box.add("warn", skipped)
+			box.add("warn", skipped)
 		else:
 			process_video(f, effect_id, args.directory, args.suffix,
 						  selected_codec, target_ext, selected_res_config, cap,
 						  box=box, media=media, answers=answers, gate=gate)
-		if box is not None:
-			box.update(done=index)
+		box.update(done=index)
 		if gate.aborted:
 			break
-	if box is not None:
-		saved = sum(1 for kind, _ in box.rows if kind == "ok")
-		if gate.aborted:
-			box.close(f"Aborted: {saved}/{len(jobs)} files saved")
-		else:
-			box.close(f"Batch finished: {saved}/{len(jobs)} files saved")
+	saved = sum(1 for kind, _ in box.rows if kind == "ok")
+	unit = "file" if len(jobs) == 1 else "files"
+	if gate.aborted:
+		box.close("Aborted: {}/{} {} saved".format(saved, len(jobs), unit))
+	else:
+		box.close("Batch finished: {}/{} {} saved".format(saved, len(jobs), unit))
 
 if __name__ == "__main__":
 	main()
