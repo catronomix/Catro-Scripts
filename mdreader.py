@@ -109,10 +109,13 @@ if _orig_table_console is not None:
 class Segment:
     """Represents a formatted piece of text within a line."""
 
-    def __init__(self, text, attr=0, color=1):
+    def __init__(self, text, attr=0, color=1, url=None):
         self.text = text
         self.attr = attr
         self.color = color
+        # Link target for the whole span; mdreader only ever forwards it to
+        # tui.hyperlink, which decides whether and how to emit it.
+        self.url = url
 
 
 class FormattedLine:
@@ -141,7 +144,7 @@ def slice_line_segments(segments, start_col, max_cols):
             sub_end = min(seg_len, end_col - seg_start)
             sliced_text = seg.text[sub_start:sub_end]
             if sliced_text:
-                sliced.append(Segment(sliced_text, seg.attr, seg.color))
+                sliced.append(Segment(sliced_text, seg.attr, seg.color, seg.url))
 
         current_col += seg_len
         if current_col >= end_col:
@@ -763,7 +766,8 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
                     attr |= curses.A_DIM
 
             line_segments.append(
-                Segment(seg.text, attr, segment_pair(seg.style, colours))
+                Segment(seg.text, attr, segment_pair(seg.style, colours),
+                        getattr(seg.style, "link", None))
             )
         formatted_doc.append(FormattedLine(line_segments))
 
@@ -913,11 +917,18 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
                     break
                 available_space = max_x - x_pos
                 printable_text = seg.text[:available_space]
+                # Escape bytes are zero-width: x_pos still counts the visible
+                # text only. tui.hyperlink owns the sequence and the support
+                # decision; a None target (or unsupported terminal) is a no-op.
+                painted_text = (
+                    tui.hyperlink.wrap(seg.url, printable_text, cap)
+                    if seg.url else printable_text
+                )
                 try:
                     stdscr.addstr(
                         y_offset + y,
                         x_pos,
-                        printable_text,
+                        painted_text,
                         seg.attr | curses.color_pair(seg.color),
                     )
                 except curses.error:
