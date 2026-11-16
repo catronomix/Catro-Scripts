@@ -72,7 +72,7 @@
 
 - **`videoframes`**: (New) Batch export of frames from a video as numbered images. Supports custom frame ranges, step sizes, and output naming templates for downstream processing.
 
-- **`videojoin`**: Concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. Provides interactive codec selection and options to maintain audio sync.
+- **`videojoin`**: Concatenates multiple video files using FFmpeg, leveraging Decord for efficient metadata analysis. Provides interactive codec selection and options to maintain audio sync. Batch (`--dir`) runs show one reused progress box (current operation + overall progress + growing ok/fail list).
 
 - **`videoloop`**: Creates a seamless, crossfaded loop from a single video file by fading the end of the clip into the beginning. Features a "Timeline Shift" option to specify the starting position for the loop.
 
