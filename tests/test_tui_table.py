@@ -285,6 +285,15 @@ class ForcedWidthTests(unittest.TestCase):
 		self.assertIn(" x       ", out.split("\n")[3])
 		self.assertIn(" y    ", out.split("\n")[3])
 
+	def test_truncating_styled_cells_never_splits_an_escape(self):
+		styled = palette.style("x" * 90, fg="fg-warn", cap=TRUE, theme="soft")
+		out = table.render_table(["A"], [[styled]], widths=[10], cap=TRUE,
+								 theme="soft")
+		for line in out.split("\n"):
+			self.assertIsNone(re.search(r"\x1b(?!\[[0-9;?]*[ -/]*[@-~])", line),
+							  "a cut escape leaves terminal garbage: {!r}".format(line))
+		self.assertIn("..", strip_ansi(out))
+
 
 class LayoutTests(unittest.TestCase):
 	def test_ascii_variant_uses_plus_and_dash(self):
