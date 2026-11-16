@@ -153,9 +153,22 @@ def get_resize_config(cap):
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
-def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_dir="."):
+def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_dir=".", box=None):
+	"""Join `files` into `output_name`.
+
+	With a `box` (`tui.progress.BatchBox`) the per-job blocks are folded into
+	that one reused box: the current operation line moves, outcome rows grow.
+	Without one the job prints its own header and result panel as before.
+	"""
+	def report(kind, text):
+		"""Route one outcome line to the box, or print it as before."""
+		if box is None:
+			print(tui.status(kind, text, cap=cap))
+		else:
+			box.add(kind, text)
+
 	if not check_ffmpeg():
-		print(tui.status("error", "FFmpeg not found in PATH or program directory.", cap=cap))
+		report("error", "FFmpeg not found in PATH or program directory.")
 		return
 
 	# Auto-detect resolution from the first file if no resize provided
@@ -168,19 +181,24 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 			fw = fw if fw % 2 == 0 else fw + 1
 			fh = fh if fh % 2 == 0 else fh + 1
 			resize = {"width": fw, "height": fh, "method": "fit", "quant": 2}
-			print(tui.status("info", f"Auto-matching resolution to first clip: {fw}x{fh}", cap=cap))
+			report("info", f"Auto-matching resolution to first clip: {fw}x{fh}")
 		except Exception as e:
-			print(tui.status("warn", "Could not detect dimensions of first file. FFmpeg might fail if dimensions differ.", cap=cap))
+			report("warn", "Could not detect dimensions of first file. FFmpeg might fail if dimensions differ.")
 
 	input_args = []
 	filter_complex = ""
 	any_audio = False
-	
-	print()
-	print(tui.header(f"Analyzing {len(files)} inputs in '{working_dir}'...", cap=cap))
-	
+
+	if box is None:
+		print()
+		print(tui.header(f"Analyzing {len(files)} inputs in '{working_dir}'...", cap=cap))
+	else:
+		box.update(op=f"Analyzing {len(files)} inputs in '{working_dir}'")
+
 	try:
 		for i, f in enumerate(files):
+			if box is not None:
+				box.update(op=os.path.join(working_dir, f))
 			full_path = os.path.join(working_dir, f)
 			vr = VideoReader(full_path)
 			fps = vr.get_avg_fps()
@@ -261,21 +279,30 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 		
 		cmd.extend(["-c:v", codec, "-preset", "medium", "-pix_fmt", "yuv420p", output_path])
 
-		print()
-		print(tui.status("info", f"Executing FFmpeg for {output_name}...", cap=cap))
+		if box is None:
+			print()
+			print(tui.status("info", f"Executing FFmpeg for {output_name}...", cap=cap))
+		else:
+			box.update(op=f"Executing FFmpeg for {output_name}...")
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		if result.returncode != 0:
-			print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
+			detail = (result.stderr or "").strip().splitlines()
+			report("error", "FFmpeg failed for {}: {}".format(
+				output_name, detail[-1] if detail else "see FFmpeg output"))
 			return False
-			
-		print()
-		print(tui.panel(None, [tui.status(
-			"ok", f"Joined video saved as {output_path}", cap=cap)], cap=cap))
+
+		if box is None:
+			print()
+			print(tui.panel(None, [tui.status(
+				"ok", f"Joined video saved as {output_path}", cap=cap)], cap=cap))
+		else:
+			box.add("ok", f"Joined video saved as {output_path}")
 		return True
 
 	except Exception as e:
-		print()
-		print(tui.status("error", f"An error occurred processing {working_dir}: {e}", cap=cap))
+		if box is None:
+			print()
+		report("error", f"An error occurred processing {working_dir}: {e}")
 		return False
 
 def apply_loop_to_list(file_list, loop_count):
@@ -335,14 +362,20 @@ def main():
 			print(tui.status("error", "No subdirectories found in current directory.", cap=cap))
 			return
 
-		print(tui.header(f"Batch processing {len(subdirs)} directories...", cap=cap))
+		# Resolve the jobs first so the box knows its total before it starts.
+		jobs = []
 		for d in subdirs:
 			found = [f for f in os.listdir(d) if f.lower().endswith(filter_criteria) and os.path.isfile(os.path.join(d, f))]
-			if not found:
-				continue
-			
-			target_files = apply_loop_to_list(sorted(found), args.loop)
-			
+			if found:
+				jobs.append((d, apply_loop_to_list(sorted(found), args.loop)))
+		if not jobs:
+			print(tui.status("error", "No video files found in any subdirectory.", cap=cap))
+			return
+
+		# One box is reused for the whole batch: each job moves the current
+		# operation line, adds its ok/error row and advances the i/N bar.
+		box = tui.progress.BatchBox(f"Joining {len(jobs)} directories", len(jobs), cap=cap)
+		for index, (d, target_files) in enumerate(jobs, 1):
 			if base_output_name:
 				current_out = base_output_name
 			else:
@@ -352,7 +385,12 @@ def main():
 				current_out += ".mp4"
 
 			output_file = get_unique_filename(current_out, directory=d)
-			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output_file, working_dir=d, cap=cap)
+			box.update(op=d, done=index - 1)
+			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output_file, working_dir=d, cap=cap, box=box)
+			box.update(done=index)
+
+		joined = sum(1 for kind, _ in box.rows if kind == "ok")
+		box.close(f"Batch finished: {joined}/{len(jobs)} directories joined")
 		return
 
 	# Mode 2: Single Directory
