@@ -47,7 +47,9 @@ BOX_GLYPHS = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c
 # The path the join probe writes to, spelled for this platform.
 _JOINED = os.path.join(".", "out.mp4")
 
-# The plain bytes each script printed at the batch-A tip, before the panels.
+# The plain bytes each script prints on its probe path. `videoloop`'s single
+# file now shares the batch box (task 0060), so its per-file lines are TAB
+# records like any other one-job run.
 PLAIN_EXPECTED = {
 	"audiosplit.py":
 		"Targeting\t1 files\n\nProcessing complete.\n",
@@ -66,8 +68,11 @@ PLAIN_EXPECTED = {
 		"[ok] Joined video saved as " + _JOINED + "\n",
 	"videoloop.py":
 		"\nLOOP SETTINGS\nFade Time\t1.0s\nShift\t0%\nCurve\tesin\n\n"
-		"[warn] Fade duration is very long for clip.mp4. Reducing overlap.\n"
-		"[info] Processing: clip.mp4...\n[ok] Loop saved as clip_seamless.mp4\n",
+		"clip.mp4\t0/1\n"
+		"warn\tFade duration is very long for clip.mp4. Reducing overlap.\n"
+		"ok\tLoop saved as clip_seamless.mp4\n"
+		"clip.mp4\t1/1\nclip.mp4\t1/1\n"
+		"info\tBatch finished: 1/1 loop saved\n",
 	"videotweak.py":
 		"Tweaking: clip.mp4...\n[ok] Saved to clip_tweak.mp4\n",
 }

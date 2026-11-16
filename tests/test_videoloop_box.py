@@ -4,8 +4,9 @@
 			===================
 A directory of clips shares one `tui.progress.BatchBox`: every file moves the
 current operation line, adds its warn/ok row and advances the i/N bar, and the
-box is closed with a summary. A single file keeps the old per-run output byte
-for byte (no box at all), and a pipe degrades to TAB records.
+box is closed with a summary. A single file opens the same box for its one job,
+and a pipe degrades to TAB records. A run with no matching file opens no box and
+prints one clean status line.
 
 No FFmpeg or decord runs here: both are faked.
 
@@ -140,13 +141,32 @@ class LoopBatchBoxTest(unittest.TestCase):
 		self.assertIn("[ok] Loop saved as", text)
 		self.assertIn("Batch finished: 2/2 loops saved", text)
 
-	def test_single_file_prints_no_box(self):
+	def test_single_file_opens_the_box_too(self):
 		text = run_main(TTY, clip_names=("only.mp4",))
+		frames = UP.split(text)
 		self.assertIn("LOOP SETTINGS", tui.strip_ansi(text))
-		self.assertNotIn("Looping 1 files", text)
-		# The settings panel is the only frame: another box would paint a
-		# second top border, so count the corner instead of searching for it.
-		self.assertEqual(text.count("\u2554"), 1)
+		for frame in frames:
+			self.assertEqual(frame.count("Looping 1 file"), 1,
+							 "each paint draws exactly one title")
+		last = tui.strip_ansi(frames[-1])
+		self.assertIn("[ok] Loop saved as", last)
+		self.assertIn("Batch finished: 1/1 loop saved", last)
+
+	def test_no_matching_file_is_a_clean_message_without_a_box(self):
+		with tempfile.TemporaryDirectory() as tmp:
+			out = io.StringIO()
+			decord = types.ModuleType("decord")
+			decord.VideoReader = FakeReader
+			with mock.patch.dict(sys.modules, {"decord": decord}), \
+					mock.patch.object(sys, "argv", ["videoloop.py", tmp]), \
+					mock.patch.object(videoloop.tui, "detect", return_value=PIPE), \
+					contextlib.redirect_stdout(out):
+				videoloop.main()
+		text = out.getvalue()
+		self.assertIn("[error] No video files found matching criteria.",
+					  text)
+		self.assertNotIn("Looping", text)
+		self.assertNotIn("\t", text)
 
 
 if __name__ == "__main__":
