@@ -40,12 +40,16 @@ reads a different markdown file. Exits 2 when there is no pty to give.
 
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 if ROOT not in sys.path:
 	sys.path.insert(0, ROOT)
+
+# One complete OSC 8 link in a byte stream: opener, its visible text, closer.
+LINK = re.compile(r"\x1b\]8;;([^\x1b]*)\x1b\\(.*?)\x1b\]8;;\x1b\\")
 
 ROWS, COLS = 30, 100
 LOOKS = (("soft", "default"), ("contrast-light", "contrast-light"),
@@ -518,7 +522,29 @@ def run_look(look, extra_keys=b"", fixture_text=None):
 
 	with open(cells_path, encoding="utf-8") as handle:
 		frames = json.load(handle)
-	return cells, frames
+	return cells, frames, stream
+
+
+def link_issues(stream):
+	"""Problems with the OSC 8 links in the raw bytes; empty when they are sane.
+
+	A link is one open, the visible url as its text, and one close: the reader
+	re-emits the run outside curses' cell grid, so the pty is the only place the
+	sequence shows up. A dropped close (or an open the text does not sit
+	between) is exactly what a clipped or cell-counted wrap produces.
+	"""
+	links = LINK.findall(stream)
+	if not links:
+		return ["no complete OSC 8 link in the captured stream"]
+	issues = []
+	for url, text in links:
+		if text != url:
+			issues.append("link text {!r} is not its url {!r}".format(text, url))
+		if not url.lower().startswith(("http://", "https://", "mailto:")):
+			issues.append("unexpected scheme in {!r}".format(url))
+	if stream.count("\x1b]8;;") != 2 * len(links):
+		issues.append("an OSC 8 opener has no matching close")
+	return issues
 
 
 def main(argv):
@@ -538,9 +564,13 @@ def main(argv):
 	for look, theme_id in LOOKS:
 		views = []
 		problems = []
+		links = []
 		for name, keys in (("top", b""), ("bottom", b"G")):
-			cells, frames = run_look(look, keys, fixture_text)
+			cells, frames, stream = run_look(look, keys, fixture_text)
 			views.append((name, cells))
+			if name == "top":
+				links = LINK.findall(stream)
+				problems.extend("links: " + issue for issue in link_issues(stream))
 			if os.environ.get("MDREADER_DEBUG") and name == "top":
 				for y in (11, 12, 13, 14, 15, 16, 17, 18, 19, 20):
 					print("   row {:>2} {!r}".format(
@@ -553,10 +583,13 @@ def main(argv):
 				colours = _slot_colours(theme_id, frames)
 		table = mapping(views, colours)
 		report[look] = {"mapping": table, "differences": problems[:20],
-						"difference_count": len(problems)}
+						"difference_count": len(problems),
+						"osc8_links": [url for url, _text in links]}
 		print("== {} ({}) ==".format(look, theme_id))
 		print("   pty/paint-model cell agreement: {}".format(
 			"OK" if not problems else "{} mismatches".format(len(problems))))
+		print("   OSC 8 links (open/url/close in the raw bytes): {}".format(
+			", ".join(url for url, _text in links) or "none"))
 		for element, seen in table.items():
 			if not seen["visible"]:
 				print("   {:<14} NOT ON SCREEN".format(element))
