@@ -108,8 +108,9 @@ class BatchBox:
 										 cap=self.cap), percent)
 
 	def _frame(self):
-		body = [chrome.field("current", self.op or "-", cap=self.cap), self._bar()]
-		body.extend(chrome.status(kind, text, cap=self.cap)
+		body = [chrome.field("current", self.op or "-", bg="bg-inside",
+							 cap=self.cap), self._bar()]
+		body.extend(chrome.status(kind, text, bg="bg-inside", cap=self.cap)
 					for kind, text in self.rows)
 		return chrome.panel(self.title, body, width=self.width, cap=self.cap)
 

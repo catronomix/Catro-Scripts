@@ -27,9 +27,13 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
+TESTS = Path(__file__).resolve().parent
+if str(TESTS) not in sys.path:
+	sys.path.append(str(TESTS))
 
 import tui  # noqa: E402  (import after sys.path setup)
 import videojoin  # noqa: E402
+from support import cell_style, replay  # noqa: E402  (test helper)
 
 TTY = tui.Capabilities(level="true", unicode=True, width=72, isatty=True,
 					   plain=False, reason="test")
@@ -135,6 +139,32 @@ class BatchBoxTest(unittest.TestCase):
 		self.assertNotIn("\x1b", text)
 		self.assertIn("[ok]", text)
 		self.assertIn("batch done", text)
+
+
+class FrameGroundTest(unittest.TestCase):
+	"""The tty frame's whole interior sits on the panel's `bg-inside` ground."""
+
+	def test_every_interior_cell_carries_the_panel_ground(self):
+		box = tui.progress.BatchBox("Batch", 2, stream=io.StringIO(), cap=TTY)
+		box.update(op="dir-a", done=1, rows=[("ok", "first joined"),
+											("error", "second failed")])
+		ground = cell_style(tui.palette.prefix(fg="fg", bg="bg-inside",
+											   cap=TTY))[1]
+		self.assertIsNotNone(ground, "the look must have a distinct interior")
+		cells = replay(box._frame())
+		height = max(y for _x, y in cells) + 1
+		width = max(x for x, _y in cells) + 1
+		for y in range(1, height - 1):
+			for x in range(1, width - 1):
+				self.assertEqual(
+					cells[(x, y)][1][1], ground,
+					"row {}, column {}: {!r}".format(y, x, cells[(x, y)]))
+
+	def test_plain_frame_stays_unescaped(self):
+		box = tui.progress.BatchBox("Batch", 1, stream=io.StringIO(), cap=PIPE)
+		box.update(op="dir-a", done=0)
+		self.assertNotIn("\x1b", box._frame())
+		self.assertNotIn("\u2502", box._frame())
 
 
 class FakeReader:

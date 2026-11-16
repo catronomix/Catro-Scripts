@@ -15,7 +15,7 @@ is re-exported there, so `chrome.panel()` and `tui.panel()` keep resolving.
 """
 
 from . import caps, palette, table
-from .text import display_width, pad, truncate as _truncate
+from .text import display_width, truncate as _truncate
 
 
 def _flat(value):
@@ -77,8 +77,13 @@ def panel(title, body, *, width=None, padding=1, cap=None, theme=None,
 	reset = _reset(cap)
 	for line in body_lines:
 		text = _truncate(line, cell) if display_width(line) > cell else line
-		lines.append(edge + glyphs["v"] + inside + gutter + pad(text, cell)
-					 + gutter + edge + glyphs["v"] + reset)
+		if inside:
+			# A nested field/status span ends in a reset; re-assert the panel
+			# ground so the rest of the row stays on `bg-inside`.
+			text = text.replace(palette.RESET, palette.RESET + inside)
+		fill = " " * max(0, cell - display_width(text))
+		lines.append(edge + glyphs["v"] + inside + gutter + text + inside
+					 + fill + gutter + edge + glyphs["v"] + reset)
 	lines.append(palette.style(glyphs["bl"] + glyphs["h"] * (inner - 2)
 							   + glyphs["br"], fg=edge_fg, bg=edge_bg,
 							   cap=cap, theme=theme))
