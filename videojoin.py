@@ -84,18 +84,6 @@ def has_audio(filename):
 	except:
 		return False
 
-def get_unique_filename(filename, directory="."):
-	full_path = os.path.join(directory, filename)
-	if not os.path.exists(full_path):
-		return filename
-	base, ext = os.path.splitext(filename)
-	counter = 1
-	while True:
-		new_name = f"{base} ({counter}){ext}"
-		if not os.path.exists(os.path.join(directory, new_name)):
-			return new_name
-		counter += 1
-
 def get_codec_choice(cap):
 	codecs = [
 		("libx264", "H.264 (Default/High Compatibility)"),
@@ -381,6 +369,7 @@ def main():
 		# One box is reused for the whole batch: each job moves the current
 		# operation line, adds its ok/error row and advances the i/N bar.
 		box = tui.progress.BatchBox(f"Joining {len(jobs)} directories", len(jobs), cap=cap)
+		gate = tui.OverwriteGate(cap=cap, box=box)
 		for index, (d, target_files) in enumerate(jobs, 1):
 			if base_output_name:
 				current_out = base_output_name
@@ -390,13 +379,24 @@ def main():
 			if not current_out.lower().endswith((".mp4", ".mkv", ".webm", ".webp")):
 				current_out += ".mp4"
 
-			output_file = get_unique_filename(current_out, directory=d)
 			box.update(op=d, done=index - 1)
-			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output_file, working_dir=d, cap=cap, box=box)
+			if os.path.exists(os.path.join(d, current_out)) and not gate.allow():
+				if gate.aborted:
+					box.add("warn", f"Aborted on {d}")
+				else:
+					box.add("warn", f"Skipped {current_out}: output exists")
+				box.update(done=index)
+				if gate.aborted:
+					break
+				continue
+			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, current_out, working_dir=d, cap=cap, box=box)
 			box.update(done=index)
 
 		joined = sum(1 for kind, _ in box.rows if kind == "ok")
-		box.close(f"Batch finished: {joined}/{len(jobs)} directories joined")
+		if gate.aborted:
+			box.close(f"Aborted: {joined}/{len(jobs)} directories joined")
+		else:
+			box.close(f"Batch finished: {joined}/{len(jobs)} directories joined")
 		return
 
 	# Mode 2: Single Directory
@@ -421,8 +421,15 @@ def main():
 	if not final_output.lower().endswith((".mp4", ".mkv", ".webm", ".webp")):
 		final_output += ".mp4"
 
-	output_file = get_unique_filename(final_output)
-	run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output_file, cap=cap)
+	gate = tui.OverwriteGate(cap=cap)
+	if os.path.exists(final_output) and not gate.allow():
+		if gate.aborted:
+			print(tui.status("warn", "Aborted.", cap=cap))
+		else:
+			print(tui.status("warn", f"Skipped {final_output}: output exists",
+							 cap=cap))
+		return
+	run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, final_output, cap=cap)
 
 if __name__ == "__main__":
 	main()

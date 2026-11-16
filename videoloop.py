@@ -158,7 +158,7 @@ def get_resize_config(cap):
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
-def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap, box=None):
+def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap, box=None, gate=None):
 	"""Loop one file; with a `box` the outcome lines fold into that frame."""
 	def report(kind, text):
 		"""Route one outcome line to the box, or print it as before."""
@@ -173,6 +173,15 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 
 	base, ext = os.path.splitext(file_path)
 	output_name = f"{base}{suffix}{ext}"
+
+	if os.path.exists(output_name):
+		# One shared gate answers every later file after a `Y`.
+		if gate is None or not gate.allow():
+			if gate is not None and gate.aborted:
+				report("warn", f"Aborted on {os.path.basename(file_path)}")
+			else:
+				report("warn", f"Skipped {output_name}: output exists")
+			return
 
 	try:
 		vr = VideoReader(file_path)
@@ -349,15 +358,21 @@ def main():
 	# operation line, adds its outcome row and advances the i/N bar.
 	box = (tui.progress.BatchBox(f"Looping {len(files)} files", len(files), cap=cap)
 		   if len(files) > 1 else None)
+	gate = tui.OverwriteGate(cap=cap, box=box)
 	for index, f in enumerate(sorted(files), 1):
 		if box is not None:
 			box.update(op=os.path.basename(f), done=index - 1)
-		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap, box=box)
+		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap, box=box, gate=gate)
 		if box is not None:
 			box.update(done=index)
+		if gate.aborted:
+			break
 	if box is not None:
 		saved = sum(1 for kind, _ in box.rows if kind == "ok")
-		box.close(f"Batch finished: {saved}/{len(files)} loops saved")
+		if gate.aborted:
+			box.close(f"Aborted: {saved}/{len(files)} loops saved")
+		else:
+			box.close(f"Batch finished: {saved}/{len(files)} loops saved")
 
 if __name__ == "__main__":
 	main()
