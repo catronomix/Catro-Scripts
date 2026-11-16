@@ -66,8 +66,8 @@ def done(returncode=0, stderr=""):
 	return types.SimpleNamespace(returncode=returncode, stderr=stderr)
 
 
-def run_main(cap, clip_names=("a.mp4", "b.mp4"), result=None):
-	"""Drive `videotweak.main` over a scratch folder with passthrough (effect 6)."""
+def run_main(cap, clip_names=("a.mp4", "b.mp4"), result=None, effect=6, ask=None):
+	"""Drive `videotweak.main` over a scratch folder (effect 6 = passthrough)."""
 	out = io.StringIO()
 	result = done() if result is None else result
 	decord = types.ModuleType("decord")
@@ -80,13 +80,17 @@ def run_main(cap, clip_names=("a.mp4", "b.mp4"), result=None):
 				mock.patch.object(sys, "argv", argv), \
 				mock.patch.object(videotweak.tui, "detect", return_value=cap), \
 				mock.patch.object(videotweak, "get_effect_choice",
-								  lambda cap: 6), \
+								  lambda cap: effect), \
 				mock.patch.object(videotweak, "VideoReader", FakeReader), \
 				mock.patch.object(videotweak, "has_audio", return_value=False), \
 				mock.patch.object(videotweak.subprocess, "run",
 								  lambda *a, **k: result), \
 				contextlib.redirect_stdout(out):
-			videotweak.main()
+			if ask is None:
+				videotweak.main()
+			else:
+				with mock.patch.object(videotweak.tui, "ask_text", ask):
+					videotweak.main()
 	return out.getvalue()
 
 
@@ -131,6 +135,37 @@ class TweakBatchBoxTest(unittest.TestCase):
 		self.assertNotIn("\x1b", text)
 		self.assertIn("[ok] Saved to", text)
 		self.assertIn("Batch finished: 2/2 files saved", text)
+
+	def test_effect_question_is_asked_before_the_box_owns_the_cursor(self):
+		asked = []
+
+		def ask(prompt, default="", eof=None):
+			asked.append(prompt)
+			sys.stdout.write(prompt)  # `input()` shows the label, no newline
+			return "12"
+
+		text = run_main(TTY, effect=3, ask=ask)
+		frames = UP.split(text)
+		self.assertEqual(len(asked), 2, "one question per file, before the box")
+		self.assertEqual(cursor_row(text),
+						 len(frames[-1].strip("\n").split("\n")),
+						 "a prompt must not shift every later repaint")
+		self.assertIn("Batch finished: 2/2 files saved",
+					  tui.strip_ansi(frames[-1]))
+
+	def test_cancelled_question_still_owns_one_row(self):
+		answers = iter(["", "12"])  # first file cancels, second answers
+
+		def ask(prompt, default="", eof=None):
+			return next(answers)
+
+		text = run_main(TTY, effect=3, ask=ask)
+		last = tui.strip_ansi(UP.split(text)[-1])
+		self.assertIn("[warn] Skipped a.mp4", last)
+		self.assertIn("[ok] Saved to", last)
+		self.assertIn("Batch finished: 1/2 files saved", last)
+		self.assertEqual(cursor_row(text),
+						 len(UP.split(text)[-1].strip("\n").split("\n")))
 
 	def test_single_file_prints_no_box(self):
 		text = run_main(TTY, clip_names=("only.mp4",))
