@@ -286,9 +286,15 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 			box.update(op=f"Executing FFmpeg for {output_name}...")
 		result = subprocess.run(cmd, capture_output=True, text=True)
 		if result.returncode != 0:
-			detail = (result.stderr or "").strip().splitlines()
-			report("error", "FFmpeg failed for {}: {}".format(
-				output_name, detail[-1] if detail else "see FFmpeg output"))
+			if box is None:
+				# Single-run path keeps the whole FFmpeg diagnostic block.
+				print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
+			else:
+				# Inside the box only the last line fits; never dump stderr
+				# into the middle of the frame.
+				detail = (result.stderr or "").strip().splitlines()
+				box.add("error", "FFmpeg failed for {}: {}".format(
+					output_name, detail[-1] if detail else "see FFmpeg output"))
 			return False
 
 		if box is None:

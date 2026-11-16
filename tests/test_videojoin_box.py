@@ -40,6 +40,12 @@ NO_COLOR_TTY = tui.Capabilities(level="none", unicode=True, width=72,
 
 BOX_GLYPHS = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c"
 UP = re.compile(r"\x1b\[\d+A\r")
+ANY_UP = re.compile(r"\x1b\[(\d+)A")
+
+
+def cursor_row(text):
+	"""Net vertical movement a terminal would have applied to this byte stream."""
+	return text.count("\n") - sum(int(n) for n in ANY_UP.findall(text))
 
 
 class BatchBoxTest(unittest.TestCase):
@@ -73,6 +79,30 @@ class BatchBoxTest(unittest.TestCase):
 		self.assertIn("batch done", plain_last)
 		self.assertIn("[ok]", plain_last)
 		self.assertIn("[error]", plain_last)
+
+	def test_shrinking_frame_keeps_the_rewind_in_step(self):
+		out = io.StringIO()
+		box = tui.progress.BatchBox("Batch", 2, stream=out, cap=TTY)
+		box.update(op="dir-a", done=0, rows=[("ok", "one"), ("ok", "two")])
+		self.assertEqual(cursor_row(out.getvalue()), box._lines)
+		box.update(op="dir-b", done=1)                 # same height, fresh frame
+		self.assertEqual(cursor_row(out.getvalue()), box._lines)
+		box.update(rows=[])                            # shrink by two rows
+		self.assertEqual(cursor_row(out.getvalue()), box._lines,
+						 "surplus clear lines must be rewound")
+		box.update(op="dir-c")                         # next paint must not drift
+		self.assertEqual(cursor_row(out.getvalue()), box._lines)
+
+	def test_narrow_terminal_is_not_widened_past_cap_width(self):
+		narrow = tui.Capabilities(level="true", unicode=True, width=12,
+								  isatty=True, plain=False, reason="test")
+		out = io.StringIO()
+		box = tui.progress.BatchBox("Batch", 1, stream=out, cap=narrow)
+		box.update(op="dir-a", done=0)
+		box.close("done")
+		self.assertEqual(box.width, 12)
+		for line in box._frame().split("\n"):
+			self.assertLessEqual(tui.display_width(line), 12)
 
 	def test_pipe_degrades_to_tab_records(self):
 		out = io.StringIO()
@@ -148,6 +178,27 @@ class JoinBoxWiringTest(unittest.TestCase):
 		self.assertIn("Executing FFmpeg", text)
 		self.assertGreaterEqual(len(UP.findall(text)), 1,
 								"the box is redrawn, not reprinted as blocks")
+
+	def test_failure_without_a_box_keeps_the_full_ffmpeg_stderr(self):
+		done = types.SimpleNamespace(
+			returncode=1, stderr="Conversion failed!\nInvalid data found when processing input\n")
+		out = io.StringIO()
+		with tempfile.TemporaryDirectory() as tmp, \
+				mock.patch.object(videojoin, "VideoReader", FakeReader), \
+				mock.patch.object(videojoin, "check_ffmpeg", return_value=True), \
+				mock.patch.object(videojoin, "has_audio", return_value=False), \
+				mock.patch.object(videojoin.subprocess, "run", return_value=done), \
+				contextlib.redirect_stdout(out):
+			ok = videojoin.run_ffmpeg_join(
+				["a.mp4"], False, "libx264",
+				{"width": 640, "height": 480, "method": "stretch"},
+				"out.mp4", TTY, working_dir=tmp)
+
+		self.assertFalse(ok)
+		text = tui.strip_ansi(out.getvalue())
+		self.assertIn("FFmpeg Error Output:", text)
+		self.assertIn("Conversion failed!", text)
+		self.assertIn("Invalid data found when processing input", text)
 
 	def test_dir_mode_keeps_one_box_for_every_subdirectory(self):
 		done = types.SimpleNamespace(returncode=0, stderr="")

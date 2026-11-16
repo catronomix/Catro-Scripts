@@ -43,8 +43,10 @@ class BatchBox:
 		"""Outer width: explicit, else the terminal's, never over the terminal."""
 		span = DEFAULT_WIDTH if width is None else max(20, int(width))
 		if self.cap.width:
-			span = min(span, int(self.cap.width))
-		return max(20, span)
+			# A known terminal width always wins the clamp; the 20-column
+			# comfort floor is for the unknown-width case only.
+			span = max(4, min(span, int(self.cap.width)))
+		return span
 
 	def update(self, op=None, done=None, rows=None):
 		"""Repaint with the current operation, completed count and rows."""
@@ -123,7 +125,12 @@ class BatchBox:
 			out.write("\x1b[{}A\r".format(self._lines))
 		for line in lines:
 			out.write(line + "\x1b[K\n")
-		for _ in range(len(lines), self._lines):
+		surplus = self._lines - len(lines)
+		for _ in range(surplus):
 			out.write("\x1b[K\n")
+		if surplus > 0:
+			# The clear lines left the cursor below the new frame's bottom;
+			# bring it back so the next rewind by `_lines` lands on the top.
+			out.write("\x1b[{}A".format(surplus))
 		self._lines = len(lines)
 		out.flush()
