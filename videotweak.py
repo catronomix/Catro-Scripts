@@ -298,12 +298,14 @@ def ask_effect(effect_id, media, cap):
 				"interp": 2 if tui.ask_int("Choice", 1, 2, default=1) == 2 else 1}
 	return {}
 
-def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap, box=None, media=None, answers=None):
+def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap, box=None, media=None, answers=None, gate=None):
 	"""Tweak one file.
 
 	`media`/`answers` are the pre-pass results from `probe_media`/`ask_effect`;
 	when omitted they are resolved here, and this function never prompts - the
-	caller owns every question (see `ask_effect`).
+	caller owns every question (see `ask_effect`). The one prompt it can paint
+	is the transient overwrite question, which erases itself and repaints the
+	box (`tui.overwrite`).
 	"""
 	base_name = os.path.basename(file_path)
 	name_no_ext, ext = os.path.splitext(base_name)
@@ -313,6 +315,19 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 	
 	output_name = f"{name_no_ext}{suffix}{target_ext}"
 	output_path = os.path.join(out_dir, output_name) if out_dir else output_name
+
+	if os.path.exists(output_path):
+		# One shared gate answers every later file after a `Y`.
+		if gate is None or not gate.allow():
+			if gate is not None and gate.aborted:
+				line = f"Aborted on {base_name}"
+			else:
+				line = f"Skipped {output_path}: output exists"
+			if box is None:
+				print(tui.status("warn", line, cap=cap))
+			else:
+				box.add("warn", line)
+			return
 
 	if out_dir and not os.path.exists(out_dir):
 		os.makedirs(out_dir)
@@ -500,6 +515,7 @@ def main():
 
 	box = (tui.progress.BatchBox(f"Tweaking {len(jobs)} files", len(jobs), cap=cap)
 		   if len(jobs) > 1 else None)
+	gate = tui.OverwriteGate(cap=cap, box=box)
 	for index, (f, target_ext, media, answers) in enumerate(jobs, 1):
 		if box is not None:
 			box.update(op=os.path.basename(f), done=index - 1)
@@ -515,12 +531,17 @@ def main():
 		else:
 			process_video(f, effect_id, args.directory, args.suffix,
 						  selected_codec, target_ext, selected_res_config, cap,
-						  box=box, media=media, answers=answers)
+						  box=box, media=media, answers=answers, gate=gate)
 		if box is not None:
 			box.update(done=index)
+		if gate.aborted:
+			break
 	if box is not None:
 		saved = sum(1 for kind, _ in box.rows if kind == "ok")
-		box.close(f"Batch finished: {saved}/{len(jobs)} files saved")
+		if gate.aborted:
+			box.close(f"Aborted: {saved}/{len(jobs)} files saved")
+		else:
+			box.close(f"Batch finished: {saved}/{len(jobs)} files saved")
 
 if __name__ == "__main__":
 	main()
