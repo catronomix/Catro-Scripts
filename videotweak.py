@@ -257,7 +257,7 @@ def get_effect_choice(cap):
 	print(tui.menu(effects, selected=None, title="Select Tweak Effect", cap=cap))
 	return tui.ask_int("Choose", 1, len(effects))
 
-def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap):
+def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap, box=None):
 	base_name = os.path.basename(file_path)
 	name_no_ext, ext = os.path.splitext(base_name)
 	
@@ -374,13 +374,24 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 
 	cmd.append(output_path)
 
-	print(tui.header(f"Tweaking: {base_name}...", cap=cap))
+	if box is None:
+		print(tui.header(f"Tweaking: {base_name}...", cap=cap))
 	result = subprocess.run(cmd, capture_output=True, text=True)
-	
+
 	if result.returncode == 0:
-		print(tui.status_panel([("ok", f"Saved to {output_path}")], cap=cap))
+		if box is None:
+			print(tui.status_panel([("ok", f"Saved to {output_path}")], cap=cap))
+		else:
+			box.add("ok", f"Saved to {output_path}")
 	else:
-		print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
+		if box is None:
+			print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
+		else:
+			# Inside the box only the last line fits; never dump stderr
+			# into the middle of the frame.
+			detail = (result.stderr or "").strip().splitlines()
+			box.add("error", "FFmpeg failed for {}: {}".format(
+				base_name, detail[-1] if detail else "see FFmpeg output"))
 
 def main():
 	tui.init_ansi()
@@ -439,7 +450,11 @@ def main():
 		print("Cancelled.")
 		return
 
-	for f in sorted(files):
+	# Several files share one reused box: each file moves the current
+	# operation line, adds its outcome row and advances the i/N bar.
+	box = (tui.progress.BatchBox(f"Tweaking {len(files)} files", len(files), cap=cap)
+		   if len(files) > 1 else None)
+	for index, f in enumerate(sorted(files), 1):
 		if not args.codec:
 			_, current_ext = os.path.splitext(f)
 			# Default to MP4 if source is a transport stream, otherwise keep original
@@ -447,7 +462,14 @@ def main():
 		else:
 			target_ext = selected_ext
 
-		process_video(f, effect_id, args.directory, args.suffix, selected_codec, target_ext, selected_res_config, cap)
+		if box is not None:
+			box.update(op=os.path.basename(f), done=index - 1)
+		process_video(f, effect_id, args.directory, args.suffix, selected_codec, target_ext, selected_res_config, cap, box=box)
+		if box is not None:
+			box.update(done=index)
+	if box is not None:
+		saved = sum(1 for kind, _ in box.rows if kind == "ok")
+		box.close(f"Batch finished: {saved}/{len(files)} files saved")
 
 if __name__ == "__main__":
 	main()
