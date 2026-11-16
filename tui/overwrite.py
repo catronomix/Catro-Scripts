@@ -3,8 +3,10 @@
 			OVERWRITE PROMPT
 			================
 One question asked when a target file already exists, so a rerun cannot replace
-a file behind the user's back: `y` overwrites this target, `n` skips it, `Y`
-overwrites every later target without asking, `a` aborts the run.
+a file behind the user's back: `y` overwrites this target, `n` skips it, `r`
+writes it under the next free `name (2).ext` instead, `Y` overwrites every later
+target without asking, `R` renames every later target the same way, `a` aborts
+the run.
 
 On a terminal the question is a transient row painted under the caller's batch
 box: the frame is parked with the cursor under its last line, the question is
@@ -17,18 +19,51 @@ A run that cannot ask never waits: a pipe, a forced-colour pipe, or a stdin that
 is not a terminal treats an existing target as `n`. A level-`none` terminal
 reads a line instead of a key, because erasing and repainting need escapes; the
 question is then ordinary output, exactly like the box itself at that level.
+
+`next_free()` is the single source of truth for a renamed target (`name (2).ext`,
+`name (3).ext`, ...); `settle()` re-runs that scan just before the write so a
+sibling process that claimed the name in the meantime costs the next number, not
+the file.
 """
 
+import os
 import sys
 
 from . import caps, keys, palette, text
 
 QUESTION = "File exists! Overwrite?"
-HINT = "([y]es, [n]o, [Y]es to all, [a]bort): "
+HINT = "([y]es, [n]o, [r]ename, [Y]es to all, [R]ename all, [a]bort): "
 PROMPT = QUESTION + " " + HINT
 
-_ANSWERS = {"y": "yes", "n": "no", "Y": "all", "a": "abort"}
+_ANSWERS = {"y": "yes", "n": "no", "r": "rename", "Y": "all", "R": "rename_all",
+			"a": "abort"}
 _ERASE = "\r\x1b[2K"
+
+
+def next_free(path):
+	"""The next free `stem (N)ext` for `path`; the zip convention starts at 2."""
+	stem, ext = os.path.splitext(path)
+	number = 2
+	candidate = "{} ({}){}".format(stem, number, ext)
+	while os.path.exists(candidate):
+		number += 1
+		candidate = "{} ({}){}".format(stem, number, ext)
+	return candidate
+
+
+def settle(path, effective, attempts=8):
+	"""Re-resolve a decided rename just before the write.
+
+	The `next_free` scan and the FFmpeg run are not atomic: a sibling can claim
+	the chosen name in between, so the same scan runs again and the caller
+	writes to the number it now returns.
+	"""
+	for _ in range(attempts):
+		fresh = next_free(path)
+		if fresh == effective:
+			break
+		effective = fresh
+	return effective
 
 
 def _stdin_tty():
@@ -49,7 +84,7 @@ def _question(cap):
 
 
 class OverwriteGate:
-	"""One run's y/n/Y/a policy; `allow()` is True when a target may be replaced."""
+	"""One run's y/n/r/Y/R/a policy; `decide()` names the action per target."""
 
 	def __init__(self, cap=None, box=None, *, stream=None, reader=None):
 		self.cap = cap or caps.detect()
@@ -59,6 +94,7 @@ class OverwriteGate:
 		self.stream = sys.stdout if stream is None else stream
 		self._reader = reader or keys.read_key
 		self.overwrite_all = False
+		self.rename_all = False
 		self.aborted = False
 
 	@property
@@ -71,16 +107,30 @@ class OverwriteGate:
 		"""True when the painted row can be erased (escapes are available)."""
 		return self.interactive and self.cap.level != "none"
 
-	def allow(self):
-		"""True replaces the existing target; False skips it (see `aborted`)."""
+	def allow(self, path=None):
+		"""Compat shim: True replaces the target; skip, rename and abort do not."""
+		return self.decide(path)[0] == "overwrite"
+
+	def decide(self, path):
+		"""One answer for `path`: `(action, effective path)`.
+
+		`action` is `overwrite`, `rename`, `skip` or `abort`; a rename returns
+		the free name `next_free()` picked as the effective path.
+		"""
 		if self.aborted:
-			return False
+			return ("abort", path)
 		if self.overwrite_all:
-			return True
+			return ("overwrite", path)
+		if self.rename_all:
+			return ("rename", next_free(path) if path else path)
 		if not self.interactive:
-			return False
+			return ("skip", path)
 		if not self.transient:
-			return self._apply(self._read_line())
+			return self._resolve(self._read_line(), path)
+		return self._resolve(self._ask(), path)
+
+	def _ask(self):
+		"""Paint and read until a known answer arrives; one question per try."""
 		while True:
 			self._paint()
 			try:
@@ -89,9 +139,8 @@ class OverwriteGate:
 				self._erase()
 			if key == "esc":
 				key = "a"
-			answer = _ANSWERS.get(key)
-			if answer is not None:
-				return self._apply(key)
+			if key in _ANSWERS:
+				return key
 
 	def _read_key(self):
 		"""One key token; Ctrl-C / closed stdin abort, like pressing `a`."""
@@ -112,15 +161,20 @@ class OverwriteGate:
 			if key in _ANSWERS:
 				return key
 
-	def _apply(self, key):
-		answer = _ANSWERS.get(key)
-		if answer is None:
-			return False
+	def _resolve(self, key, path):
+		"""Map an answer key to its `(action, effective)` pair."""
+		answer = _ANSWERS[key]
 		if answer == "all":
 			self.overwrite_all = True
-		if answer == "abort":
+		elif answer == "rename_all":
+			self.rename_all = True
+		elif answer == "abort":
 			self.aborted = True
-		return answer in ("yes", "all")
+		if answer in ("yes", "all"):
+			return ("overwrite", path)
+		if answer in ("rename", "rename_all"):
+			return ("rename", next_free(path) if path else path)
+		return ("abort" if answer == "abort" else "skip", path)
 
 	def _paint(self):
 		"""Write the question on the row under the frame, without a newline."""

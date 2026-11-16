@@ -175,13 +175,19 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 	output_name = f"{base}{suffix}{ext}"
 
 	if os.path.exists(output_name):
-		# One shared gate answers every later file after a `Y`.
-		if gate is None or not gate.allow():
-			if gate is not None and gate.aborted:
-				report("warn", f"Aborted on {os.path.basename(file_path)}")
-			else:
-				report("warn", f"Skipped {output_name}: output exists")
+		# One shared gate answers every later file after a `Y`/`R`.
+		if gate is None:
+			action, effective = "skip", output_name
+		else:
+			action, effective = gate.decide(output_name)
+		if action == "abort":
+			report("warn", f"Aborted on {os.path.basename(file_path)}")
 			return
+		if action == "skip":
+			report("warn", f"Skipped {output_name}: output exists")
+			return
+		if action == "rename":
+			output_name = tui.overwrite.settle(output_name, effective)
 
 	try:
 		vr = VideoReader(file_path)
