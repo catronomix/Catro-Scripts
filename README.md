@@ -50,7 +50,7 @@
 
 - **`randomsorter`**: Renames and distributes files in the current directory to anonymize them. It generates unique random identifiers (numeric or alphanumeric, with configurable length) and organizes files into subfolders.
 
-- **`renamer`**: Renames files in the current directory sequentially. Supports custom prefixes, suffixes, and sorting methods while retaining media-type filters and safety checks.
+- **`renamer`**: Renames files in the current directory sequentially. Supports custom prefixes, suffixes, and sorting methods (including modification-date and creation-date ascending/descending order) while retaining media-type filters and safety checks.
 
 - **`screensaver`**: A general terminal renderer and screensaver host that loads external screensaver modules (.screensaver files) and provides a high-performance double-buffered terminal canvas.
 

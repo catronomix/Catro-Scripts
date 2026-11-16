@@ -36,7 +36,8 @@ OPTIONS:
         -o, --original       Keep original filename but add numbering at the start.
                              (Mutually exclusive with -d 0)
         --sort METHOD        Sorting: 'name_asc' (default), 'name_desc', 'date_asc', 'date_desc',
-                             'alphanum_asc', 'alphanum_desc', 'winname_asc', 'winname_desc'
+                             'cdate_asc', 'cdate_desc', 'alphanum_asc', 'alphanum_desc',
+                             'winname_asc', 'winname_desc'
         -k, --keep           Keep original files in place (copy instead of move)
         -t, --type TYPE      Filter by category: 'image', 'video', 'audio', or 'folder'
         -e, --ext EXT        Filter for a specific extension only
@@ -342,6 +343,12 @@ def sort_files(folder_path, files, method):
         files.sort(
             key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True
         )
+    elif method == "cdate_asc":
+        files.sort(key=lambda x: os.path.getctime(os.path.join(folder_path, x)))
+    elif method == "cdate_desc":
+        files.sort(
+            key=lambda x: os.path.getctime(os.path.join(folder_path, x)), reverse=True
+        )
     elif method == "alphanum_asc":
         files.sort(key=natural_sort_key)
     elif method == "alphanum_desc":
@@ -587,6 +594,8 @@ if __name__ == "__main__":
             "name_desc",
             "date_asc",
             "date_desc",
+            "cdate_asc",
+            "cdate_desc",
             "alphanum_asc",
             "alphanum_desc",
             "winname_asc",
