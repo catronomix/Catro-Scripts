@@ -14,6 +14,7 @@ No FFmpeg or decord runs here.
 Run with:
 	python -m unittest tests.test_overwrite_prompt -v
 """
+import contextlib
 import io
 import os
 import re
@@ -327,6 +328,93 @@ class ScriptSkipTest(unittest.TestCase):
 		self.assertIn(("warn", "Skipped {}: output exists".format(
 			os.path.join(tmp, "a_tweak.mp4"))), box.rows)
 		self.assertIn("Skipped", tui.strip_ansi(out.getvalue()))
+
+	def test_videoloop_single_file_main_skips_inside_the_box(self):
+		out = io.StringIO()
+		decord = types.ModuleType("decord")
+		decord.VideoReader = _FakeReader
+		with tempfile.TemporaryDirectory() as tmp:
+			video = os.path.join(tmp, "a.mp4")
+			open(video, "w").close()
+			open(os.path.join(tmp, "a_seamless.mp4"), "w").close()
+			run = mock.Mock(return_value=_Done())
+			with mock.patch.dict(sys.modules, {"decord": decord}), \
+					mock.patch.object(sys, "argv", ["videoloop.py", video]), \
+					mock.patch.object(videoloop.tui, "detect", return_value=TTY), \
+					mock.patch.object(videoloop, "check_ffmpeg", return_value=True), \
+					mock.patch.object(videoloop.subprocess, "run", run), \
+					mock.patch.object(tui.overwrite, "_stdin_tty",
+									  return_value=False), \
+					contextlib.redirect_stdout(out):
+				videoloop.main()
+		self.assertFalse([call for call in run.call_args_list
+						  if "-y" in call.args[0]],
+						 "the skipped target must not reach FFmpeg")
+		text = tui.strip_ansi(out.getvalue())
+		self.assertIn("[warn] Skipped", text)
+		self.assertIn("Batch finished: 0/1 loop saved", text)
+
+	def test_videotweak_single_file_main_skips_inside_the_box(self):
+		out = io.StringIO()
+		decord = types.ModuleType("decord")
+		decord.VideoReader = _FakeReader
+		start = os.getcwd()
+		with tempfile.TemporaryDirectory() as tmp:
+			open(os.path.join(tmp, "a.mp4"), "w").close()
+			open(os.path.join(tmp, "a_tweak.mp4"), "w").close()
+			run = mock.Mock(return_value=_Done())
+			os.chdir(tmp)
+			try:
+				with mock.patch.dict(sys.modules, {"decord": decord}), \
+						mock.patch.object(sys, "argv", ["videotweak.py", "a.mp4"]), \
+						mock.patch.object(videotweak.tui, "detect",
+										  return_value=TTY), \
+						mock.patch.object(videotweak, "get_effect_choice",
+										  lambda cap: 6), \
+						mock.patch.object(videotweak, "has_audio",
+										  return_value=False), \
+						mock.patch.object(videotweak.subprocess, "run", run), \
+						mock.patch.object(tui.overwrite, "_stdin_tty",
+										  return_value=False), \
+						contextlib.redirect_stdout(out):
+					videotweak.main()
+			finally:
+				os.chdir(start)
+		self.assertFalse([call for call in run.call_args_list
+						  if "-y" in call.args[0]],
+						 "the skipped target must not reach FFmpeg")
+		text = tui.strip_ansi(out.getvalue())
+		self.assertIn("[warn] Skipped", text)
+		self.assertIn("Batch finished: 0/1 file saved", text)
+
+	def test_videojoin_single_file_main_skips_inside_the_box(self):
+		out = io.StringIO()
+		decord = types.ModuleType("decord")
+		decord.VideoReader = _FakeReader
+		start = os.getcwd()
+		with tempfile.TemporaryDirectory() as tmp:
+			open(os.path.join(tmp, "clip.mp4"), "w").close()
+			open(os.path.join(tmp, "joined_video.mp4"), "w").close()
+			os.chdir(tmp)
+			try:
+				with mock.patch.dict(sys.modules, {"decord": decord}), \
+						mock.patch.object(sys, "argv",
+										  ["videojoin.py", "clip.mp4"]), \
+						mock.patch.object(videojoin.tui, "detect",
+										  return_value=TTY), \
+						mock.patch.object(videojoin, "check_ffmpeg",
+										  return_value=True), \
+						mock.patch.object(videojoin.subprocess, "run") as run, \
+						mock.patch.object(tui.overwrite, "_stdin_tty",
+										  return_value=False), \
+						mock.patch("sys.stdout", out):
+					videojoin.main()
+			finally:
+				os.chdir(start)
+		run.assert_not_called()
+		text = tui.strip_ansi(out.getvalue())
+		self.assertIn("[warn] Skipped joined_video.mp4: output exists", text)
+		self.assertIn("Batch finished: 0/1 output joined", text)
 
 
 if __name__ == "__main__":

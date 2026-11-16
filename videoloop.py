@@ -354,25 +354,25 @@ def main():
 	], cap=cap))
 	print()
 
-	# Several files share one reused box: each file moves the current
-	# operation line, adds its outcome row and advances the i/N bar.
-	box = (tui.progress.BatchBox(f"Looping {len(files)} files", len(files), cap=cap)
-		   if len(files) > 1 else None)
+	# Every run with work shares one box, including a single file: each job
+	# moves the current operation line, adds its outcome row and advances the
+	# i/N bar.
+	box = tui.progress.BatchBox(
+		"Looping {} file{}".format(len(files), "" if len(files) == 1 else "s"),
+		len(files), cap=cap)
 	gate = tui.OverwriteGate(cap=cap, box=box)
 	for index, f in enumerate(sorted(files), 1):
-		if box is not None:
-			box.update(op=os.path.basename(f), done=index - 1)
+		box.update(op=os.path.basename(f), done=index - 1)
 		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap, box=box, gate=gate)
-		if box is not None:
-			box.update(done=index)
+		box.update(done=index)
 		if gate.aborted:
 			break
-	if box is not None:
-		saved = sum(1 for kind, _ in box.rows if kind == "ok")
-		if gate.aborted:
-			box.close(f"Aborted: {saved}/{len(files)} loops saved")
-		else:
-			box.close(f"Batch finished: {saved}/{len(files)} loops saved")
+	saved = sum(1 for kind, _ in box.rows if kind == "ok")
+	unit = "loop" if len(files) == 1 else "loops"
+	if gate.aborted:
+		box.close("Aborted: {}/{} {} saved".format(saved, len(files), unit))
+	else:
+		box.close("Batch finished: {}/{} {} saved".format(saved, len(files), unit))
 
 if __name__ == "__main__":
 	main()

@@ -366,9 +366,13 @@ def main():
 			print(tui.status("error", "No video files found in any subdirectory.", cap=cap))
 			return
 
-		# One box is reused for the whole batch: each job moves the current
-		# operation line, adds its ok/error row and advances the i/N bar.
-		box = tui.progress.BatchBox(f"Joining {len(jobs)} directories", len(jobs), cap=cap)
+		# One box is reused for the whole batch (even for a single directory):
+		# each job moves the current operation line, adds its ok/error row and
+		# advances the i/N bar.
+		box = tui.progress.BatchBox(
+			"Joining {} {}".format(len(jobs),
+								   "directory" if len(jobs) == 1 else "directories"),
+			len(jobs), cap=cap)
 		gate = tui.OverwriteGate(cap=cap, box=box)
 		for index, (d, target_files) in enumerate(jobs, 1):
 			if base_output_name:
@@ -393,10 +397,11 @@ def main():
 			box.update(done=index)
 
 		joined = sum(1 for kind, _ in box.rows if kind == "ok")
+		unit = "directory" if len(jobs) == 1 else "directories"
 		if gate.aborted:
-			box.close(f"Aborted: {joined}/{len(jobs)} directories joined")
+			box.close(f"Aborted: {joined}/{len(jobs)} {unit} joined")
 		else:
-			box.close(f"Batch finished: {joined}/{len(jobs)} directories joined")
+			box.close(f"Batch finished: {joined}/{len(jobs)} {unit} joined")
 		return
 
 	# Mode 2: Single Directory
@@ -410,26 +415,38 @@ def main():
 	
 	if not target_files:
 		print(tui.status("error", "No files provided. Provide filenames or use -a, -e, or -d.", cap=cap))
-		parser.print_help()
 		return
 
 	# Apply loop logic to final file list
 	target_files = apply_loop_to_list(target_files, args.loop)
-	print(tui.status("info", f"Processing {len(target_files)} segments (including loops).", cap=cap))
 
 	final_output = base_output_name if base_output_name else "joined_video.mp4"
 	if not final_output.lower().endswith((".mp4", ".mkv", ".webm", ".webp")):
 		final_output += ".mp4"
 
-	gate = tui.OverwriteGate(cap=cap)
+	# One join is one job, so even a single-file run opens a box: the whole
+	# result (op line, i/N, ok/warn row, summary) lands inside the frame.
+	box = tui.progress.BatchBox("Joining 1 output", 1, cap=cap)
+	box.update(op="Joining {} segment{} into {}".format(
+		len(target_files), "" if len(target_files) == 1 else "s", final_output),
+		done=0)
+	gate = tui.OverwriteGate(cap=cap, box=box)
 	if os.path.exists(final_output) and not gate.allow():
 		if gate.aborted:
-			print(tui.status("warn", "Aborted.", cap=cap))
+			box.add("warn", f"Aborted on {final_output}")
 		else:
-			print(tui.status("warn", f"Skipped {final_output}: output exists",
-							 cap=cap))
+			box.add("warn", f"Skipped {final_output}: output exists")
+		box.update(done=1)
+		if gate.aborted:
+			box.close("Aborted: 0/1 output joined")
+		else:
+			box.close("Batch finished: 0/1 output joined")
 		return
-	run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, final_output, cap=cap)
+	run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config,
+					final_output, cap=cap, box=box)
+	box.update(done=1)
+	joined = sum(1 for kind, _ in box.rows if kind == "ok")
+	box.close(f"Batch finished: {joined}/1 output joined")
 
 if __name__ == "__main__":
 	main()

@@ -5,7 +5,9 @@
 `tui.progress.BatchBox` reuses one frame for a whole batch: every update rewrites
 the same box in place (cursor up, rewrite, erase to end of line), and the box
 grows to hold the outcome rows. A pipe gets one TAB record per update with no
-escape and no frame glyph. The `--dir` loop passes its box into
+escape and no frame glyph. Every mode with work (single explicit file, several
+files, a glob, `--dir`) opens the same box for its job(s); a run that resolves no
+work prints one clean status line and no box. `--dir` passes its box into
 `run_ffmpeg_join`, so the per-job header/panel blocks are folded into it.
 
 These checks never run FFmpeg or decord: the reader and subprocess are faked.
@@ -260,6 +262,94 @@ class JoinBoxWiringTest(unittest.TestCase):
 		self.assertIn("2/2 directories joined", joined)
 		self.assertGreaterEqual(len(UP.findall(text)), 2,
 								"two jobs share one redrawn box")
+
+
+class JoinEveryModeTest(unittest.TestCase):
+	"""Every invocation mode with work opens the box, including a single job."""
+
+	def run_cli(self, argv, cap, files=(), dirs=()):
+		"""Drive `videojoin.main` in a scratch folder; return captured stdout."""
+		out = io.StringIO()
+		done = types.SimpleNamespace(returncode=0, stderr="")
+		decord = types.ModuleType("decord")
+		decord.VideoReader = FakeReader
+		start = os.getcwd()
+		with tempfile.TemporaryDirectory() as tmp:
+			try:
+				for name in files:
+					open(os.path.join(tmp, name), "w").close()
+				for name in dirs:
+					os.makedirs(os.path.join(tmp, name))
+					open(os.path.join(tmp, name, "clip.mp4"), "w").close()
+				os.chdir(tmp)
+				with mock.patch.dict(sys.modules, {"decord": decord}), \
+						mock.patch.object(sys, "argv", ["videojoin.py"] + list(argv)), \
+						mock.patch.object(videojoin.tui, "detect", return_value=cap), \
+						mock.patch.object(videojoin, "check_ffmpeg", return_value=True), \
+						mock.patch.object(videojoin, "has_audio", return_value=False), \
+						mock.patch.object(videojoin.subprocess, "run",
+										  return_value=done), \
+						contextlib.redirect_stdout(out):
+					try:
+						videojoin.main()
+					except SystemExit:
+						pass
+			finally:
+				os.chdir(start)
+		return out.getvalue()
+
+	def test_single_explicit_file_opens_the_box(self):
+		text = self.run_cli(["clip.mp4"], TTY, files=("clip.mp4",))
+		frames = UP.split(text)
+		self.assertGreaterEqual(len(UP.findall(text)), 2,
+								"a one-job run still redraws its box")
+		for frame in frames:
+			self.assertEqual(frame.count("Joining 1 output"), 1,
+							 "each paint draws exactly one title")
+		last = tui.strip_ansi(frames[-1])
+		self.assertIn("[ok] Joined video saved as", last)
+		self.assertIn("Batch finished: 1/1 output joined", last)
+		self.assertIn("Joining 1 segment into joined_video.mp4",
+					  tui.strip_ansi(text))
+
+	def test_multiple_explicit_files_are_one_boxed_job(self):
+		text = self.run_cli(["a.mp4", "b.mp4"], TTY,
+							files=("a.mp4", "b.mp4"))
+		last = tui.strip_ansi(UP.split(text)[-1])
+		self.assertIn("Joining 2 segments into joined_video.mp4",
+					  tui.strip_ansi(text))
+		self.assertIn("1/1 output joined", last)
+
+	def test_glob_mode_opens_the_box(self):
+		text = self.run_cli(["--all"], TTY, files=("a.mp4", "b.mp4"))
+		frames = UP.split(text)
+		for frame in frames:
+			self.assertEqual(frame.count("Joining 1 output"), 1)
+		self.assertIn("Joining 2 segments into joined_video.mp4",
+					  tui.strip_ansi(text))
+		self.assertIn("Batch finished: 1/1 output joined",
+					  tui.strip_ansi(frames[-1]))
+
+	def test_single_subdirectory_opens_the_box(self):
+		text = self.run_cli(["--dir"], TTY, dirs=("a",))
+		last = tui.strip_ansi(UP.split(text)[-1])
+		self.assertIn("Joining 1 directory", tui.strip_ansi(text))
+		self.assertIn("Batch finished: 1/1 directory joined", last)
+
+	def test_single_job_pipe_degrades_to_tab_records(self):
+		text = self.run_cli(["clip.mp4"], PIPE, files=("clip.mp4",))
+		self.assertNotIn("\x1b", text)
+		lines = text.strip().splitlines()
+		self.assertIn("ok\tJoined video saved as " + os.path.join(".", "joined_video.mp4"),
+					  lines)
+		self.assertIn("info\tBatch finished: 1/1 output joined", lines)
+
+	def test_no_match_is_a_clean_message_without_a_box(self):
+		text = self.run_cli(["--all"], PIPE)
+		self.assertIn("[error] No video files found in the current directory",
+					  text)
+		self.assertNotIn("Joining", text)
+		self.assertNotIn("\t", text)
 
 
 if __name__ == "__main__":

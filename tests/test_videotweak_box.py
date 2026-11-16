@@ -4,8 +4,9 @@
 			====================
 A folder of clips shares one `tui.progress.BatchBox`: every file moves the
 current operation line, adds its ok/error row and advances the i/N bar, and the
-box is closed with a summary. A single file keeps the old per-run header and
-result panel byte for byte (no box at all), and a pipe degrades to TAB records.
+box is closed with a summary. A single file opens the same box for its one job,
+and a pipe degrades to TAB records. A run with no matching file opens no box and
+prints one clean status line.
 
 No FFmpeg or decord runs here: both are faked.
 
@@ -177,12 +178,31 @@ class TweakBatchBoxTest(unittest.TestCase):
 						 len(UP.split(text)[-1].strip("\n").split("\n")),
 						 "a cancelled prompt must not move the frame")
 
-	def test_single_file_prints_no_box(self):
+	def test_single_file_opens_the_box_too(self):
 		text = run_main(TTY, clip_names=("only.mp4",))
-		joined = tui.strip_ansi(text)
-		self.assertIn("Tweaking: only.mp4...", joined)
-		self.assertIn("[ok] Saved to", joined)
-		self.assertNotIn("Tweaking 1 files", text)
+		frames = UP.split(text)
+		for frame in frames:
+			self.assertEqual(frame.count("Tweaking 1 file"), 1,
+							 "each paint draws exactly one title")
+		last = tui.strip_ansi(frames[-1])
+		self.assertIn("[ok] Saved to only_tweak.mp4", last)
+		self.assertIn("Batch finished: 1/1 file saved", last)
+		self.assertNotIn("Tweaking: only.mp4...", tui.strip_ansi(text))
+
+	def test_no_matching_file_is_a_clean_message_without_a_box(self):
+		out = io.StringIO()
+		decord = types.ModuleType("decord")
+		decord.VideoReader = FakeReader
+		with tempfile.TemporaryDirectory() as tmp:
+			with mock.patch.dict(sys.modules, {"decord": decord}), \
+					mock.patch.object(sys, "argv", ["videotweak.py", tmp]), \
+					mock.patch.object(videotweak.tui, "detect", return_value=PIPE), \
+					contextlib.redirect_stdout(out):
+				videotweak.main()
+		text = out.getvalue()
+		self.assertIn("[error] No video files found matching criteria.", text)
+		self.assertNotIn("Tweaking", text)
+		self.assertNotIn("\t", text)
 
 
 if __name__ == "__main__":
