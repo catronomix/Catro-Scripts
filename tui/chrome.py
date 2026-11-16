@@ -96,11 +96,12 @@ def rule(width=None, *, char=None, cap=None, theme=None):
 						 bg="border-bg", cap=cap, theme=theme)
 
 
-def field(key, value, *, width=None, cap=None, theme=None):
+def field(key, value, *, width=None, bg="bg", cap=None, theme=None):
 	"""One row of a settings block: `fg-muted` key, `fg` value.
 
 	`width` is the key column (so a block of fields lines up), not the whole
-	line. Piped, the row is `key<TAB>value`.
+	line. `bg` is the ground the row sits on, so a field inside a panel can
+	carry its `bg-inside` interior. Piped, the row is `key<TAB>value`.
 	"""
 	cap = cap or caps.detect()
 	key = _flat(key)
@@ -110,18 +111,18 @@ def field(key, value, *, width=None, cap=None, theme=None):
 	column = max(1, int(width)) if width is not None else display_width(key)
 	if display_width(key) > column:
 		key = _truncate(key, column)
-	return (palette.style(pad(key, column) + "  ", fg="fg-muted", bg="bg",
+	return (palette.style(pad(key, column) + "  ", fg="fg-muted", bg=bg,
 						  cap=cap, theme=theme)
-			+ palette.style(value, fg="fg", bg="bg", cap=cap, theme=theme))
+			+ palette.style(value, fg="fg", bg=bg, cap=cap, theme=theme))
 
 
-def status(kind, text, *, width=None, cap=None, theme=None):
+def status(kind, text, *, width=None, bg="bg", cap=None, theme=None):
 	"""`[ok]`/`[warn]`/`[error]`/`[info]` marker plus text.
 
 	The marker carries the colour (fg-success/fg-warn/fg-error/fg-accent), the
 	text stays `fg`, so a long message is not painted in an alarm colour.
-	`width` is the total line width; the text truncates. Unknown kinds render
-	as info.
+	`width` is the total line width; the text truncates. `bg` is the ground the
+	row sits on. Unknown kinds render as info.
 	"""
 	cap = cap or caps.detect()
 	kind = str(kind).strip().lower()
@@ -132,9 +133,9 @@ def status(kind, text, *, width=None, cap=None, theme=None):
 		return "{} {}".format(marker, text)
 	if width is not None:
 		text = _truncate(text, max(0, int(width) - display_width(marker) - 1))
-	return (palette.style(marker, fg=colour, bg="bg", bold=True, cap=cap,
+	return (palette.style(marker, fg=colour, bg=bg, bold=True, cap=cap,
 						  theme=theme)
-			+ palette.style(" " + text, fg="fg", bg="bg", cap=cap,
+			+ palette.style(" " + text, fg="fg", bg=bg, cap=cap,
 							theme=theme))
 
 
