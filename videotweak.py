@@ -317,12 +317,19 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 	output_path = os.path.join(out_dir, output_name) if out_dir else output_name
 
 	if os.path.exists(output_path):
-		# One shared gate answers every later file after a `Y`.
-		if gate is None or not gate.allow():
-			if gate is not None and gate.aborted:
-				line = f"Aborted on {base_name}"
-			else:
-				line = f"Skipped {output_path}: output exists"
+		# One shared gate answers every later file after a `Y`/`R`.
+		if gate is None:
+			action, effective = "skip", output_path
+		else:
+			action, effective = gate.decide(output_path)
+		line = None
+		if action == "abort":
+			line = f"Aborted on {base_name}"
+		elif action == "skip":
+			line = f"Skipped {output_path}: output exists"
+		elif action == "rename":
+			output_path = tui.overwrite.settle(output_path, effective)
+		if line is not None:
 			if box is None:
 				print(tui.status("warn", line, cap=cap))
 			else:

@@ -384,16 +384,22 @@ def main():
 				current_out += ".mp4"
 
 			box.update(op=d, done=index - 1)
-			if os.path.exists(os.path.join(d, current_out)) and not gate.allow():
-				if gate.aborted:
+			output = current_out
+			target = os.path.join(d, current_out)
+			if os.path.exists(target):
+				action, effective = gate.decide(target)
+				if action == "abort":
 					box.add("warn", f"Aborted on {d}")
-				else:
-					box.add("warn", f"Skipped {current_out}: output exists")
-				box.update(done=index)
-				if gate.aborted:
+					box.update(done=index)
 					break
-				continue
-			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, current_out, working_dir=d, cap=cap, box=box)
+				if action == "skip":
+					box.add("warn", f"Skipped {current_out}: output exists")
+					box.update(done=index)
+					continue
+				if action == "rename":
+					output = os.path.basename(
+						tui.overwrite.settle(target, effective))
+			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output, working_dir=d, cap=cap, box=box)
 			box.update(done=index)
 
 		joined = sum(1 for kind, _ in box.rows if kind == "ok")
@@ -431,19 +437,26 @@ def main():
 		len(target_files), "" if len(target_files) == 1 else "s", final_output),
 		done=0)
 	gate = tui.OverwriteGate(cap=cap, box=box)
-	if os.path.exists(final_output) and not gate.allow():
-		if gate.aborted:
+	output = final_output
+	if os.path.exists(final_output):
+		action, effective = gate.decide(final_output)
+		if action == "abort":
 			box.add("warn", f"Aborted on {final_output}")
-		else:
-			box.add("warn", f"Skipped {final_output}: output exists")
-		box.update(done=1)
-		if gate.aborted:
+			box.update(done=1)
 			box.close("Aborted: 0/1 output joined")
-		else:
+			return
+		if action == "skip":
+			box.add("warn", f"Skipped {final_output}: output exists")
+			box.update(done=1)
 			box.close("Batch finished: 0/1 output joined")
-		return
+			return
+		if action == "rename":
+			output = tui.overwrite.settle(final_output, effective)
+			box.update(op="Joining {} segment{} into {}".format(
+				len(target_files), "" if len(target_files) == 1 else "s",
+				output), done=0)
 	run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config,
-					final_output, cap=cap, box=box)
+					output, cap=cap, box=box)
 	box.update(done=1)
 	joined = sum(1 for kind, _ in box.rows if kind == "ok")
 	box.close(f"Batch finished: {joined}/1 output joined")

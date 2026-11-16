@@ -3,7 +3,8 @@
 			OVERWRITE PROMPT
 			================
 `tui.overwrite` answers one question when a target already exists: y overwrites,
-n skips, Y overwrites every later target and a aborts. On a terminal the question
+n skips, r writes the next free `name (2).ext`, Y overwrites every later target,
+R renames every later target and a aborts. On a terminal the question
 is painted on the row under the batch box, one key is read, the row is erased and
 the box is repainted, so no prompt text survives and the next repaint still lands
 on the top border. A pipe (or any non-terminal stdin) never asks: the target is
@@ -37,11 +38,11 @@ import videojoin  # noqa: E402
 import videoloop  # noqa: E402
 import videotweak  # noqa: E402
 
-TTY = tui.Capabilities(level="true", unicode=True, width=72, isatty=True,
+TTY = tui.Capabilities(level="true", unicode=True, width=100, isatty=True,
 					   plain=False, reason="test")
 PIPE = tui.Capabilities(level="none", unicode=False, width=None, isatty=False,
 						plain=True, reason="test")
-NO_COLOR_TTY = tui.Capabilities(level="none", unicode=True, width=72,
+NO_COLOR_TTY = tui.Capabilities(level="none", unicode=True, width=100,
 								isatty=True, plain=False, reason="test")
 
 ANY_UP = re.compile(r"\x1b\[(\d+)A")
@@ -67,24 +68,28 @@ class PromptTextTest(unittest.TestCase):
 
 	def test_prompt_states_every_answer(self):
 		self.assertEqual(tui.overwrite.PROMPT,
-						 "File exists! Overwrite? ([y]es, [n]o, [Y]es to all, [a]bort): ")
-		for answer in ("[y]es", "[n]o", "[Y]es to all", "[a]bort"):
+						 "File exists! Overwrite? ([y]es, [n]o, [r]ename, "
+						 "[Y]es to all, [R]ename all, [a]bort): ")
+		for answer in ("[y]es", "[n]o", "[r]ename", "[Y]es to all",
+					   "[R]ename all", "[a]bort"):
 			self.assertIn(answer, tui.overwrite.PROMPT)
 
 	def test_prompt_uses_palette_roles_at_every_colour_level(self):
+		wide_cap = tui.Capabilities(level="true", unicode=True, width=120,
+									isatty=True, plain=False, reason="test")
 		texts = {level: tui.strip_ansi(tui.overwrite._question(
-			tui.Capabilities(level=level, unicode=True, width=72, isatty=True,
+			tui.Capabilities(level=level, unicode=True, width=120, isatty=True,
 							 plain=False, reason="test")))
 			for level in ("16", "256", "true")}
 		for level, plain in texts.items():
 			self.assertEqual(plain, tui.overwrite.PROMPT, level)
-		wide = tui.overwrite._question(TTY)
+		wide = tui.overwrite._question(wide_cap)
 		self.assertIn("38;2;", wide, "truecolour keeps 24-bit SGR")
 		self.assertNotIn("38;2;", tui.overwrite._question(
-			tui.Capabilities(level="256", unicode=True, width=72, isatty=True,
+			tui.Capabilities(level="256", unicode=True, width=120, isatty=True,
 							 plain=False, reason="test")))
 		self.assertNotIn("38;", tui.overwrite._question(
-			tui.Capabilities(level="16", unicode=True, width=72, isatty=True,
+			tui.Capabilities(level="16", unicode=True, width=120, isatty=True,
 							 plain=False, reason="test")),
 			"the 16-colour level downgrades to a basic colour")
 
@@ -148,6 +153,52 @@ class GateAnswersTest(unittest.TestCase):
 			tui.overwrite.PROMPT), 2,
 			"each attempt paints exactly one question")
 
+	def test_rename_writes_the_next_free_name(self):
+		with tempfile.TemporaryDirectory() as tmp:
+			target = os.path.join(tmp, "a.mp4")
+			open(target, "w").close()
+			gate = self.gate(keys_of("r"))
+			action, effective = gate.decide(target)
+			self.assertEqual(action, "rename")
+			self.assertEqual(effective, os.path.join(tmp, "a (2).mp4"))
+			self.assertFalse(gate.overwrite_all)
+			self.assertFalse(gate.rename_all)
+
+	def test_rename_all_stops_asking(self):
+		with tempfile.TemporaryDirectory() as tmp:
+			target = os.path.join(tmp, "a.mp4")
+			open(target, "w").close()
+			gate = self.gate(keys_of("R"))
+			self.assertEqual(gate.decide(target),
+							 ("rename", os.path.join(tmp, "a (2).mp4")))
+			self.assertTrue(gate.rename_all)
+			action, effective = gate.decide(target)
+			self.assertEqual(action, "rename")
+			self.assertEqual(effective, os.path.join(tmp, "a (2).mp4"))
+			self.assertEqual(tui.strip_ansi(self.out.getvalue()).count(
+				tui.overwrite.PROMPT), 1,
+				"the rest of the run is renamed without another question")
+
+	def test_rename_skips_names_a_previous_job_took(self):
+		with tempfile.TemporaryDirectory() as tmp:
+			target = os.path.join(tmp, "a.mp4")
+			for name in ("a.mp4", "a (2).mp4", "a (3).mp4"):
+				open(os.path.join(tmp, name), "w").close()
+			self.assertEqual(tui.overwrite.next_free(target),
+							 os.path.join(tmp, "a (4).mp4"))
+			self.assertEqual(tui.overwrite.next_free(os.path.join(tmp, "b")),
+							 os.path.join(tmp, "b (2)"))
+
+	def test_settle_advances_when_a_sibling_claims_the_name(self):
+		with tempfile.TemporaryDirectory() as tmp:
+			target = os.path.join(tmp, "a.mp4")
+			open(target, "w").close()
+			chosen = tui.overwrite.next_free(target)
+			self.assertEqual(tui.overwrite.settle(target, chosen), chosen)
+			open(chosen, "w").close()
+			self.assertEqual(tui.overwrite.settle(target, chosen),
+							 os.path.join(tmp, "a (3).mp4"))
+
 
 class TransientRowTest(unittest.TestCase):
 	"""The question disappears: erase + repaint leaves the frame intact."""
@@ -189,7 +240,7 @@ class TransientRowTest(unittest.TestCase):
 
 	def test_without_a_box_the_row_is_still_erased(self):
 		out = io.StringIO()
-		cap = tui.Capabilities(level="true", unicode=True, width=72,
+		cap = tui.Capabilities(level="true", unicode=True, width=100,
 							   isatty=True, plain=False, reason="test")
 		gate = tui.overwrite.OverwriteGate(cap=cap, stream=out, reader=keys_of("n"))
 		with mock.patch.object(tui.overwrite, "_stdin_tty", return_value=True):
@@ -209,6 +260,8 @@ class NonInteractiveTest(unittest.TestCase):
 										   reader=keys_of())
 		self.assertFalse(gate.allow())
 		self.assertFalse(gate.aborted)
+		self.assertEqual(gate.decide("a.mp4"), ("skip", "a.mp4"),
+						 "a pipe can never pick a rename")
 		self.assertEqual(out.getvalue(), "")
 
 	def test_tty_stdout_with_piped_stdin_never_asks(self):
@@ -242,6 +295,9 @@ class _FakeReader:
 
 	def __len__(self):
 		return 48
+
+	def __getitem__(self, index):
+		return types.SimpleNamespace(shape=(1080, 1920, 3))
 
 
 class _Done:
@@ -415,6 +471,126 @@ class ScriptSkipTest(unittest.TestCase):
 		text = tui.strip_ansi(out.getvalue())
 		self.assertIn("[warn] Skipped joined_video.mp4: output exists", text)
 		self.assertIn("Batch finished: 0/1 output joined", text)
+
+
+class ScriptRenameTest(unittest.TestCase):
+	"""A rename answer reaches FFmpeg under the new name and lands as an ok row."""
+
+	def test_videoloop_renames_into_the_next_free_name(self):
+		out = io.StringIO()
+		box = tui.progress.BatchBox("Looping 1 files", 1, stream=out, cap=TTY)
+		box.update(op="a.mp4", done=0)
+		decord = types.ModuleType("decord")
+		decord.VideoReader = _FakeReader
+		with tempfile.TemporaryDirectory() as tmp:
+			video = os.path.join(tmp, "a.mp4")
+			open(video, "w").close()
+			open(os.path.join(tmp, "a_seamless.mp4"), "w").close()
+			gate = tui.overwrite.OverwriteGate(cap=TTY, box=box,
+											   reader=keys_of("r"))
+			run = mock.Mock(return_value=_Done())
+			with mock.patch.dict(sys.modules, {"decord": decord}), \
+					mock.patch.object(videoloop, "VideoReader", _FakeReader), \
+					mock.patch.object(videoloop, "check_ffmpeg", return_value=True), \
+					mock.patch.object(videoloop, "has_audio", return_value=False), \
+					mock.patch.object(videoloop.subprocess, "run", run), \
+					mock.patch.object(tui.overwrite, "_stdin_tty",
+									  return_value=True):
+				videoloop.process_loop(video, 0.5, 0.0, "libx264", "esin",
+									   "_seamless", True, None, TTY,
+									   box=box, gate=gate)
+			renamed = os.path.join(tmp, "a_seamless (2).mp4")
+			self.assertEqual(os.path.basename(run.call_args.args[0][-1]),
+							 os.path.basename(renamed))
+			self.assertIn(("ok", f"Loop saved as {renamed}"), box.rows)
+			self.assertEqual(tui.strip_ansi(out.getvalue()).count(
+				tui.overwrite.PROMPT), 1)
+
+	def test_videotweak_renames_into_the_next_free_name(self):
+		out = io.StringIO()
+		box = tui.progress.BatchBox("Tweaking 1 files", 1, stream=out, cap=TTY)
+		box.update(op="a.mp4", done=0)
+		media = {"fps": 24.0, "frames": 48, "audio": False}
+		with tempfile.TemporaryDirectory() as tmp:
+			video = os.path.join(tmp, "a.mp4")
+			open(video, "w").close()
+			open(os.path.join(tmp, "a_tweak.mp4"), "w").close()
+			gate = tui.overwrite.OverwriteGate(cap=TTY, box=box,
+											   reader=keys_of("r"))
+			run = mock.Mock(return_value=_Done())
+			with mock.patch.object(videotweak.subprocess, "run", run), \
+					mock.patch.object(tui.overwrite, "_stdin_tty",
+									  return_value=True):
+				videotweak.process_video(video, 6, tmp, None, "libx264",
+										 ".mp4", None, TTY, box=box,
+										 media=media, answers={},
+										 gate=gate)
+			renamed = os.path.join(tmp, "a_tweak (2).mp4")
+			self.assertEqual(run.call_args.args[0][-1], renamed)
+			self.assertIn(("ok", f"Saved to {renamed}"), box.rows)
+
+	def test_videotweak_yes_still_overwrites_the_same_target(self):
+		out = io.StringIO()
+		box = tui.progress.BatchBox("Tweaking 1 files", 1, stream=out, cap=TTY)
+		box.update(op="a.mp4", done=0)
+		media = {"fps": 24.0, "frames": 48, "audio": False}
+		with tempfile.TemporaryDirectory() as tmp:
+			video = os.path.join(tmp, "a.mp4")
+			open(video, "w").close()
+			target = os.path.join(tmp, "a_tweak.mp4")
+			open(target, "w").close()
+			gate = tui.overwrite.OverwriteGate(cap=TTY, box=box,
+											   reader=keys_of("y"))
+			run = mock.Mock(return_value=_Done())
+			with mock.patch.object(videotweak.subprocess, "run", run), \
+					mock.patch.object(tui.overwrite, "_stdin_tty",
+									  return_value=True):
+				videotweak.process_video(video, 6, tmp, None, "libx264",
+										 ".mp4", None, TTY, box=box,
+										 media=media, answers={},
+										 gate=gate)
+			self.assertEqual(run.call_args.args[0][-1], target,
+							 "`y` overwrites the target it was asked about")
+			self.assertIn(("ok", f"Saved to {target}"), box.rows)
+			self.assertEqual(sorted(os.listdir(tmp)),
+							 ["a.mp4", "a_tweak.mp4"],
+							 "no renamed copy is left behind")
+
+	def test_videojoin_renames_into_the_next_free_name(self):
+		out = io.StringIO()
+		decord = types.ModuleType("decord")
+		decord.VideoReader = _FakeReader
+		start = os.getcwd()
+		with tempfile.TemporaryDirectory() as tmp:
+			open(os.path.join(tmp, "clip.mp4"), "w").close()
+			open(os.path.join(tmp, "joined_video.mp4"), "w").close()
+			run = mock.Mock(return_value=_Done())
+			os.chdir(tmp)
+			try:
+				with mock.patch.dict(sys.modules, {"decord": decord}), \
+						mock.patch.object(sys, "argv",
+										  ["videojoin.py", "clip.mp4"]), \
+						mock.patch.object(videojoin.tui, "detect",
+										  return_value=TTY), \
+						mock.patch.object(videojoin, "check_ffmpeg",
+										  return_value=True), \
+						mock.patch.object(videojoin, "has_audio",
+										  return_value=False), \
+						mock.patch.object(videojoin.subprocess, "run", run), \
+						mock.patch.object(tui.keys, "read_key",
+										  keys_of("r")), \
+						mock.patch.object(tui.overwrite, "_stdin_tty",
+										  return_value=True), \
+						mock.patch("sys.stdout", out):
+					videojoin.main()
+			finally:
+				os.chdir(start)
+		renamed = "joined_video (2).mp4"
+		self.assertEqual(os.path.basename(run.call_args.args[0][-1]), renamed)
+		text = tui.strip_ansi(out.getvalue())
+		self.assertIn(f"Joined video saved as {os.path.join('.', renamed)}",
+					  text)
+		self.assertIn("Batch finished: 1/1 output joined", text)
 
 
 if __name__ == "__main__":
