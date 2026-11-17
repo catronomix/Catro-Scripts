@@ -158,13 +158,36 @@ def get_resize_config(cap):
 
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
-def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap):
+def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap, box=None, gate=None):
+	"""Loop one file; with a `box` the outcome lines fold into that frame."""
+	def report(kind, text):
+		"""Route one outcome line to the box, or print it as before."""
+		if box is None:
+			print(tui.status(kind, text, cap=cap))
+		else:
+			box.add(kind, text)
+
 	if not check_ffmpeg():
-		print(tui.status("error", "FFmpeg not found.", cap=cap))
+		report("error", "FFmpeg not found.")
 		return
 
 	base, ext = os.path.splitext(file_path)
 	output_name = f"{base}{suffix}{ext}"
+
+	if os.path.exists(output_name):
+		# One shared gate answers every later file after a `Y`/`R`.
+		if gate is None:
+			action, effective = "skip", output_name
+		else:
+			action, effective = gate.decide(output_name)
+		if action == "abort":
+			report("warn", f"Aborted on {os.path.basename(file_path)}")
+			return
+		if action == "skip":
+			report("warn", f"Skipped {output_name}: output exists")
+			return
+		if action == "rename":
+			output_name = tui.overwrite.settle(output_name, effective)
 
 	try:
 		vr = VideoReader(file_path)
@@ -174,13 +197,14 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		audio_present = has_audio(file_path)
 
 		if fade_dur >= duration / 2:
-			print(tui.status("warn", f"Fade duration is very long for {os.path.basename(file_path)}. Reducing overlap.", cap=cap))
+			report("warn", f"Fade duration is very long for {os.path.basename(file_path)}. Reducing overlap.")
 			fade_dur = duration / 4
 
 		loop_duration = duration - fade_dur
 		shift_time = (shift_offset % 1.0) * loop_duration
 
-		print(tui.status("info", f"Processing: {os.path.basename(file_path)}...", cap=cap))
+		if box is None:
+			print(tui.status("info", f"Processing: {os.path.basename(file_path)}...", cap=cap))
 		
 		# Build Resizing Filter
 		res_filter = ""
@@ -259,14 +283,21 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		
 		if result.returncode != 0:
 			if "Option 'curve' not found" in result.stderr or "Error applying option 'curve'" in result.stderr:
-				print(tui.status("warn", f"Curve '{curve}' not supported. Retrying with linear...", cap=cap))
-				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False, resize_config, cap)
-			print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
+				report("warn", f"Curve '{curve}' not supported. Retrying with linear...")
+				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False, resize_config, cap, box=box)
+			if box is None:
+				print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
+			else:
+				# Inside the box only the last line fits; never dump stderr
+				# into the middle of the frame.
+				detail = (result.stderr or "").strip().splitlines()
+				box.add("error", "FFmpeg failed for {}: {}".format(
+					os.path.basename(file_path), detail[-1] if detail else "see FFmpeg output"))
 		else:
-			print(tui.status("ok", f"Loop saved as {output_name}", cap=cap))
+			report("ok", f"Loop saved as {output_name}")
 
 	except Exception as e:
-		print(tui.status("error", f"Processing {file_path}: {e}", cap=cap))
+		report("error", f"Processing {file_path}: {e}")
 
 def main():
 	tui.init_ansi()
@@ -329,8 +360,25 @@ def main():
 	], cap=cap))
 	print()
 
-	for f in sorted(files):
-		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap)
+	# Every run with work shares one box, including a single file: each job
+	# moves the current operation line, adds its outcome row and advances the
+	# i/N bar.
+	box = tui.progress.BatchBox(
+		"Looping {} file{}".format(len(files), "" if len(files) == 1 else "s"),
+		len(files), cap=cap)
+	gate = tui.OverwriteGate(cap=cap, box=box)
+	for index, f in enumerate(sorted(files), 1):
+		box.update(op=os.path.basename(f), done=index - 1)
+		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap, box=box, gate=gate)
+		box.update(done=index)
+		if gate.aborted:
+			break
+	saved = sum(1 for kind, _ in box.rows if kind == "ok")
+	unit = "loop" if len(files) == 1 else "loops"
+	if gate.aborted:
+		box.close("Aborted: {}/{} {} saved".format(saved, len(files), unit))
+	else:
+		box.close("Batch finished: {}/{} {} saved".format(saved, len(files), unit))
 
 if __name__ == "__main__":
 	main()

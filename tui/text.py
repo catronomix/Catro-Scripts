@@ -81,7 +81,16 @@ def _head(text, width):
 	"""(prefix within `width` cells, remainder) - always consumes something."""
 	out = []
 	used = 0
-	for index, char in enumerate(text):
+	index = 0
+	while index < len(text):
+		escape = _ANSI.match(text, index)
+		if escape:
+			# An escape sequence is atomic and zero-width: never cut it in
+			# half, or the terminal would print the remains of the code.
+			out.append(escape.group())
+			index = escape.end()
+			continue
+		char = text[index]
 		size = char_width(char)
 		if used + size > width:
 			if not out:
@@ -90,4 +99,5 @@ def _head(text, width):
 			return "".join(out), text[index:]
 		out.append(char)
 		used += size
+		index += 1
 	return "".join(out), ""

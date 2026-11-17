@@ -163,3 +163,8 @@ def _isatty(stream):
 		return bool(stream.isatty())
 	except (AttributeError, ValueError, OSError):
 		return False
+
+
+# The batch-run box lives in `progress_box` to keep this module inside its
+# budget; importing it last keeps `tui.progress.BatchBox` the documented path.
+from .progress_box import BatchBox  # noqa: E402,F401

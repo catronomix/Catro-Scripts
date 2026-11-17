@@ -44,12 +44,12 @@ catro-scripts help <script>   # usage for one script
 - **`jsonl_monitor`** - watches JSONL files or streams and filters new entries.
 - **`keygen`** - interactive random-key generator.
 - **`list`** - table of the available scripts with sizes and descriptions.
-- **`mdreader`** - markdown reader for the terminal.
+- **`mdreader`** - markdown reader for the terminal. Links emit as OSC 8 hyperlinks where the terminal supports them, so Ctrl-click opens them.
 - **`netconfig`** - switches network adapters between DHCP and a static IP.
 - **`newfile`** - creates files and folders from templates.
 - **`opencode`** - runs the `opencode` CLI non-interactively.
 - **`randomsorter`** - renames and shuffles files into randomised names and folders.
-- **`renamer`** - batch-renames files with prefixes, suffixes and sorting.
+- **`renamer`** - batch-renames files with prefixes, suffixes and sorting by name, modification date or creation date.
 - **`screensaver`** - host and renderer for `.screensaver` plugins.
 - **`sanitize`** - scrubs a leaked secret from a repository's full git history.
 - **`shutdown`** - interactive shutdown timer for Windows, macOS and Linux.
@@ -60,9 +60,9 @@ catro-scripts help <script>   # usage for one script
 - **`venvreplicator`** - clones and manages Python virtual environments.
 - **`videofade`** - adds fade-in and fade-out to video clips.
 - **`videoframes`** - exports frames from a video as numbered images.
-- **`videojoin`** - joins video files with FFmpeg.
-- **`videoloop`** - builds a seamless, crossfaded loop from a video.
-- **`videotweak`** - changes FPS, reverses, bounces or transcodes video.
+- **`videojoin`** - joins video files with FFmpeg. Every run with work shows one reused progress box (current operation + overall progress + growing ok/fail list); an existing output asks `File exists! Overwrite? ([y]es, [n]o, [Y]es to all, [r]ename, [R]ename all, [a]bort):` instead of silently writing `name (1).mp4` - `r` saves as `name (2).mp4`, `Y`/`R` apply to the rest, `a` stops the batch; off a terminal it skips instead of asking.
+- **`videoloop`** - builds a seamless, crossfaded loop from a video. Same progress box (every mode, including a single file) and the same overwrite question as `videojoin`.
+- **`videotweak`** - changes FPS, reverses, bounces or transcodes video. Same progress box and overwrite question as `videojoin`.
 
 ## Themes
 

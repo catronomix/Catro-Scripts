@@ -109,10 +109,13 @@ if _orig_table_console is not None:
 class Segment:
     """Represents a formatted piece of text within a line."""
 
-    def __init__(self, text, attr=0, color=1):
+    def __init__(self, text, attr=0, color=1, url=None):
         self.text = text
         self.attr = attr
         self.color = color
+        # Link target for the whole span; mdreader only ever forwards it to
+        # tui.hyperlink, which decides whether and how to emit it.
+        self.url = url
 
 
 class FormattedLine:
@@ -141,7 +144,7 @@ def slice_line_segments(segments, start_col, max_cols):
             sub_end = min(seg_len, end_col - seg_start)
             sliced_text = seg.text[sub_start:sub_end]
             if sliced_text:
-                sliced.append(Segment(sliced_text, seg.attr, seg.color))
+                sliced.append(Segment(sliced_text, seg.attr, seg.color, seg.url))
 
         current_col += seg_len
         if current_col >= end_col:
@@ -763,7 +766,8 @@ def process_markdown_rich(raw_content, width, theme_mode=0):
                     attr |= curses.A_DIM
 
             line_segments.append(
-                Segment(seg.text, attr, segment_pair(seg.style, colours))
+                Segment(seg.text, attr, segment_pair(seg.style, colours),
+                        getattr(seg.style, "link", None))
             )
         formatted_doc.append(FormattedLine(line_segments))
 
@@ -894,6 +898,12 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
             draw_window_border(stdscr, height, frame_width, scroll_top, max_scroll)
 
         # Render content
+        # A curses cell is one character: escape bytes handed to addstr would be
+        # counted (and shown as ^[). So curses paints the visible text only and
+        # the link runs are re-emitted through tui.hyperlink after the refresh,
+        # where the sequence cannot eat a column or be clipped before its close.
+        links_on = tui.hyperlink.supported(cap)
+        link_runs = []
         for y in range(usable_height):
             line_idx = scroll_top + y
             if line_idx >= total_lines:
@@ -922,6 +932,9 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
                     )
                 except curses.error:
                     pass
+                if links_on and seg.url and printable_text:
+                    link_runs.append((y_offset + y, x_pos, printable_text,
+                                      seg.url, seg.attr, seg.color))
                 x_pos += len(printable_text)
 
         # Render status bars
@@ -958,6 +971,10 @@ def render_reader(stdscr, filepath, raw_content, cap=None):
             pass
 
         stdscr.refresh()
+
+        # After the frame is on screen: rewrite each visible link run in place.
+        for y_screen, x_screen, text, url, attr, pair in link_runs:
+            tui.hyperlink.paint(y_screen, x_screen, text, url, attr, pair, cap)
 
         # Handle input
         key = stdscr.getch()

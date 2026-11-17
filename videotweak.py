@@ -257,7 +257,56 @@ def get_effect_choice(cap):
 	print(tui.menu(effects, selected=None, title="Select Tweak Effect", cap=cap))
 	return tui.ask_int("Choose", 1, len(effects))
 
-def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap):
+def probe_media(file_path):
+	"""fps, frame count and audio presence for one input (one decord read)."""
+	vr = VideoReader(file_path)
+	return {"fps": vr.get_avg_fps(), "frames": len(vr),
+			"audio": has_audio(file_path)}
+
+def ask_effect(effect_id, media, cap):
+	"""Ask this effect's per-file questions and return `process_video`'s answers.
+
+	Every question is asked here, before the batch box exists: the box rewinds
+	only its own frame lines, so a prompt printed under it would leave the next
+	repaint one row low (videojoin asks its questions the same way). `{}` means
+	the effect asks nothing; `None` means the answer was cancelled or could not
+	be parsed.
+	"""
+	if effect_id == 2: # Lower FPS
+		target_fps = _ask_float(
+			f"Current FPS: {media['fps']:.2f}. Enter target FPS")
+		if target_fps is None:
+			return None
+		return {"target_fps": target_fps}
+	if effect_id == 3: # Change FPS (Speed)
+		target_fps = _ask_float(
+			f"Target playback FPS (Original: {media['fps']:.2f})")
+		if not target_fps:
+			return None
+		return {"target_fps": target_fps}
+	if effect_id == 5: # Time Stretch
+		orig_duration = media["frames"] / media["fps"]
+		target_input = tui.ask_text(
+			f"Enter target duration (Orig: {orig_duration:.2f}s)", "")
+		target_dur = parse_duration(target_input)
+		if not target_dur or target_dur <= 0:
+			return None
+		print()
+		print(tui.section("Interpolation Mode", cap=cap))
+		print(tui.menu(["Standard", "Motion-Compensated"], selected=None, cap=cap))
+		return {"target_duration": target_dur,
+				"interp": 2 if tui.ask_int("Choice", 1, 2, default=1) == 2 else 1}
+	return {}
+
+def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ext, resize_config, cap, box=None, media=None, answers=None, gate=None):
+	"""Tweak one file.
+
+	`media`/`answers` are the pre-pass results from `probe_media`/`ask_effect`;
+	when omitted they are resolved here, and this function never prompts - the
+	caller owns every question (see `ask_effect`). The one prompt it can paint
+	is the transient overwrite question, which erases itself and repaints the
+	box (`tui.overwrite`).
+	"""
 	base_name = os.path.basename(file_path)
 	name_no_ext, ext = os.path.splitext(base_name)
 	
@@ -267,15 +316,35 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 	output_name = f"{name_no_ext}{suffix}{target_ext}"
 	output_path = os.path.join(out_dir, output_name) if out_dir else output_name
 
+	if os.path.exists(output_path):
+		# One shared gate answers every later file after a `Y`/`R`.
+		if gate is None:
+			action, effective = "skip", output_path
+		else:
+			action, effective = gate.decide(output_path)
+		line = None
+		if action == "abort":
+			line = f"Aborted on {base_name}"
+		elif action == "skip":
+			line = f"Skipped {output_path}: output exists"
+		elif action == "rename":
+			output_path = tui.overwrite.settle(output_path, effective)
+		if line is not None:
+			if box is None:
+				print(tui.status("warn", line, cap=cap))
+			else:
+				box.add("warn", line)
+			return
+
 	if out_dir and not os.path.exists(out_dir):
 		os.makedirs(out_dir)
 
 	# Metadata check using VideoReader
-	vr = VideoReader(file_path)
-	orig_fps = vr.get_avg_fps()
-	total_frames = len(vr)
-	orig_duration = total_frames / orig_fps
-	audio_present = has_audio(file_path)
+	media = probe_media(file_path) if media is None else media
+	answers = {} if answers is None else answers
+	orig_fps = media["fps"]
+	orig_duration = media["frames"] / orig_fps
+	audio_present = media["audio"]
 	
 	v_filter = ""
 	a_filter = ""
@@ -284,15 +353,9 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 	if effect_id == 1: # Reverse
 		v_filter, a_filter, needs_complex = "reverse", "areverse", True
 	elif effect_id == 2: # Lower FPS
-		target_fps = _ask_float(f"Current FPS: {orig_fps:.2f}. Enter target FPS")
-		if target_fps is None:
-			return
-		v_filter = f"fps=fps={target_fps}"
+		v_filter = f"fps=fps={answers['target_fps']}"
 	elif effect_id == 3: # Change FPS (Speed)
-		target_fps = _ask_float(f"Target playback FPS (Original: {orig_fps:.2f})")
-		if not target_fps:
-			return
-		speed_factor = orig_fps / target_fps
+		speed_factor = orig_fps / answers["target_fps"]
 		v_filter = f"setpts={speed_factor}*PTS"
 		if audio_present:
 			a_filter, needs_complex = f"atempo={1.0 / speed_factor}", True
@@ -302,16 +365,8 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 			a_filter = "asplit[af][ar];[ar]areverse[arr];[af][arr]concat=n=2:v=0:a=1"
 		needs_complex = True
 	elif effect_id == 5: # Time Stretch
-		target_input = tui.ask_text(
-			f"Enter target duration (Orig: {orig_duration:.2f}s)", "")
-		target_dur = parse_duration(target_input)
-		if not target_dur or target_dur <= 0: return
-		speed_factor = target_dur / orig_duration
-		print()
-		print(tui.section("Interpolation Mode", cap=cap))
-		print(tui.menu(["Standard", "Motion-Compensated"], selected=None, cap=cap))
-		interp_choice = tui.ask_int("Choice", 1, 2, default=1)
-		if interp_choice == 2:
+		speed_factor = answers["target_duration"] / orig_duration
+		if answers["interp"] == 2:
 			v_filter = f"setpts={speed_factor}*PTS,minterpolate=fps={orig_fps}:mi_mode=mci"
 		else:
 			v_filter = f"setpts={speed_factor}*PTS"
@@ -374,13 +429,24 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 
 	cmd.append(output_path)
 
-	print(tui.header(f"Tweaking: {base_name}...", cap=cap))
+	if box is None:
+		print(tui.header(f"Tweaking: {base_name}...", cap=cap))
 	result = subprocess.run(cmd, capture_output=True, text=True)
-	
+
 	if result.returncode == 0:
-		print(tui.status_panel([("ok", f"Saved to {output_path}")], cap=cap))
+		if box is None:
+			print(tui.status_panel([("ok", f"Saved to {output_path}")], cap=cap))
+		else:
+			box.add("ok", f"Saved to {output_path}")
 	else:
-		print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
+		if box is None:
+			print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
+		else:
+			# Inside the box only the last line fits; never dump stderr
+			# into the middle of the frame.
+			detail = (result.stderr or "").strip().splitlines()
+			box.add("error", "FFmpeg failed for {}: {}".format(
+				base_name, detail[-1] if detail else "see FFmpeg output"))
 
 def main():
 	tui.init_ansi()
@@ -439,6 +505,11 @@ def main():
 		print("Cancelled.")
 		return
 
+	# Every run with work shares one box, including a single file: each file
+	# moves the current operation line, adds its outcome row and advances the
+	# i/N bar. Every per-file question is asked in this pre-pass, before the box
+	# exists, so no prompt can land inside the box's own cursor region.
+	jobs = []
 	for f in sorted(files):
 		if not args.codec:
 			_, current_ext = os.path.splitext(f)
@@ -446,8 +517,34 @@ def main():
 			target_ext = ".mp4" if current_ext.lower() in ['.mts', '.m2ts'] else current_ext
 		else:
 			target_ext = selected_ext
+		media = probe_media(f)
+		jobs.append((f, target_ext, media, ask_effect(effect_id, media, cap)))
 
-		process_video(f, effect_id, args.directory, args.suffix, selected_codec, target_ext, selected_res_config, cap)
+	box = tui.progress.BatchBox(
+		"Tweaking {} file{}".format(len(jobs), "" if len(jobs) == 1 else "s"),
+		len(jobs), cap=cap)
+	gate = tui.OverwriteGate(cap=cap, box=box)
+	for index, (f, target_ext, media, answers) in enumerate(jobs, 1):
+		box.update(op=os.path.basename(f), done=index - 1)
+		if answers is None:
+			# A cancelled or unparsable answer still owns one row, so `done`
+			# and the row list agree and the summary names the skipped file.
+			skipped = "Skipped {}: no effect setting given".format(
+				os.path.basename(f))
+			box.add("warn", skipped)
+		else:
+			process_video(f, effect_id, args.directory, args.suffix,
+						  selected_codec, target_ext, selected_res_config, cap,
+						  box=box, media=media, answers=answers, gate=gate)
+		box.update(done=index)
+		if gate.aborted:
+			break
+	saved = sum(1 for kind, _ in box.rows if kind == "ok")
+	unit = "file" if len(jobs) == 1 else "files"
+	if gate.aborted:
+		box.close("Aborted: {}/{} {} saved".format(saved, len(jobs), unit))
+	else:
+		box.close("Batch finished: {}/{} {} saved".format(saved, len(jobs), unit))
 
 if __name__ == "__main__":
 	main()

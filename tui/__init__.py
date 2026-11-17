@@ -30,6 +30,7 @@ Layout:
 	widgets   buttons, fields, list, scrollbar (re-exports widgetkit)
 	progress  Spinner, ProgressBar, LiveRegion
 	pager     paged output
+	hyperlink OSC 8 clickable links (wrap/supported/paint/is_openable)
 	loop      FrameLoop, ScreensaverHost
 
 Importing this package is inert: no printing, no config write, no terminal mode
@@ -43,7 +44,7 @@ Usage:
 	from tui import caps, palette, table
 """
 
-from . import canvas, caps, chrome, chrome_controls, chrome_panels, color_levels, color_math, colorpicker, colorpicker_panel, config, keys, loop, mouse, palette, pager, progress, prompts, screen, sgr, table, table_glyphs, text, widgetkit, widgets
+from . import canvas, caps, chrome, chrome_controls, chrome_panels, color_levels, color_math, colorpicker, colorpicker_panel, config, hyperlink, keys, loop, mouse, overwrite, palette, pager, progress, prompts, screen, sgr, table, table_glyphs, text, widgetkit, widgets
 from .caps import Capabilities, detect, init_ansi, require_tty
 from .chrome import (button, field, fill, header, menu, panel, rule, scrollbar,
 					 status, status_panel)
@@ -52,6 +53,7 @@ from .color_math import (WCAG_AA, contrast_ratio, hex_to_rgb, hsv_to_rgb,
 from .colorpicker import ColorPicker
 from .loop import FrameLoop, ScreensaverHost
 from .mouse import decode, disable, enable, parse_token, reporting, token
+from .overwrite import OverwriteGate
 from .palette import RESET, prefix, style, theme
 from .pager import page
 from .progress import LiveRegion, ProgressBar, Spinner
@@ -66,9 +68,11 @@ from .widgets import (Button, CheckField, Clip, ListBox, Panel,
 __all__ = [
 	"canvas", "caps", "chrome", "chrome_controls", "chrome_panels",
 	"color_levels", "color_math", "colorpicker", "config", "keys", "loop",
-	"mouse", "palette", "pager", "progress", "prompts", "screen", "table",
-	"table_glyphs", "text", "widgetkit", "widgets",
+	"hyperlink", "mouse", "overwrite", "palette", "pager", "progress",
+	"prompts", "screen", "table", "table_glyphs", "text", "widgetkit",
+	"widgets",
 	"Capabilities", "detect", "init_ansi", "require_tty",
+	"OverwriteGate",
 	"WCAG_AA", "ColorPicker", "contrast_ratio", "hex_to_rgb", "hsv_to_rgb",
 	"luminance", "rgb_to_hex", "rgb_to_hsv",
 	"CONTRAST_DARK", "CONTRAST_LIGHT", "RESET", "SOFT", "THEMES", "prefix",
