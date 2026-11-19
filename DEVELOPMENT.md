@@ -30,9 +30,9 @@ alignment, border/table/button/scrollbar styles, focus style and zebra rows.
 The gitignored `theme.ini` next to the wrappers selects the theme name and the
 look, and every script shares both, so switching `theme` switches the whole
 collection, never one script. `list`'s default appearance therefore changed
-from the old purple-on-black to cozy purple; the checked-in golden fixture pins
-the new default. Each colour is defined once and downgraded to the running
-colour level, so a 16-colour terminal and a truecolor one show the same layout.
+from the old purple-on-black to cozy purple. Each colour is defined once and
+downgraded to the running colour level, so a 16-colour terminal and a truecolor
+one show the same layout.
 
 A page is composed from the shared chrome helpers rather than hand-printed
 banners: `tui.header()` (title band plus rule), `tui.panel()` (framed block),

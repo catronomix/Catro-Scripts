@@ -2,7 +2,7 @@
 
 One JSON file per theme in this directory. `cozypurple.json` ships with the
 repository and holds the current default look (cozy purple: gold on velvet
-purple), the look the golden fixture pins.
+purple).
 
 Select a theme by writing its `name` in the gitignored `theme.ini` next to the
 scripts; the look (`soft`, `light`, `dark`) can also be changed with

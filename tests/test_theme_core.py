@@ -39,7 +39,7 @@ from support import isolate_checkout_config  # noqa: E402  (test helper, not pro
 SCRUBBED = ("NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE", "CATRO_COLOR",
 			"CATRO_ASCII", "CATRO_THEME", "TERM", "COLORTERM", "CLICOLOR")
 
-# The list golden fixtures are a stable directory of tiny scripts: reusing them
+# The list fixtures are a stable directory of tiny scripts: reusing them
 # keeps the scan input (and its sizes) identical on every platform.
 LIST_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "list_golden" / "scripts"
 

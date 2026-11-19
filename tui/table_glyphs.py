@@ -10,8 +10,7 @@ ASCII), then the theme's `corner-char`, which `tui.frame_corners` stamps on the
 corners of the winner; the tables live here so callers skip the renderer.
 
 Every set has the same eleven keys (`tl`, `tm`, `tr`, `ml`, `mm`, `mr`, `bl`,
-`bm`, `br`, `h`, `v`); `rounded` is the shipped default and is byte-pinned by
-the golden fixture, so it must not move between families.
+`bm`, `br`, `h`, `v`); `rounded` is the shipped default.
 """
 
 from . import config, frame_corners, palette

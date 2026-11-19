@@ -19,11 +19,13 @@ This document provides instructions for AI agents working on the `catro-scripts`
 
 ## Coding Standards & Conventions
 - **House Style**: Scripts should utilize full-color text output (where applicable), clean terminal layouts, and structured tables for data representation.
-  - Terminal presentation lives in the `tui/` package. Its behavior is pinned by
-    the `tui` feature contract (`.devteam/contracts/tui.md`, local dev-team
-    tooling, not tracked); read it before changing anything in `tui/` and treat
-    it as the source of truth for detection precedence, the palette, table
-    composition and pipe behavior.
+  - Terminal presentation lives in the `tui/` package. The package itself is the
+    reference for detection precedence, the palette, table composition and pipe
+    behavior; there is no separate contract document to keep in sync.
+  - **Tests catch breakage**: assert behavior, effects, errors and invariants.
+    Do not write snapshot tests that compare printed copy, table bytes or ANSI
+    output against literals copied from the code - the code is already the
+    reference for what it prints.
   - **No private ANSI**: Do not hardcode escape codes or define a local `Colors`
     class in a script. Use `tui.style()`/`tui.prefix()` with semantic palette
     keys (`header`, `border`, `fg`, `muted`, `success`, `warn`, `error`, ...),

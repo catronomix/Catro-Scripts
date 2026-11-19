@@ -9,9 +9,9 @@ the additive `underline` attribute on `palette.prefix()/style()`.
 
 Two rules are pinned here, in this order:
 
-	- the default look does not move: `rounded`/`box`/zebra/left reproduce the
-		shipped bytes (the golden fixture in `test_list_golden.py` and the exact
-		spans in `test_tui_table.py`/`test_tui_chrome.py` keep owning that);
+  - the default look does not move: `rounded`/`box`/zebra/left keep the
+		shipped rendering (the layout tests in `test_tui_table.py` own any
+		width/truncation questions);
 	- every legal property value is exercised, and explicit caller arguments
 		(`box=`, `zebra=`) still beat the theme.
 
