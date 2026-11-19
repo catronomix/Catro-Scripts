@@ -331,6 +331,22 @@ def get_win_sort_key():
     return natural_sort_key
 
 
+# Sorting methods offered by --sort. Kept as one tuple so that a sibling
+# script reusing sort_files() cannot offer a method this module does not know.
+SORT_METHODS = (
+    "name_asc",
+    "name_desc",
+    "date_asc",
+    "date_desc",
+    "cdate_asc",
+    "cdate_desc",
+    "alphanum_asc",
+    "alphanum_desc",
+    "winname_asc",
+    "winname_desc",
+)
+
+
 def sort_files(folder_path, files, method):
     """Sorts files based on the chosen method."""
     if method == "name_asc":
@@ -589,18 +605,7 @@ if __name__ == "__main__":
     rename_opts.add_argument(
         "--sort",
         type=str,
-        choices=[
-            "name_asc",
-            "name_desc",
-            "date_asc",
-            "date_desc",
-            "cdate_asc",
-            "cdate_desc",
-            "alphanum_asc",
-            "alphanum_desc",
-            "winname_asc",
-            "winname_desc",
-        ],
+        choices=list(SORT_METHODS),
         default="name_asc",
         help="Sorting method (default: name_asc)",
     )

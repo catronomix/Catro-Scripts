@@ -2,7 +2,7 @@
 """
 			INSTALLER AND TOOLING SUMMARY PANELS
 			====================================
-Issue 0041 batch B2b boxes the summary/result blocks of `opencode`,
+Issue 0041 batch B2b boxes the summary/result blocks of `oc`,
 `image_generator`, `image_resizer`, `installdeps`, `ts_export`, `ts_setup` and
 `venvreplicator` in a `tui.panel`. Their streaming/inline rows (the per-file
 log, `tui.status` progress lines, the venv package table) keep their existing
@@ -90,16 +90,16 @@ class _TemporaryCwd:
 		return False
 
 
-# --- opencode ----------------------------------------------------------------
+# --- oc ----------------------------------------------------------------------
 
 class OpencodeGuidancePanelTest(unittest.TestCase):
 	"""The not-installed guidance and the usage summary are page panels."""
 
 	def render(self, cap):
-		import opencode
+		import oc
 
-		opencode.print_not_installed(cap)
-		opencode.print_usage("anthropic/claude", cap)
+		oc.print_not_installed(cap)
+		oc.print_usage("anthropic/claude", cap)
 
 	def test_true_colour_frames_both_blocks(self):
 		out = capture(self.render, TTY_TRUE)
@@ -124,7 +124,7 @@ class OpencodeGuidancePanelTest(unittest.TestCase):
 			"[error] The `opencode` CLI is not installed or not on your PATH.\n"
 			"\nGet it here:\thttps://opencode.ai\n"), out)
 		self.assertIn("\n--- USAGE ---\n"
-					  '  catro-scripts opencode "<instruction>"\n', out)
+					  '  catro-scripts oc "<instruction>"\n', out)
 		self.assertTrue(out.endswith(
 			"\nDefault model:\tanthropic/claude (from opencode.default)\n"), out)
 		no_frame(self, out)
@@ -134,8 +134,8 @@ class OpencodeSubcommandTest(unittest.TestCase):
 	"""Bare run shows usage only; `models` is the one path that dumps models."""
 
 	def main(self, argv, cap=TTY_TRUE):
-		"""Run opencode.main with argv, a fake binary and a recording runner."""
-		import opencode
+		"""Run oc.main with argv, a fake binary and a recording runner."""
+		import oc
 
 		calls = []
 
@@ -147,15 +147,15 @@ class OpencodeSubcommandTest(unittest.TestCase):
 		self.written = mock.Mock()
 		with mock.patch.object(tui, "detect", lambda: cap), \
 				mock.patch.object(tui, "init_ansi"), \
-				mock.patch.object(opencode, "find_opencode",
+				mock.patch.object(oc, "find_opencode",
 								  lambda: "opencode"), \
-				mock.patch.object(opencode, "run_opencode", fake_run), \
-				mock.patch.object(opencode, "read_default_model", lambda: None), \
-				mock.patch.object(opencode, "write_default_model", self.written), \
-				mock.patch.object(sys, "argv", ["opencode.py"] + argv), \
+				mock.patch.object(oc, "run_opencode", fake_run), \
+				mock.patch.object(oc, "read_default_model", lambda: None), \
+				mock.patch.object(oc, "write_default_model", self.written), \
+				mock.patch.object(sys, "argv", ["oc.py"] + argv), \
 				contextlib.redirect_stdout(buffer):
 			try:
-				opencode.main()
+				oc.main()
 			except SystemExit as exc:
 				self._exit = exc.code
 			else:
@@ -605,7 +605,7 @@ class NoBareInputTest(unittest.TestCase):
 	def test_no_bare_input_in_the_seven_scripts(self):
 		import ast
 
-		for name in ("opencode.py", "image_generator.py", "image_resizer.py",
+		for name in ("oc.py", "image_generator.py", "image_resizer.py",
 					 "installdeps.py", "ts_export.py", "ts_setup.py",
 					 "venvreplicator.py"):
 			with self.subTest(script=name):

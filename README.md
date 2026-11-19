@@ -44,10 +44,11 @@ catro-scripts help <script>   # usage for one script
 - **`jsonl_monitor`** - watches JSONL files or streams and filters new entries.
 - **`keygen`** - interactive random-key generator.
 - **`list`** - table of the available scripts with sizes and descriptions.
+- **`makewebp`** - turns a folder's images into one animated `.webp` with ffmpeg/libwebp (frame order, timing and colour filters are configurable), saved as `<folder>.webp` one level up, beside the input folder.
 - **`mdreader`** - markdown reader for the terminal. Links emit as OSC 8 hyperlinks where the terminal supports them, so Ctrl-click opens them.
 - **`netconfig`** - switches network adapters between DHCP and a static IP.
 - **`newfile`** - creates files and folders from templates.
-- **`opencode`** - runs the `opencode` CLI non-interactively.
+- **`oc`** - runs the `opencode` CLI non-interactively.
 - **`randomsorter`** - renames and shuffles files into randomised names and folders.
 - **`renamer`** - batch-renames files with prefixes, suffixes and sorting by name, modification date or creation date.
 - **`screensaver`** - host and renderer for `.screensaver` plugins.

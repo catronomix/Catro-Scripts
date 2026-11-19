@@ -127,7 +127,7 @@ def run_sweep(manifest_path, timeout_scale=1.0):
             args = item["args"].split()
             cmd = ["/bin/bash", os.path.join(APP, "catro-scripts.sh"), name] + args
             timeout = 5 if name in ("keygen", "screensaver", "fakeserver") else (
-                30 if name == "opencode" else 15)
+                30 if name == "oc" else 15)
             res = run(cmd, cwd, timeout * timeout_scale)
             res.update(script=name, args=item["args"], why=item["why"])
             res["label"] = classify(res)

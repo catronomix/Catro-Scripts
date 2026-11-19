@@ -15,7 +15,7 @@
  {"name":"keygen","args":"","why":"interactive; killed after 5s"},
  {"name":"list","args":"","why":"table listing"},
  {"name":"newfile","args":"","why":"usage path"},
- {"name":"opencode","args":"","why":"delegates to the opencode CLI (absent in the image)"},
+ {"name":"oc","args":"","why":"delegates to the opencode CLI (absent in the image)"},
  {"name":"randomsorter","args":"--help","why":"argparse help"},
  {"name":"renamer","args":"--help","why":"argparse help"},
  {"name":"sanitize","args":"--help","why":"argparse help exits before any repo work"},

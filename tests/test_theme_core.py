@@ -3,7 +3,7 @@
 			THEMED CORE COMMANDS
 			====================
 Pins the two halves of the theme contract for the commands migrated onto the
-page-chrome seam (`list`, `help`, `action`, `count`, `opencode`, `sanitize`):
+page-chrome seam (`list`, `help`, `action`, `count`, `oc`, `sanitize`):
 
 	- on a terminal, `CATRO_THEME` changes the bytes: `soft` and
 		`contrast-dark` resolve different palette roles, so the same command must
@@ -125,10 +125,10 @@ def render_count():
 		count_module.main()
 
 
-def render_opencode():
-	import opencode as opencode_module
+def render_oc():
+	import oc as oc_module
 	# The install-guidance page needs no binary and no network: it is pure copy.
-	opencode_module.print_not_installed()
+	oc_module.print_not_installed()
 
 
 def render_sanitize():
@@ -154,7 +154,7 @@ COMMANDS = [
 	("help", render_help),
 	("action", render_action),
 	("count", render_count),
-	("opencode", render_opencode),
+	("oc", render_oc),
 	("sanitize", render_sanitize),
 ]
 

@@ -137,7 +137,7 @@ class NoPrivateAnsiTest(unittest.TestCase):
 	# script here is the price of moving it onto tui/: the gate below is what
 	# keeps a private escape sequence from creeping back in.
 	MIGRATED = ("list.py", "help.py", "action.py", "count.py",
-				"opencode.py", "sanitize.py", "screensaver.py",
+				"oc.py", "sanitize.py", "screensaver.py",
 				# B1 interactive
 				"keygen.py", "fakeserver.py",
 				# B2 jsonl
@@ -149,7 +149,7 @@ class NoPrivateAnsiTest(unittest.TestCase):
 				"videoloop.py", "videotweak.py",
 				# B5 media
 				"image_resizer.py", "audiosplit.py", "image_generator.py",
-				"ts_setup.py",
+				"ts_setup.py", "makewebp.py",
 				# B6 system/net
 				"netconfig.py", "gitpush.py", "ts_export.py",
 				"venvreplicator.py",

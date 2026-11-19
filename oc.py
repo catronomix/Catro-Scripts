@@ -13,19 +13,19 @@ Features:
 	- Accepts bracketed/quoted or unbracketed instructions (joins and passes as one arg).
 
 Usage:
-	catro-scripts opencode
-	catro-scripts opencode models
-	catro-scripts opencode -m <provider/model[#variant]> "<instruction>"
-	catro-scripts opencode -m <provider/model[#variant]>
-	catro-scripts opencode "<instruction>"
-	catro-scripts opencode <unbracketed instruction words>
+	catro-scripts oc
+	catro-scripts oc models
+	catro-scripts oc -m <provider/model[#variant]> "<instruction>"
+	catro-scripts oc -m <provider/model[#variant]>
+	catro-scripts oc "<instruction>"
+	catro-scripts oc <unbracketed instruction words>
 
 Examples:
-	catro-scripts opencode
-	catro-scripts opencode models
-	catro-scripts opencode -m anthropic/claude-sonnet-4-5 "Explain this repository"
-	catro-scripts opencode -m openai/gpt-5.2#high Review the current changes
-	catro-scripts opencode Fix the failing tests in this folder
+	catro-scripts oc
+	catro-scripts oc models
+	catro-scripts oc -m anthropic/claude-sonnet-4-5 "Explain this repository"
+	catro-scripts oc -m openai/gpt-5.2#high Review the current changes
+	catro-scripts oc Fix the failing tests in this folder
 
 Requirements: opencode CLI (see install hint when missing)
 """
@@ -68,7 +68,7 @@ def write_default_model(model):
 
 def find_opencode():
 	# Locate the real opencode binary on PATH (None when not installed).
-	# Manual PATH scan so our own opencode.py wrapper (matched via cwd/PATHEXT
+	# Manual PATH scan so our own oc.py wrapper (matched via cwd/PATHEXT
 	# on Windows) is never mistaken for the real opencode binary.
 	own = os.path.abspath(__file__).lower()
 	pathext = [e.lower() for e in os.environ.get('PATHEXT', '.EXE;.CMD;.BAT;.COM').split(os.pathsep)]
@@ -120,7 +120,7 @@ def print_not_installed(cap=None):
 		"",
 		"After installing, restart your shell so `opencode` is on PATH, "
 		"then re-run:",
-		"  {}".format(command("catro-scripts opencode")),
+		"  {}".format(command("catro-scripts oc")),
 		"",
 	], cap=cap))
 
@@ -140,16 +140,16 @@ def print_usage(default_model, cap=None):
 	cap = cap or tui.detect()
 	command = lambda text: tui.style(text, fg="fg-success", cap=cap)
 	body = [
-		"  {}".format(command('catro-scripts opencode "<instruction>"')),
+		"  {}".format(command('catro-scripts oc "<instruction>"')),
 		"  {}  (script joins + quotes for you)".format(
-			command("catro-scripts opencode <unbracketed words>")),
+			command("catro-scripts oc <unbracketed words>")),
 		"  {}".format(command(
-			'catro-scripts opencode -m <provider/model[#variant]> '
+			'catro-scripts oc -m <provider/model[#variant]> '
 			'"<instruction>"')),
 		"  {}  (saves default)".format(
-			command("catro-scripts opencode -m <provider/model[#variant]>")),
+			command("catro-scripts oc -m <provider/model[#variant]>")),
 		"  {}  (lists models)".format(
-			command("catro-scripts opencode models")),
+			command("catro-scripts oc models")),
 		"",
 	]
 	if default_model:
