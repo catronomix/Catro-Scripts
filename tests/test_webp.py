@@ -1,7 +1,7 @@
-# Regression tests for makewebp's ffmpeg-built animated output
+# Regression tests for webp's ffmpeg-built animated output
 """
-			MAKEWEBP TESTS
-			==============
+			WEBP TESTS
+			==========
 Pins the behaviour the script promises:
 
 	- the input list is filtered by extension/wildcard and ordered by the
@@ -11,6 +11,7 @@ Pins the behaviour the script promises:
 	  folder and named after it, never in the caller's cwd;
 	- every image is a frame, `--duration` round-trips exactly and `--loop`
 	  reaches the file;
+	- `--fps` turns into the matching frame duration (1000/F ms);
 	- differently-sized frames are padded onto a common canvas instead of
 	  being cropped;
 	- `-o` flattens onto the given colour, `-m` knocks that colour out and
@@ -18,13 +19,16 @@ Pins the behaviour the script promises:
 	- with alpha every frame is isolated: ffmpeg's blend=over is patched to
 	  "do not blend", so a transparent frame never shows earlier frames;
 	- no `.part.webp` survives a run, successful or not;
-	- `-q` and `--lossless` cannot be combined.
+	- `-v`/`--video` converts a named video, or every matching video in a
+	  folder as a batch, to `<video>.webp` beside its source;
+	- `-q` and `--lossless`, `--fps` and `--duration`, and video mode and the
+	  image-only options cannot be combined.
 
 Pillow is used here only to write fixtures and read results back; the script
 itself shells out to ffmpeg. Tests skip when ffmpeg or Pillow is missing.
 
 Run from the repo root:
-	python -m unittest tests.test_makewebp -v
+	python -m unittest tests.test_webp -v
 """
 import argparse
 import os
@@ -40,7 +44,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
 	sys.path.insert(0, str(REPO))
 
-import makewebp  # noqa: E402
+import webp  # noqa: E402
 import tui  # noqa: E402
 
 try:
@@ -52,9 +56,9 @@ except ImportError:  # pillow is optional for the suite
 
 def have_ffmpeg():
 	"""True when the repo ffmpeg or a PATH ffmpeg can run."""
-	if shutil.which("ffmpeg") is None and not os.path.isfile(makewebp.FFMPEG_BIN):
+	if shutil.which("ffmpeg") is None and not os.path.isfile(webp.FFMPEG_BIN):
 		return False
-	return makewebp.check_ffmpeg()
+	return webp.check_ffmpeg()
 
 
 FFMPEG = have_ffmpeg()
@@ -69,7 +73,7 @@ def cap16():
 def options(**overrides):
 	values = {"dir": ".", "ext": None, "wildcard": None, "sort": "name_asc",
 			  "opaque": None, "matte": None, "quality": 90, "lossless": False,
-			  "duration": 100, "loop": 0}
+			  "duration": 100, "fps": None, "loop": 0, "video": None}
 	values.update(overrides)
 	return argparse.Namespace(**values)
 
@@ -111,6 +115,19 @@ def synthetic_webp(flags=0x00):
 	return b"RIFF" + (len(body) + 4).to_bytes(4, "little") + b"WEBP" + body
 
 
+def save_video(path, rate=10, seconds=1):
+	"""Write a tiny synthetic video with ffmpeg (no encoder beyond mpeg4)."""
+	done = subprocess.run(
+		[webp.FFMPEG_BIN, "-y", "-loglevel", "error",
+		 "-f", "lavfi", "-i",
+		 "testsrc2=size=32x24:rate={}:duration={}".format(rate, seconds),
+		 "-c:v", "mpeg4", "-pix_fmt", "yuv420p", str(path)],
+		stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+		stderr=subprocess.PIPE)
+	if done.returncode != 0:
+		raise RuntimeError(done.stderr.decode("utf-8", "replace"))
+
+
 class TempCase(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.TemporaryDirectory()
@@ -127,7 +144,7 @@ class TempCase(unittest.TestCase):
 		elsewhere.mkdir(exist_ok=True)
 		with mock.patch.object(os, "getcwd", return_value=str(elsewhere)), \
 				mock.patch("sys.stdout"):
-			code = makewebp.make_animation(options(**values), cap16())
+			code = webp.make_animation(options(**values), cap16())
 		return code, Path(str(folder).rstrip("\\/") + ".webp")
 
 
@@ -199,6 +216,15 @@ class AnimationFileTest(TempCase):
 						img.seek(index)
 						img.load()
 						self.assertEqual(img.info.get("duration"), duration)
+
+	def test_fps_becomes_the_frame_duration(self):
+		code, output = self.render(self.frames, duration=None, fps=25)
+		self.assertEqual(code, 0)
+		with Image.open(output) as img:
+			for index in range(img.n_frames):
+				img.seek(index)
+				img.load()
+				self.assertEqual(img.info.get("duration"), 40)
 
 	def test_loop_reaches_the_file(self):
 		code, output = self.render(self.frames, loop=3)
@@ -278,7 +304,7 @@ class AnimationFileTest(TempCase):
 
 	def test_quality_and_lossless_are_mutually_exclusive(self):
 		done = subprocess.run(
-			[sys.executable, str(REPO / "makewebp.py"),
+			[sys.executable, str(REPO / "webp.py"),
 			 "-q", "80", "--lossless"],
 			cwd=str(self.root), stdin=subprocess.DEVNULL,
 			stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -291,7 +317,7 @@ class ForceNoBlendTest(unittest.TestCase):
 
 	def test_anmf_flags_get_the_no_blend_bit(self):
 		blob = synthetic_webp(flags=0x00)
-		patched = makewebp.force_no_blend(blob)
+		patched = webp.force_no_blend(blob)
 		self.assertEqual(anmf_flags(patched), [0x02])
 		self.assertEqual(len(patched), len(blob))
 		# Exactly one byte moved: the ANMF flags byte.
@@ -303,11 +329,11 @@ class ForceNoBlendTest(unittest.TestCase):
 
 	def test_dispose_and_other_flags_are_left_alone(self):
 		blob = synthetic_webp(flags=0x01)  # dispose = background
-		self.assertEqual(anmf_flags(makewebp.force_no_blend(blob)), [0x03])
+		self.assertEqual(anmf_flags(webp.force_no_blend(blob)), [0x03])
 
 	def test_non_riff_blob_is_untouched(self):
 		blob = b"this is not a webp file at all"
-		self.assertEqual(makewebp.force_no_blend(blob), blob)
+		self.assertEqual(webp.force_no_blend(blob), blob)
 
 
 @unittest.skipIf(SKIP, "ffmpeg or pillow is not available")
@@ -354,6 +380,123 @@ class FrameIsolationTest(TempCase):
 			self.assertTrue(value & 0x02, hex(value))
 
 
+@unittest.skipIf(SKIP, "ffmpeg or pillow is not available")
+class VideoModeTest(TempCase):
+	"""`-v` converts the named video, or every matching video in the folder."""
+
+	def setUp(self):
+		super().setUp()
+		self.clips = self.root / "clips"
+		self.clips.mkdir()
+		self.clip = self.clips / "clip.avi"
+		save_video(self.clip, rate=10, seconds=1)
+
+	def run_video(self, **overrides):
+		values = {"dir": None, "video": str(self.clip)}
+		values.update(overrides)
+		with mock.patch("sys.stdout"):
+			return webp.make_animation(options(**values), cap16())
+
+	def test_named_video_writes_webp_beside_it(self):
+		self.assertEqual(self.run_video(), 0)
+		output = self.clips / "clip.webp"
+		self.assertTrue(output.is_file())
+		self.assertFalse(Path(str(output) + ".part.webp").exists())
+		with Image.open(output) as img:
+			self.assertTrue(img.is_animated)
+			self.assertEqual(img.size, (32, 24))
+
+	def test_source_frame_rate_is_kept_by_default(self):
+		self.assertEqual(self.run_video(), 0)
+		with Image.open(self.clips / "clip.webp") as img:
+			self.assertGreaterEqual(img.n_frames, 8)
+			for index in range(img.n_frames):
+				img.seek(index)
+				img.load()
+				self.assertAlmostEqual(img.info.get("duration"), 100, delta=15)
+
+	def test_fps_resamples_a_video(self):
+		self.assertEqual(self.run_video(fps=5), 0)
+		with Image.open(self.clips / "clip.webp") as img:
+			self.assertAlmostEqual(img.n_frames, 5, delta=1)
+			img.seek(0)
+			img.load()
+			self.assertAlmostEqual(img.info.get("duration"), 200, delta=15)
+
+	def test_batch_converts_every_video_in_the_folder(self):
+		second = self.clips / "second.avi"
+		second.write_bytes(self.clip.read_bytes())
+		(self.clips / "note.txt").write_bytes(b"not a video")
+		self.assertEqual(self.run_video(video="", dir=str(self.clips)), 0)
+		self.assertTrue((self.clips / "clip.webp").is_file())
+		self.assertTrue((self.clips / "second.webp").is_file())
+		self.assertFalse((self.clips / "note.webp").exists())
+
+	def test_batch_filters_with_ext_and_wildcard(self):
+		second = self.clips / "second.avi"
+		second.write_bytes(self.clip.read_bytes())
+		self.assertEqual(self.run_video(video="", dir=str(self.clips),
+										ext="avi", wildcard="clip*"), 0)
+		self.assertTrue((self.clips / "clip.webp").is_file())
+		self.assertFalse((self.clips / "second.webp").exists())
+
+	def test_no_matching_videos_writes_nothing(self):
+		self.assertEqual(self.run_video(video="", dir=str(self.clips),
+										wildcard="nope*"), 1)
+		self.assertFalse((self.clips / "clip.webp").exists())
+
+	def test_failed_video_leaves_no_part_file(self):
+		broken = self.clips / "broken.avi"
+		broken.write_bytes(b"this is not a video")
+		self.assertEqual(self.run_video(video=str(broken)), 1)
+		self.assertFalse((self.clips / "broken.webp").exists())
+		self.assertFalse((self.clips / "broken.webp.part.webp").exists())
+
+
+class ArgumentRulesTest(unittest.TestCase):
+	"""Option combinations argparse and validate() must refuse."""
+
+	def run_script(self, *arguments):
+		return subprocess.run(
+			[sys.executable, str(REPO / "webp.py")] + list(arguments),
+			stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE)
+
+	def test_fps_and_duration_are_mutually_exclusive(self):
+		done = self.run_script("--fps", "25", "--duration", "40")
+		self.assertEqual(done.returncode, 2)
+		self.assertIn(b"not allowed with argument", done.stderr)
+
+	def test_video_rejects_duration(self):
+		done = self.run_script("-v", "clip.avi", "--duration", "40")
+		self.assertEqual(done.returncode, 2)
+		self.assertIn(b"--duration", done.stderr)
+
+	def test_video_rejects_sort(self):
+		done = self.run_script("-v", "clip.avi", "-s", "name_asc")
+		self.assertEqual(done.returncode, 2)
+		self.assertIn(b"--sort", done.stderr)
+
+	def test_named_video_rejects_a_folder(self):
+		done = self.run_script("-v", "clip.avi", "-d", ".")
+		self.assertEqual(done.returncode, 2)
+		self.assertIn(b"--dir", done.stderr)
+
+	def test_named_video_rejects_batch_filters(self):
+		done = self.run_script("-v", "clip.avi", "-e", "mp4")
+		self.assertEqual(done.returncode, 2)
+		self.assertIn(b"batch filters", done.stderr)
+
+	def test_resolve_duration_prefers_fps_then_explicit(self):
+		namespace = argparse.Namespace(fps=None, duration=None)
+		self.assertEqual(webp.resolve_duration(namespace),
+						 webp.DEFAULT_DURATION)
+		namespace.duration = 83
+		self.assertEqual(webp.resolve_duration(namespace), 83)
+		namespace.fps = 25
+		self.assertEqual(webp.resolve_duration(namespace), 40)
+
+
 class CollectImagesTest(TempCase):
 	def setUp(self):
 		super().setUp()
@@ -361,15 +504,15 @@ class CollectImagesTest(TempCase):
 			(self.root / name).write_bytes(b"x")
 
 	def test_wildcard_and_natural_sort_match_the_renamer(self):
-		names = makewebp.collect_images(str(self.root), wildcard="image*",
+		names = webp.collect_images(str(self.root), wildcard="image*",
 										method="alphanum_asc")
 		self.assertEqual(names, ["image2.png", "image10.png"])
 
 	def test_extension_filter_accepts_both_spellings(self):
-		self.assertEqual(makewebp.normalise_ext("png"), ".png")
-		self.assertEqual(makewebp.normalise_ext(".PNG"), ".png")
+		self.assertEqual(webp.normalise_ext("png"), ".png")
+		self.assertEqual(webp.normalise_ext(".PNG"), ".png")
 		self.assertEqual(
-			makewebp.collect_images(str(self.root), ext=".png", method="name_asc"),
+			webp.collect_images(str(self.root), ext=".png", method="name_asc"),
 			["image10.png", "image2.png", "myimage1.png"])
 
 

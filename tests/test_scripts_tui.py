@@ -100,7 +100,7 @@ class NoPrivateAnsiTest(unittest.TestCase):
 	# script here is the price of moving it onto tui/: the gate below is what
 	# keeps a private escape sequence from creeping back in.
 	MIGRATED = ("list.py", "help.py", "action.py", "count.py",
-				"oc.py", "sanitize.py", "screensaver.py",
+				"oc.py", "oc_volta.py", "sanitize.py", "screensaver.py",
 				# B1 interactive
 				"keygen.py", "fakeserver.py",
 				# B2 jsonl
@@ -109,10 +109,10 @@ class NoPrivateAnsiTest(unittest.TestCase):
 				"mdreader.py",
 				# B4 video
 				"videofade.py", "videoframes.py", "videojoin.py",
-				"videoloop.py", "videotweak.py",
+				"videoloop.py", "videomux.py", "videotweak.py",
 				# B5 media
 				"image_resizer.py", "audiosplit.py", "image_generator.py",
-				"ts_setup.py", "makewebp.py",
+				"ts_setup.py", "webp.py",
 				# B6 system/net
 				"netconfig.py", "gitpush.py", "ts_export.py",
 				"venvreplicator.py",
@@ -120,6 +120,8 @@ class NoPrivateAnsiTest(unittest.TestCase):
 				"renamer.py", "alias.py", "newfile.py", "getaudio.py",
 				"exifcopy.py", "timecopy.py", "randomsorter.py",
 				"shutdown.py", "installdeps.py",
+				# B8 speech/reader
+				"readerbox.py",
 				# the theme command (delegates to tui.__main__)
 				"theme.py")
 
@@ -175,7 +177,7 @@ class ThemedOutputTest(unittest.TestCase):
 	# the inline page helper is the wrong seam. mdreader is pinned instead by
 	# tests/test_mdreader.py::test_chrome_pairs_are_palette_roles.
 	SCREEN_RENDERERS = ("fakeserver.py", "jsonl_monitor.py", "mdreader.py",
-						"screensaver.py")
+						"readerbox.py", "screensaver.py")
 
 	def uses_chrome(self, name):
 		source = (REPO / name).read_text(encoding="utf-8")

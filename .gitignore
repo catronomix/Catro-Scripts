@@ -22,6 +22,7 @@ jsonl_debug.log
 # tui style preference and theme selection: per checkout, never committed
 config.ini
 theme.ini
+readerbox-config.yaml
 opencode.default
 venv_info.txt
 recreate_venv.py

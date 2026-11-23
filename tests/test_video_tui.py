@@ -2,7 +2,7 @@
 """
 			VIDEO TOOLS ON TUI
 			==================
-The five video scripts print their chrome through `tui`: no private escape
+The six video scripts print their chrome through `tui`: no private escape
 sequence survives in the source, a piped run stays plain text with no box
 glyphs, and the capabilities resolved once in `main()` are what the helpers
 style with instead of each call re-detecting the terminal.
@@ -29,7 +29,7 @@ import tui  # noqa: E402  (import after sys.path setup)
 from support import clean_env  # noqa: E402  (test helper, not production)
 
 VIDEO_SCRIPTS = ("videofade.py", "videoframes.py", "videojoin.py",
-				 "videoloop.py", "videotweak.py")
+				 "videoloop.py", "videomux.py", "videotweak.py")
 
 # argparse argv that lands on an error/notice path without touching a video.
 PLAIN_ARGS = {
@@ -37,6 +37,7 @@ PLAIN_ARGS = {
 	"videoframes.py": ["missing-video.mp4", "first"],
 	"videojoin.py": ["missing-video.mp4"],
 	"videoloop.py": ["missing-video.mp4"],
+	"videomux.py": ["missing-video.mp4", "missing-audio.m4a"],
 	"videotweak.py": ["missing-video.mp4"],
 }
 
@@ -51,7 +52,7 @@ def child_env():
 
 
 class NoPrivateAnsiTest(unittest.TestCase):
-	"""The five scripts style only through tui."""
+	"""The six scripts style only through tui."""
 
 	def test_no_private_escape_sequence(self):
 		for name in VIDEO_SCRIPTS:

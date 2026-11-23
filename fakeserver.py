@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 			FAKE SERVER SCREENSAVER
 			=======================
@@ -23,6 +22,7 @@ Requirements:
 	- Compatible with headless/SSH Android Termux sessions.
 """
 
+#!/usr/bin/env python3
 import sys
 import time
 import random

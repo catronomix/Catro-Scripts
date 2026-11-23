@@ -44,12 +44,13 @@ catro-scripts help <script>   # usage for one script
 - **`jsonl_monitor`** - watches JSONL files or streams and filters new entries.
 - **`keygen`** - interactive random-key generator.
 - **`list`** - table of the available scripts with sizes and descriptions.
-- **`makewebp`** - turns a folder's images into one animated `.webp` with ffmpeg/libwebp (frame order, timing and colour filters are configurable), saved as `<folder>.webp` one level up, beside the input folder.
 - **`mdreader`** - markdown reader for the terminal. Links emit as OSC 8 hyperlinks where the terminal supports them, so Ctrl-click opens them.
 - **`netconfig`** - switches network adapters between DHCP and a static IP.
 - **`newfile`** - creates files and folders from templates.
 - **`oc`** - runs the `opencode` CLI non-interactively.
+- **`oc_volta`** - updates the Volta-installed `opencode` CLI: Volta skips npm lifecycle scripts, so it runs the package's postinstall to place the real binary, then verifies the version. `--check`, `--version`, `--force`, `--restart`.
 - **`randomsorter`** - renames and shuffles files into randomised names and folders.
+- **`readerbox`** - full-screen Markdown/text reader that narrates the open document through a Chatterbox TTS server. Markdown italics, asides and quotes become spoken interjections, paragraphs start fresh chunks, and the rendered audio is saved beside the source. Configure `readerbox-config.yaml` (created in the catro-scripts folder) first.
 - **`renamer`** - batch-renames files with prefixes, suffixes and sorting by name, modification date or creation date.
 - **`screensaver`** - host and renderer for `.screensaver` plugins.
 - **`sanitize`** - scrubs a leaked secret from a repository's full git history.
@@ -63,7 +64,9 @@ catro-scripts help <script>   # usage for one script
 - **`videoframes`** - exports frames from a video as numbered images.
 - **`videojoin`** - joins video files with FFmpeg. Every run with work shows one reused progress box (current operation + overall progress + growing ok/fail list); an existing output asks `File exists! Overwrite? ([y]es, [n]o, [Y]es to all, [r]ename, [R]ename all, [a]bort):` instead of silently writing `name (1).mp4` - `r` saves as `name (2).mp4`, `Y`/`R` apply to the rest, `a` stops the batch; off a terminal it skips instead of asking.
 - **`videoloop`** - builds a seamless, crossfaded loop from a video. Same progress box (every mode, including a single file) and the same overwrite question as `videojoin`.
+- **`videomux`** - combines a video with an audio file: `catro-scripts videomux <video> <audio>`. The video stream is copied untouched and its own audio is discarded, so the result has one video track and one stereo audio track (front pair of a surround source, mono doubled to both sides). The video decides the length: a longer audio is cut, a shorter one is padded with silence. `-s/--cutstart` and `-e/--cutend` trim the audio, `-l/--loop` repeats a short audio, and the output is named `<video>_<audiocodec>.<ext>` unless `-o/--output` or `-x/--suffix` says otherwise. Same progress box and overwrite question as `videojoin`.
 - **`videotweak`** - changes FPS, reverses, bounces or transcodes video. Same progress box and overwrite question as `videojoin`.
+- **`webp`** - turns a folder's images into one animated `.webp` with ffmpeg/libwebp (frame order, timing, `--fps` and colour filters are configurable), saved as `<folder>.webp` one level up beside the input folder. `-v/--video [FILE]` converts a video instead (source frame rate by default), either the named file or every video in the folder as a batch with `-e`/`-w` filters, each saved as `<video>.webp` beside its source.
 
 ## Themes
 
