@@ -21,7 +21,7 @@
  {"name":"sanitize","args":"--help","why":"argparse help exits before any repo work"},
  {"name":"screensaver","args":"","why":"non-tty: tty preflight; killed after 5s"},
  {"name":"timecopy","args":"","why":"usage path"},
- {"name":"ts_export","args":"","why":"project validation fails in a temp cwd"},
+ {"name":"ts_export","args":"","expect_rc":1,"why":"project validation fails in a temp cwd; must exit 1"},
  {"name":"ts_setup","args":"","why":"non-tty: tty preflight"},
  {"name":"venvreplicator","args":"--help","why":"argparse help"},
  {"name":"videofade","args":"--help","why":"argparse help"},
