@@ -49,11 +49,12 @@ try:
     from rich.markdown import Markdown, TableElement, Link
     from rich.segment import Segment as RichSegment
     from rich.theme import Theme
+    from rich.errors import MissingStyle
     from rich import box
     from rich.text import Text
 except ImportError:
     Console = Markdown = TableElement = Link = None
-    RichSegment = Theme = box = Text = None
+    RichSegment = Theme = MissingStyle = box = Text = None
 
 try:
     _orig_table_console = TableElement.__rich_console__
@@ -65,6 +66,16 @@ if _orig_table_console is not None:
 
     def _custom_table_console(self, console, options):
         from rich.table import Table
+
+        try:
+            # The patch is process-wide, so a console that does not carry the
+            # reader's theme (a foreign script, a notebook, a test harness) must
+            # keep rendering tables the way plain rich does instead of raising
+            # MissingStyle for mdreader's own keys.
+            console.get_style("markdown.table.cell")
+        except MissingStyle:
+            yield from _orig_table_console(self, console, options)
+            return
 
         _orig_init = Table.__init__
 
@@ -620,6 +631,7 @@ _LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _QUOTE = re.compile(r"^(?:[ \t]*>[ ]?)+")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+_LIST_ITEM = re.compile(r"^( {0,3})([-+*]|\d{1,9}[.)])([ \t]+)")
 
 
 def _quote_body(line):
@@ -627,6 +639,25 @@ def _quote_body(line):
     # indented block inside a blockquote is recognised like a top-level one.
     match = _QUOTE.match(line)
     return line[match.end():] if match else line
+
+
+def _indent_width(line):
+    # Column position of the first non-blank character; a tab advances to the
+    # next four-column stop like a code block does.
+    width = 0
+    for char in line:
+        if char == " ":
+            width += 1
+        elif char == "\t":
+            width += 4 - (width % 4)
+        else:
+            break
+    return width
+
+
+def _rewrite_links_in(line):
+    return "".join(part if is_code else _rewrite_links(part)
+                   for part, is_code in _split_code(line))
 
 
 def _closing_run(line, start, width):
@@ -690,14 +721,19 @@ def _rewrite_links(text):
 def linkify(raw_content):
     """Rewrite `[text](url)` as `[url](url)` outside code; code stays verbatim.
 
-    Skipped, and therefore rendered exactly as written: indented code blocks
-    (four spaces or a tab), fenced blocks opened by ``` or ~~~ (also behind a
-    `>` quote marker), spans delimited by a run of backticks of equal length,
-    and a link whose `[` is escaped as `\\[`. Everything else - headings,
-    paragraphs, list items, table cells - has its links rewritten.
+    Skipped, and therefore rendered exactly as written: fenced blocks opened by
+    ``` or ~~~ (also behind a `>` quote marker), spans delimited by a run of
+    backticks of equal length, a link whose `[` is escaped as `\\[`, and an
+    indented code block - four spaces or a tab at block level (after a blank
+    line, or after another line of the block) or four columns beyond a list
+    item's content indent. Four spaces that continue a list item or a paragraph
+    are list/paragraph text, so their links are rewritten.
     """
     out = []
     fence = None  # (character, run length) of the open fence
+    in_code = False  # inside an indented code block at block level
+    list_indent = None  # content column of the open list item
+    prev_blank = True  # start of document or a blank line above
     for line in raw_content.splitlines(True):
         body = _quote_body(line)
         if fence is not None:
@@ -712,14 +748,34 @@ def linkify(raw_content):
             fence = (opening.group(1)[0], len(opening.group(1)))
             out.append(line)
             continue
-        if body.startswith("    ") or body.startswith("\t"):
-            out.append(line)
-            continue
         if not body.strip():
             out.append(line)  # blank line: nothing to rewrite
+            in_code = False
+            prev_blank = True
             continue
-        out.append("".join(part if is_code else _rewrite_links(part)
-                           for part, is_code in _split_code(line)))
+        indented = body.startswith("    ") or body.startswith("\t")
+        indent = _indent_width(body)
+        in_item = list_indent is not None and indent >= list_indent
+        if indented and in_item and indent < list_indent + 4:
+            # Continuation text of the list item, not a code block.
+            out.append(_rewrite_links_in(line))
+            prev_blank = False
+            continue
+        if indented and (in_item or in_code or prev_blank):
+            # A code block: inside the list item (four columns past its
+            # content) or at block level after a blank line.
+            out.append(line)
+            in_code = in_item or in_code or prev_blank
+            prev_blank = False
+            continue
+        # Any other line, including an indented paragraph continuation.
+        if not indented:
+            match = _LIST_ITEM.match(body)
+            list_indent = (len(match.group(1)) + len(match.group(2))
+                           + len(match.group(3))) if match else None
+            in_code = False
+        out.append(_rewrite_links_in(line))
+        prev_blank = False
     return "".join(out)
 
 
