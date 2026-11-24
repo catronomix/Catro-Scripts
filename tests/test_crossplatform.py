@@ -61,6 +61,14 @@ TTY_SCRIPTS = (
 	"ts_setup.py",
 )
 
+# Scripts that answer --help by hand instead of through argparse. They parse
+# argv in order, so they cannot use a parser, and the argparse sweep below
+# cannot discover them: this list is their shared coverage.
+HELP_SCRIPTS = (
+	"newfile.py",
+	"alias.py",
+)
+
 # Matches either quoting style of the __main__ guard; a source-scan test that
 # only knew double quotes would silently skip scripts.
 MAIN_GUARD = re.compile(r"""if\s+__name__\s*==\s*['"]__main__['"]""")
@@ -197,6 +205,40 @@ class SmokeTests(unittest.TestCase):
 				self.assertIn("usage:", both,
 							  "{} --help printed no usage line:\n{}".format(
 								  path.name, failure_detail(proc)))
+
+	def test_manual_help(self):
+		"""Hand-parsed scripts answer --help without writing anything."""
+		for name in HELP_SCRIPTS:
+			with self.subTest(script=name), tempfile.TemporaryDirectory() as td:
+				before = sorted(path.name for path in Path(td).iterdir())
+				proc = run([sys.executable, str(REPO / name), "--help"], cwd=td)
+				both = (text(proc.stdout) + text(proc.stderr)).lower()
+				self.assertEqual(proc.returncode, 0,
+								 "{} --help exited {}\n{}".format(
+									 name, proc.returncode, failure_detail(proc)))
+				self.assertIn("usage:", both,
+							  "{} --help printed no usage line:\n{}".format(
+								  name, failure_detail(proc)))
+				self.assertEqual(sorted(path.name for path in Path(td).iterdir()), before,
+								 "{} --help wrote into the working directory".format(name))
+		# alias.py writes next to itself, so a missed --help would land here.
+		self.assertFalse((REPO / "--help.bat").exists(),
+						 "alias --help created a --help.bat in the repository")
+
+	def test_alias_rejects_leading_dash(self):
+		"""A mistyped option must never become an alias file name."""
+		with tempfile.TemporaryDirectory() as td:
+			target = Path(td)
+			shutil.copy2(str(REPO / "alias.py"), str(target / "alias.py"))
+			shutil.copytree(REPO / "tui", target / "tui",
+							ignore=shutil.ignore_patterns("__pycache__"))
+			shutil.copytree(REPO / "themes", target / "themes")
+			proc = run([sys.executable, "alias.py", "-x"], cwd=td)
+			self.assertNotEqual(proc.returncode, 0,
+								"alias.py accepted a leading-dash name")
+			self.assertEqual(sorted(path.name for path in target.iterdir()),
+							 ["alias.py", "themes", "tui"],
+							 "alias.py wrote a file for a leading-dash name")
 
 	def test_tty_preflight_exit_2(self):
 		"""Interactive tools must refuse a piped stdin instead of crashing."""
