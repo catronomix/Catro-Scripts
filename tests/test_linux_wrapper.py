@@ -146,8 +146,13 @@ class CaseInsensitiveLookupTest(unittest.TestCase):
 							 typed.returncode, detail(typed)))
 		self.assertEqual(typed.stdout, correct.stdout,
 						 "wrapper List did not run list.py\n" + detail(typed))
-		self.assertIn('note: "List" matched "list"', text(typed.stderr),
-					  "wrapper List gave no match note:\n" + text(typed.stderr))
+		# The note names both scripts without the ".py" extension, so the test
+		# compares the whole line: a substring match would also accept
+		# `matched "list.py"`.
+		notes = [line.strip() for line in text(typed.stderr).splitlines()
+				 if "note:" in line]
+		self.assertEqual(notes, ['note: "List" matched "list"'],
+						 "wrapper List gave no match note:\n" + text(typed.stderr))
 		# The exact-case invocation must stay silent about matching.
 		self.assertNotIn("note:", text(correct.stderr),
 						 "wrapper list emitted a note:\n" + text(correct.stderr))

@@ -11,6 +11,25 @@ the theme system works, and how the suite is run. User-facing usage lives in
 - **Shell**: 5.9%
 - **Batchfile**: 4.9%
 
+## Script dispatch (`catro-scripts.sh` / `catro-scripts.bat`)
+
+The wrapper maps `catro-scripts <name> [args]` to `<name>.py` next to the
+wrapper and runs it. The dispatch rules, which the regression suite
+(`tests/test_linux_wrapper.py`) pins:
+
+- An exact-case `name.py` is the normal path and prints nothing about matching.
+- On a case-sensitive filesystem a wrong-case `name` is lowercased, compared
+  against the case-insensitive script directory, and, if exactly one file
+  matches, run with a note on stderr:
+  `note: "<typed>" matched "<actual>"` - both without the `.py` extension, so
+  the note names the script the way the CLI invokes it:
+  `catro-scripts List` -> `note: "List" matched "list"`.
+- Two or more case variants are an error (`matches more than one script`, exit
+  1); a name with no file at all is `Error: Script "<name>.py" not found in
+  <dir>` on exit 1.
+- `.` still means `action run`, and the wrapper resolves its own symlink chain
+  before looking for scripts.
+
 ## Terminal styling (`tui/`)
 
 The `tui/` package is the one place terminal presentation lives: capability
