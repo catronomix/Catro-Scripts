@@ -96,10 +96,24 @@ def create_alias(alias_name, cap):
 		print(tui.status("error", f"Failed to create alias files: {e}", cap=cap),
 			  file=sys.stderr)
 
+def print_help(cap):
+	"""Print usage and rules; never writes a wrapper file."""
+	print(tui.header("ALIAS CREATOR", cap=cap))
+	print(tui.status("info", "Usage: python alias.py <alias_name>", cap=cap))
+	print(tui.section("Rules", cap=cap))
+	print(tui.field("name", "One word: 'python alias.py c' creates c.bat and c.sh.", cap=cap))
+	print(tui.field("forbidden", "Shell built-ins, system commands and reserved names.", cap=cap))
+	print(tui.field("dash", "Names starting with '-' are refused, so --help is never a file.", cap=cap))
+
 def main():
 	# One capability record for the run: colour level, glyphs and pipe mode.
 	tui.init_ansi()
 	cap = tui.detect()
+
+	# --help is informational: answer before argument counting or writing.
+	if any(arg in ('-h', '--help') for arg in sys.argv[1:]):
+		print_help(cap)
+		return
 
 	# Strict check for exactly one argument (script name + 1 arg)
 	if len(sys.argv) != 2:
@@ -107,6 +121,12 @@ def main():
 		sys.exit(1)
 
 	alias_name = sys.argv[1].strip().lower()
+
+	# A leading dash would turn a mistyped option into a file name.
+	if alias_name.startswith('-'):
+		print(tui.status("error", f"Invalid alias name (must not start with '-'): {alias_name}",
+						 cap=cap), file=sys.stderr)
+		sys.exit(1)
 	
 	# Validation for filename characters based on user requirements
 	invalid_chars = '<>:"/\\|?*_.~[](){}` '

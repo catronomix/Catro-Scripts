@@ -133,17 +133,36 @@ def create_item(path, is_dir=False, cap=None):
 			  file=sys.stderr)
 		return False
 
+def print_help(cap):
+	"""Print usage and flag semantics; never touches the filesystem."""
+	print(tui.header("FILE & FOLDER CREATOR", cap=cap))
+	print(tui.status("info", "Usage: python newfile.py [-d dirs...] [-sd subdirs...] [-f files...]",
+					 cap=cap))
+	print(tui.section("Flags", cap=cap))
+	print(tui.field("-d, --dirs", "Create base directories and descend into them.", cap=cap))
+	print(tui.field("-sd, --subdir", "Create subdirectories of the current context and descend.", cap=cap))
+	print(tui.field("-f, --files", "Create files in each current directory, without descending.", cap=cap))
+	print(tui.section("Series", cap=cap))
+	print(tui.field("range", "001-050 expands with padding preserved: [001-050]", cap=cap))
+	print(tui.field("chars", "letter series: [a-z], combinable: [1-10][a-g]", cap=cap))
+
 def main():
 	tui.init_ansi()
 	cap = tui.detect()
 
-	if len(sys.argv) < 2:
+	args = sys.argv[1:]
+
+	# --help is informational: it runs before any parse or directory work.
+	if any(arg in ('-h', '--help') for arg in args):
+		print_help(cap)
+		return
+
+	if not args:
 		print(tui.status("error", "Usage: python newfile.py [-d dirs...] [-sd subdirs...] [-f files...]",
 						 cap=cap))
 		return
 
 	# Manual parsing to maintain order of operations
-	args = sys.argv[1:]
 	current_targets = ["."] # Start in current directory
 	
 	i = 0
