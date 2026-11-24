@@ -872,6 +872,66 @@ class MdreaderColourMappingTests(unittest.TestCase):
         self.assertIn("https://example.com/f", text)
         self.assertNotIn("[f]", text)
 
+    def test_list_continuation_is_list_text_not_a_code_block(self):
+        """A four-space continuation keeps the item and takes its links."""
+        source = ("- item\n"
+                  "    see [a](https://example.com/a) here\n\n"
+                  "- other\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("[https://example.com/a](https://example.com/a)",
+                      rewritten)
+        self.assertNotIn("[a](https://example.com/a)", rewritten)
+
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        doc = mdreader.process_markdown_rich(source, 70, 0)
+        text = "".join(seg.text for line in doc for seg in line.segments)
+        text = "".join(text.split())
+        self.assertIn("itemseehttps://example.com/ahere", text)
+        continuation = [seg for line in doc for seg in line.segments
+                        if "https://example.com/a" in seg.text]
+        self.assertTrue(continuation, "the continuation must render")
+        self.assertNotIn(11, [seg.color for seg in continuation],
+                         "continuation text must not take the code pair")
+
+    def test_indented_code_inside_or_after_a_list_still_renders_as_code(self):
+        """Four columns past the item's content, or after a blank, is code."""
+        source = ("- item\n\n"
+                  "        [a](https://example.com/a)\n\n"
+                  "- item\n\n"
+                  "    [b](https://example.com/b)\n\n"
+                  "after the list\n\n"
+                  "    [c](https://example.com/c)\n")
+        rewritten = mdreader.linkify(source)
+        self.assertIn("        [a](https://example.com/a)", rewritten)
+        self.assertIn("[https://example.com/b](https://example.com/b)",
+                      rewritten)
+        self.assertIn("    [c](https://example.com/c)", rewritten)
+        self.assertNotIn("[https://example.com/c]", rewritten)
+
+    def test_a_foreign_console_renders_a_table_after_import(self):
+        """The process-wide table patch leaves other consoles alone (#28)."""
+        if mdreader.Theme is None:
+            self.skipTest("rich is not installed")
+        from rich.console import Console
+        from rich.markdown import Markdown
+
+        buffer = io.StringIO()
+        console = Console(file=buffer, width=60, color_system=None)
+        console.print(Markdown("| aa | bb |\n|----|----|\n| 11 | 22 |\n"))
+        rendered = buffer.getvalue()
+        for cell in ("aa", "bb", "11", "22"):
+            with self.subTest(cell=cell):
+                self.assertIn(cell, rendered)
+        # The themed path still carries the palette pair (font/background from
+        # `markdown.table.cell`); the existing border test pins the border.
+        doc = mdreader.process_markdown_rich(
+            "| aa | bb |\n|----|----|\n| 11 | 22 |\n", 40, 0)
+        cells = [seg for line in doc for seg in line.segments
+                 if seg.text.strip() in ("aa", "bb", "11", "22")]
+        self.assertTrue(cells, "the themed table cells must render")
+        self.assertIn(4, [seg.color for seg in cells])
+
 
 if __name__ == "__main__":
     unittest.main()
