@@ -10,6 +10,9 @@ Two stages, both non-interactive and bounded:
 Classification runs the accepted outcomes (USAGE, DEP, PASS:tty-guard) before
 the blanket `rc == 0` rule, and a run that exits 0 after printing an error line
 is `FAIL:silent`, never PASS: an exit status alone is not evidence of success.
+A manifest entry may pin a documented failure path with `"expect_rc"`: the
+probe then only passes when the script exits with exactly that code after
+printing the error marker (ts_export outside a project must exit 1).
 
 Output contract for tests/container/run.py:
   stderr -> human-readable summary
@@ -93,6 +96,13 @@ def classify(result):
         return "USAGE"
     if "not installed" in text:
         return "DEP"
+    # A documented failure path: the manifest pins the exit code the probe must
+    # produce, and the error marker still has to be there. Same PASS label, so
+    # the probe vocabulary does not grow.
+    if (result.get("expect_rc") is not None
+            and result.get("rc") == result["expect_rc"]
+            and SILENT_ERROR.search(text)):
+        return "PASS"
     if result.get("rc") == 0 and SILENT_ERROR.search(text):
         return "FAIL:silent"
     if result.get("rc") == 0:
@@ -129,7 +139,8 @@ def run_sweep(manifest_path, timeout_scale=1.0):
             timeout = 5 if name in ("keygen", "screensaver", "fakeserver") else (
                 30 if name == "oc" else 15)
             res = run(cmd, cwd, timeout * timeout_scale)
-            res.update(script=name, args=item["args"], why=item["why"])
+            res.update(script=name, args=item["args"], why=item["why"],
+                       expect_rc=item.get("expect_rc"))
             res["label"] = classify(res)
             results.append(res)
             print("[sweep] {:<16} {:<14} rc={}".format(name, res["label"], res["rc"]),

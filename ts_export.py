@@ -17,6 +17,8 @@ Features:
 Usage:
 	python ts_export.py
 
+Exit status: 0 when the export completes, 1 when validation or a build step fails.
+
 Requirements:
 	- A project created with 'newtypescript.py' (or a similar structure).
 	- Node modules installed (specifically 'typescript' and 'esbuild').
@@ -78,7 +80,12 @@ def check_project():
         return False, "node_modules not found. Please run 'npm install' first."
     return True, ""
 
-def main():
+def main() -> int:
+    """Run the export; return a process exit code (non-zero on any failure).
+
+    Every error path prints `[error]` and returns 1 so a caller can tell a
+    failed export from a successful one through the exit status alone.
+    """
     # One detection per run, threaded through every helper: the colour level,
     # Unicode decision and plain mode must not change mid-run.
     cap = tui.detect()
@@ -91,7 +98,7 @@ def main():
     is_valid, err = check_project()
     if not is_valid:
         print_error(err, cap)
-        return
+        return 1
 
     # 2. Setup Export Directory
     export_dir = 'export'
@@ -101,7 +108,7 @@ def main():
             remove_tree(export_dir)
         except Exception as e:
             print_error(f"Could not clear '{export_dir}' directory. Please ensure no files are open in other programs.\nDetails: {e}", cap)
-            return
+            return 1
             
     os.makedirs(export_dir)
     print_step(f"Created clean '{export_dir}' directory.", cap)
@@ -114,7 +121,7 @@ def main():
 
     if not os.path.exists(tsc_bin):
         print_error("TypeScript compiler (tsc) not found in node_modules.", cap)
-        return
+        return 1
 
     # 4. Compilation / Bundling
     # We prefer esbuild for the "export" because it can bundle dependencies into a 
@@ -141,7 +148,7 @@ def main():
             print_success("Bundled JavaScript successfully.", cap)
         except subprocess.CalledProcessError:
             print_error("Bundling failed.", cap)
-            return
+            return 1
     else:
         print_step("esbuild not found, falling back to standard tsc...", cap)
         try:
@@ -150,7 +157,7 @@ def main():
             print_success("Compiled JavaScript successfully.", cap)
         except subprocess.CalledProcessError:
             print_error("Compilation failed.", cap)
-            return
+            return 1
 
     # 5. Copy Assets
     print_step("Copying styles and assets...", cap)
@@ -178,7 +185,8 @@ def main():
         ("info", "You can now open '{}/index.html' directly in "
                  "your browser.".format(export_dir)),
     ], cap=cap))
+    return 0
 
 if __name__ == "__main__":
     tui.init_ansi()
-    main()
+    sys.exit(main())
