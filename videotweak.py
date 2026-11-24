@@ -113,21 +113,27 @@ def has_audio(filename):
 	return False
 
 def parse_duration(dur_str):
-	"""Parses strings like 1m30s, 2m, 45s into total seconds."""
-	total_seconds = 0
-	pattern = re.compile(r'(?:(\d+)m)?(?:(\d+)s)?')
-	match = pattern.match(dur_str.strip().lower())
-	if match:
-		minutes = int(match.group(1)) if match.group(1) else 0
-		seconds = int(match.group(2)) if match.group(2) else 0
-		total_seconds = (minutes * 60) + seconds
-	
-	if total_seconds == 0:
-		try:
-			total_seconds = float(dur_str)
-		except ValueError:
-			return None
-	return total_seconds
+	"""Total seconds for a duration answer, or `None` when it is rejected.
+
+	Accepted grammar (whole answer, case-insensitive):
+		- compound: `[<minutes>m][<seconds>s]`, integer components, at least
+		  one part present (e.g. `2m`, `45s`, `1m30s`)
+		- plain: a bare decimal number of seconds (e.g. `90`, `12.5`)
+	Zero, negatives, exponents (`1e3`), unit-less tails (`12abc`) and clock
+	forms (`1:2:3`) are all rejected.
+	"""
+	text = dur_str.strip().lower()
+	compound = re.fullmatch(r"(?:(\d+)m)?(?:(\d+)s)?", text)
+	if compound is not None:
+		minutes = int(compound.group(1) or 0)
+		seconds = int(compound.group(2) or 0)
+		total_seconds = minutes * 60 + seconds
+		return float(total_seconds) if total_seconds > 0 else None
+	plain = re.fullmatch(r"\d+(?:\.\d+)?", text)
+	if plain is not None:
+		total_seconds = float(text)
+		return total_seconds if total_seconds > 0 else None
+	return None
 
 def _ask_float(prompt):
 	"""`tui.ask_text` plus a float; None for a cancelled or non-numeric answer."""
@@ -289,7 +295,12 @@ def ask_effect(effect_id, media, cap):
 		target_input = tui.ask_text(
 			f"Enter target duration (Orig: {orig_duration:.2f}s)", "")
 		target_dur = parse_duration(target_input)
-		if not target_dur or target_dur <= 0:
+		if target_dur is None:
+			# Reported once, where the answer was taken: the run then fails.
+			print(tui.status(
+				"error",
+				f"Invalid duration {target_input!r}: enter a positive time "
+				"like 90, 1m30s or 45s", cap=cap))
 			return None
 		print()
 		print(tui.section("Interpolation Mode", cap=cap))
@@ -334,7 +345,7 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 				print(tui.status("warn", line, cap=cap))
 			else:
 				box.add("warn", line)
-			return
+			return action != "abort"
 
 	if out_dir and not os.path.exists(out_dir):
 		os.makedirs(out_dir)
@@ -438,6 +449,7 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 			print(tui.status_panel([("ok", f"Saved to {output_path}")], cap=cap))
 		else:
 			box.add("ok", f"Saved to {output_path}")
+		return True
 	else:
 		if box is None:
 			print(tui.status("error", "FFmpeg Error:", cap=cap) + "\n" + result.stderr)
@@ -447,6 +459,7 @@ def process_video(file_path, effect_id, out_dir, custom_suffix, codec, target_ex
 			detail = (result.stderr or "").strip().splitlines()
 			box.add("error", "FFmpeg failed for {}: {}".format(
 				base_name, detail[-1] if detail else "see FFmpeg output"))
+		return False
 
 def main():
 	tui.init_ansi()
@@ -482,6 +495,9 @@ def main():
 		filter_criteria = DEFAULT_VIDEO_EXTS
 
 	files = []
+	if args.path and not (args.all or args.ext) and not os.path.exists(args.path):
+		print(tui.status("error", f"Path not found: {args.path}", cap=cap))
+		return 1
 	if os.path.isfile(target) and not (args.all or args.ext):
 		files = [target]
 	else:
@@ -491,7 +507,7 @@ def main():
 	
 	if not files:
 		print(tui.status("error", "No video files found matching criteria.", cap=cap))
-		return
+		return 1
 
 	if args.codec:
 		selected_codec, selected_ext = get_codec_choice(cap)
@@ -524,6 +540,7 @@ def main():
 		"Tweaking {} file{}".format(len(jobs), "" if len(jobs) == 1 else "s"),
 		len(jobs), cap=cap)
 	gate = tui.OverwriteGate(cap=cap, box=box)
+	failed = False
 	for index, (f, target_ext, media, answers) in enumerate(jobs, 1):
 		box.update(op=os.path.basename(f), done=index - 1)
 		if answers is None:
@@ -532,10 +549,12 @@ def main():
 			skipped = "Skipped {}: no effect setting given".format(
 				os.path.basename(f))
 			box.add("warn", skipped)
-		else:
-			process_video(f, effect_id, args.directory, args.suffix,
-						  selected_codec, target_ext, selected_res_config, cap,
-						  box=box, media=media, answers=answers, gate=gate)
+			failed = True
+		elif not process_video(f, effect_id, args.directory, args.suffix,
+							   selected_codec, target_ext, selected_res_config,
+							   cap, box=box, media=media, answers=answers,
+							   gate=gate):
+			failed = True
 		box.update(done=index)
 		if gate.aborted:
 			break
@@ -543,8 +562,11 @@ def main():
 	unit = "file" if len(jobs) == 1 else "files"
 	if gate.aborted:
 		box.close("Aborted: {}/{} {} saved".format(saved, len(jobs), unit))
-	else:
-		box.close("Batch finished: {}/{} {} saved".format(saved, len(jobs), unit))
+		return 1
+	box.close("Batch finished: {}/{} {} saved".format(saved, len(jobs), unit))
+	# Exit status: 0 only when every job finished; any FFmpeg failure, invalid
+	# answer or abort leaves the run non-zero while the rest of the batch runs.
+	return 1 if failed else 0
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())

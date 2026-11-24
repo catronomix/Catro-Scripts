@@ -354,7 +354,7 @@ def main():
 		subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
 		if not subdirs:
 			print(tui.status("error", "No subdirectories found in current directory.", cap=cap))
-			return
+			return 1
 
 		# Resolve the jobs first so the box knows its total before it starts.
 		jobs = []
@@ -364,7 +364,7 @@ def main():
 				jobs.append((d, apply_loop_to_list(sorted(found), args.loop)))
 		if not jobs:
 			print(tui.status("error", "No video files found in any subdirectory.", cap=cap))
-			return
+			return 1
 
 		# One box is reused for the whole batch (even for a single directory):
 		# each job moves the current operation line, adds its ok/error row and
@@ -374,6 +374,7 @@ def main():
 								   "directory" if len(jobs) == 1 else "directories"),
 			len(jobs), cap=cap)
 		gate = tui.OverwriteGate(cap=cap, box=box)
+		failed = False
 		for index, (d, target_files) in enumerate(jobs, 1):
 			if base_output_name:
 				current_out = base_output_name
@@ -399,16 +400,19 @@ def main():
 				if action == "rename":
 					output = os.path.basename(
 						tui.overwrite.settle(target, effective))
-			run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output, working_dir=d, cap=cap, box=box)
+			if not run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config, output, working_dir=d, cap=cap, box=box):
+				failed = True
 			box.update(done=index)
 
 		joined = sum(1 for kind, _ in box.rows if kind == "ok")
 		unit = "directory" if len(jobs) == 1 else "directories"
 		if gate.aborted:
 			box.close(f"Aborted: {joined}/{len(jobs)} {unit} joined")
-		else:
-			box.close(f"Batch finished: {joined}/{len(jobs)} {unit} joined")
-		return
+			return 1
+		box.close(f"Batch finished: {joined}/{len(jobs)} {unit} joined")
+		# Exit status: 0 only when every directory joined; any failed job
+		# leaves the run non-zero while the rest of the batch continues.
+		return 1 if failed else 0
 
 	# Mode 2: Single Directory
 	target_files = args.filenames
@@ -416,12 +420,12 @@ def main():
 		found = [f for f in os.listdir('.') if f.lower().endswith(filter_criteria) and os.path.isfile(f)]
 		if not found:
 			print(tui.status("error", "No video files found in the current directory matching criteria.", cap=cap))
-			sys.exit(1)
+			return 1
 		target_files = sorted(found)
 	
 	if not target_files:
 		print(tui.status("error", "No files provided. Provide filenames or use -a, -e, or -d.", cap=cap))
-		return
+		return 1
 
 	# Apply loop logic to final file list
 	target_files = apply_loop_to_list(target_files, args.loop)
@@ -444,22 +448,24 @@ def main():
 			box.add("warn", f"Aborted on {final_output}")
 			box.update(done=1)
 			box.close("Aborted: 0/1 output joined")
-			return
+			return 1
 		if action == "skip":
 			box.add("warn", f"Skipped {final_output}: output exists")
 			box.update(done=1)
 			box.close("Batch finished: 0/1 output joined")
-			return
+			return 0
 		if action == "rename":
 			output = tui.overwrite.settle(final_output, effective)
 			box.update(op="Joining {} segment{} into {}".format(
 				len(target_files), "" if len(target_files) == 1 else "s",
 				output), done=0)
-	run_ffmpeg_join(target_files, args.skipframe, selected_codec, resize_config,
-					output, cap=cap, box=box)
+	joined_ok = run_ffmpeg_join(target_files, args.skipframe, selected_codec,
+								resize_config, output, cap=cap, box=box)
 	box.update(done=1)
 	joined = sum(1 for kind, _ in box.rows if kind == "ok")
 	box.close(f"Batch finished: {joined}/1 output joined")
+	# Exit status: 0 only when the join was written.
+	return 0 if joined_ok else 1
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())

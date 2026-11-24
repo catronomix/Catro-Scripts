@@ -119,9 +119,10 @@ def get_curve_choice(cap):
 	return curves[(choice or 1) - 1][0]
 
 def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffix, supports_curve, cap):
+	"""Fade one file; `False` means the job failed and the run exits non-zero."""
 	if not check_ffmpeg():
 		print(tui.status("error", "FFmpeg not found.", cap=cap))
-		return
+		return False
 
 	base, ext = os.path.splitext(file_path)
 	output_name = f"{base}{suffix}{ext}"
@@ -179,12 +180,14 @@ def process_video(file_path, fade_in, fade_out, append_mode, codec, curve, suffi
 				return process_video(file_path, fade_in, fade_out, append_mode, codec, "tri", suffix, False, cap)
 			
 			print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
-			return
+			return False
 			
 		print(tui.status("ok", f"Saved as {output_name}", cap=cap))
+		return True
 
 	except Exception as e:
 		print(tui.status("error", f"Processing {file_path}: {e}", cap=cap))
+		return False
 
 def main():
 	tui.init_ansi()
@@ -216,6 +219,9 @@ def main():
 	
 	target = args.path if args.path else "."
 	files = []
+	if args.path and not os.path.exists(args.path):
+		print(tui.status("error", f"Path not found: {args.path}", cap=cap))
+		return 1
 	if os.path.isfile(target):
 		files = [target]
 	elif os.path.isdir(target):
@@ -224,7 +230,7 @@ def main():
 	
 	if not files:
 		print(tui.status("error", "No video files found.", cap=cap))
-		return
+		return 1
 
 	selected_codec = get_codec_choice(cap) if args.codec else "libx264"
 	selected_curve = get_curve_choice(cap) if args.interpolation else "esin"
@@ -240,8 +246,13 @@ def main():
 	], cap=cap))
 	print()
 
+	failed = False
 	for f in sorted(files):
-		process_video(f, args.fadein, args.fadeout, args.append, selected_codec, selected_curve, args.suffix, supports_curve, cap)
+		failed |= not process_video(f, args.fadein, args.fadeout, args.append,
+									selected_codec, selected_curve, args.suffix,
+									supports_curve, cap)
+	# Exit status: 0 only when every file was faded; any failure leaves it 1.
+	return 1 if failed else 0
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())

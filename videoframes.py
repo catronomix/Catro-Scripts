@@ -80,13 +80,14 @@ def get_ffmpeg_instructions(cap):
 	)
 
 def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=None, total=None):
+	"""Extract frames; `False` means the job failed and the run exits non-zero."""
 	if not os.path.exists(video_path):
 		print(tui.status("error", f"File '{video_path}' not found.", cap=cap))
-		return
+		return False
 
 	if not check_ffmpeg():
 		print(get_ffmpeg_instructions(cap))
-		return
+		return False
 
 	try:
 		vr = VideoReader(video_path, ctx=cpu(0))
@@ -99,7 +100,7 @@ def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=
 			pool = vr.get_key_indices()
 			if not pool:
 				print(tui.status("error", "Could not retrieve keyframes from this video.", cap=cap))
-				return
+				return False
 		else:
 			pool = list(range(total_frames))
 
@@ -116,13 +117,13 @@ def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=
 						target_idx = int(frame_id)
 					except ValueError:
 						print(tui.status("error", f"Invalid frame ID '{frame_id}'.", cap=cap))
-						return
+						return False
 			else:
 				target_idx = frame_id
 
 			if target_idx < 0 or target_idx >= total_frames:
 				print(tui.status("error", f"Frame index {target_idx} out of range.", cap=cap))
-				return
+				return False
 
 			# If -k is on, snap target_idx to nearest keyframe
 			if use_keyframe:
@@ -181,8 +182,11 @@ def extract_frames(video_path, cap, frame_id=None, use_keyframe=False, interval=
 				"ok", f"Successfully extracted {len(target_indices)} frames.",
 				cap=cap)], cap=cap))
 
+		return True
+
 	except Exception as e:
 		print(tui.status("error", f"An error occurred during extraction: {e}", cap=cap))
+		return False
 
 def main():
 	tui.init_ansi()
@@ -226,7 +230,10 @@ def main():
 	if args.total is not None and args.total <= 0:
 		parser.error("total count must be a positive integer greater than 0")
 
-	extract_frames(args.filename, frame_id=args.frame_id, use_keyframe=args.keyframe, interval=args.interval, total=args.total, cap=cap)
+	if not extract_frames(args.filename, frame_id=args.frame_id, use_keyframe=args.keyframe, interval=args.interval, total=args.total, cap=cap):
+		# Exit status: 0 only when the requested frames were written.
+		return 1
+	return 0
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())

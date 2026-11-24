@@ -159,7 +159,10 @@ def get_resize_config(cap):
 	return {"width": w, "height": h, "method": method, "quant": quant}
 
 def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, supports_curve, resize_config, cap, box=None, gate=None):
-	"""Loop one file; with a `box` the outcome lines fold into that frame."""
+	"""Loop one file; with a `box` the outcome lines fold into that frame.
+
+	Returns `False` when the job failed, so the run can exit non-zero.
+	"""
 	def report(kind, text):
 		"""Route one outcome line to the box, or print it as before."""
 		if box is None:
@@ -169,7 +172,7 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 
 	if not check_ffmpeg():
 		report("error", "FFmpeg not found.")
-		return
+		return False
 
 	base, ext = os.path.splitext(file_path)
 	output_name = f"{base}{suffix}{ext}"
@@ -182,10 +185,10 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 			action, effective = gate.decide(output_name)
 		if action == "abort":
 			report("warn", f"Aborted on {os.path.basename(file_path)}")
-			return
+			return False
 		if action == "skip":
 			report("warn", f"Skipped {output_name}: output exists")
-			return
+			return True
 		if action == "rename":
 			output_name = tui.overwrite.settle(output_name, effective)
 
@@ -284,7 +287,7 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 		if result.returncode != 0:
 			if "Option 'curve' not found" in result.stderr or "Error applying option 'curve'" in result.stderr:
 				report("warn", f"Curve '{curve}' not supported. Retrying with linear...")
-				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False, resize_config, cap, box=box)
+				return process_loop(file_path, fade_dur, shift_offset, codec, "tri", suffix, False, resize_config, cap, box=box, gate=gate)
 			if box is None:
 				print(tui.status("error", "FFmpeg Error Output:", cap=cap) + "\n" + result.stderr)
 			else:
@@ -293,11 +296,14 @@ def process_loop(file_path, fade_dur, shift_offset, codec, curve, suffix, suppor
 				detail = (result.stderr or "").strip().splitlines()
 				box.add("error", "FFmpeg failed for {}: {}".format(
 					os.path.basename(file_path), detail[-1] if detail else "see FFmpeg output"))
+			return False
 		else:
 			report("ok", f"Loop saved as {output_name}")
+			return True
 
 	except Exception as e:
 		report("error", f"Processing {file_path}: {e}")
+		return False
 
 def main():
 	tui.init_ansi()
@@ -327,6 +333,9 @@ def main():
 	
 	target = args.path if args.path else "."
 	
+	if args.path and not os.path.exists(args.path):
+		print(tui.status("error", f"Path not found: {args.path}", cap=cap))
+		return 1
 	if args.ext:
 		ext_filter = args.ext if args.ext.startswith('.') else f".{args.ext}"
 		filter_criteria = (ext_filter.lower(),)
@@ -341,7 +350,7 @@ def main():
 	
 	if not files:
 		print(tui.status("error", "No video files found matching criteria.", cap=cap))
-		return
+		return 1
 
 	v_major, v_minor = get_ffmpeg_version()
 	supports_curve = (v_major > 4) or (v_major == 4 and v_minor >= 3)
@@ -367,9 +376,11 @@ def main():
 		"Looping {} file{}".format(len(files), "" if len(files) == 1 else "s"),
 		len(files), cap=cap)
 	gate = tui.OverwriteGate(cap=cap, box=box)
+	failed = False
 	for index, f in enumerate(sorted(files), 1):
 		box.update(op=os.path.basename(f), done=index - 1)
-		process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap, box=box, gate=gate)
+		if not process_loop(f, args.fade, args.shift, selected_codec, selected_curve, args.suffix, supports_curve, resize_config, cap, box=box, gate=gate):
+			failed = True
 		box.update(done=index)
 		if gate.aborted:
 			break
@@ -377,8 +388,10 @@ def main():
 	unit = "loop" if len(files) == 1 else "loops"
 	if gate.aborted:
 		box.close("Aborted: {}/{} {} saved".format(saved, len(files), unit))
-	else:
-		box.close("Batch finished: {}/{} {} saved".format(saved, len(files), unit))
+		return 1
+	box.close("Batch finished: {}/{} {} saved".format(saved, len(files), unit))
+	# Exit status: 0 only when every loop was written; any failure leaves it 1.
+	return 1 if failed else 0
 
 if __name__ == "__main__":
-	main()
+	sys.exit(main())
