@@ -147,6 +147,8 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 	With a `box` (`tui.progress.BatchBox`) the per-job blocks are folded into
 	that one reused box: the current operation line moves, outcome rows grow.
 	Without one the job prints its own header and result panel as before.
+	Returns True only when the join was written; a missing FFmpeg is a failed
+	job (`False`), not a silent `None`.
 	"""
 	def report(kind, text):
 		"""Route one outcome line to the box, or print it as before."""
@@ -157,7 +159,7 @@ def run_ffmpeg_join(files, skip_frame, codec, resize, output_name, cap, working_
 
 	if not check_ffmpeg():
 		report("error", "FFmpeg not found in PATH or program directory.")
-		return
+		return False
 
 	# Auto-detect resolution from the first file if no resize provided
 	# This ensures the concat filter doesn't fail due to mixed dimensions.

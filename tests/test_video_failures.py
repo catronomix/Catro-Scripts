@@ -12,6 +12,7 @@ Nothing here invokes FFmpeg: every case fails before a real encode.
 Run with:
 	python -m unittest tests.test_video_failures
 """
+import importlib.util
 import subprocess
 import sys
 import unittest
@@ -54,6 +55,44 @@ class FailingPathExitCodeTest(unittest.TestCase):
 				self.assertNotEqual(
 					proc.returncode, 0,
 					"{} exited 0 on a missing input".format(name))
+
+
+def installed(name):
+	"""True when the child interpreter (`sys.executable`) can import it."""
+	return importlib.util.find_spec(name) is not None
+
+
+class VideoFramesFailureMarkerTest(unittest.TestCase):
+	"""videoframes reports the missing input from its own frame extractor.
+
+	The exit code alone cannot tell the two failing paths apart: without
+	decord/pillow videoframes exits at the dependency guard before any input
+	is read, so the code passes for the wrong reason. Pinning the marker text
+	proves `extract_frames` ran; on a host without the dependencies the test
+	skips and the missing-input loop above still proves the exit code.
+	"""
+
+	def test_missing_input_reports_the_extract_frames_marker(self):
+		if not (installed("decord") and installed("PIL")):
+			self.skipTest("decord/pillow not installed: videoframes exits at "
+						  "the dependency guard, not extract_frames")
+		proc = subprocess.run(
+			[sys.executable, "-B", str(REPO / "videoframes.py"),
+			 "missing-video.mp4", "first"],
+			cwd=str(REPO),
+			env=clean_env(),
+			stdin=subprocess.DEVNULL,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=120,
+		)
+		both = (proc.stdout + proc.stderr).decode("utf-8", "replace")
+		self.assertNotEqual(
+			proc.returncode, 0,
+			"videoframes exited 0 on a missing input\n" + both)
+		self.assertIn(
+			"File 'missing-video.mp4' not found.", both,
+			"videoframes did not reach extract_frames:\n" + both)
 
 
 class ParseDurationTest(unittest.TestCase):
