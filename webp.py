@@ -332,6 +332,33 @@ def video_chain(args, fps):
 	return ",".join(chain)
 
 
+_VFR_OPTIONS = None
+
+
+def vfr_options():
+	"""The output flag that keeps frame intervals instead of snapping to 25 fps.
+
+	`-fps_mode` arrived in ffmpeg 5.1; older builds only know `-vsync`, the
+	option 5.1 renamed and later builds still accept as an alias. Which one the
+	host build understands is asked of that build itself, so any ffmpeg with
+	libwebp works rather than only 5.1 and newer.
+	"""
+	global _VFR_OPTIONS
+	if _VFR_OPTIONS is None:
+		for option in ("-fps_mode", "-vsync"):
+			done = subprocess.run(
+				[FFMPEG_BIN, "-hide_banner", "-nostdin", option, "vfr",
+				 "-version"],
+				stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+				stderr=subprocess.DEVNULL)
+			if done.returncode == 0:
+				_VFR_OPTIONS = [option, "vfr"]
+				break
+		else:
+			_VFR_OPTIONS = ["-vsync", "vfr"]
+	return list(_VFR_OPTIONS)
+
+
 def encoder_options(args):
 	"""The codec/muxer options shared by the image and video passes."""
 	options = ["-c:v", ENCODER]
@@ -346,14 +373,14 @@ def encode_command(listing, args, duration, width, height, destination):
 	"""Build the second pass: encode the concat list as an animated WebP.
 
 	`-r` before the input pins the source frame rate to the requested frame
-	duration and `-fps_mode vfr` keeps it, otherwise ffmpeg snaps every frame
-	to 25 fps and 100 ms becomes 120 ms. `-loop` and `-f webp` are muxer
+	duration and the vfr output flag keeps it, otherwise ffmpeg snaps every
+	frame to 25 fps and 100 ms becomes 120 ms. `-loop` and `-f webp` are muxer
 	options, so they must sit with the output.
 	"""
 	command = [FFMPEG_BIN, "-y", "-loglevel", "error", "-nostdin",
 			   "-r", "1000/{}".format(duration),
-			   "-f", "concat", "-safe", "0", "-i", listing,
-			   "-fps_mode", "vfr"]
+			   "-f", "concat", "-safe", "0", "-i", listing]
+	command += vfr_options()
 	if args.opaque is not None:
 		command += ["-filter_complex",
 					opaque_filter(width, height, args.opaque),
@@ -366,10 +393,10 @@ def encode_command(listing, args, duration, width, height, destination):
 def video_encode_command(source, args, fps, destination):
 	"""Build the one-pass video encode.
 
-	Without --fps the source timing is passed through unchanged (`-fps_mode
-	vfr` keeps the original frame intervals instead of snapping them to a
-	guessed constant rate). With --fps the `fps` filter resamples to that rate;
-	`-r` is avoided because it duplicates frames at the tail.
+	Without --fps the source timing is passed through unchanged (the vfr
+	output flag keeps the original frame intervals instead of snapping them to
+	a guessed constant rate). With --fps the `fps` filter resamples to that
+	rate; `-r` is avoided because it duplicates frames at the tail.
 	"""
 	command = [FFMPEG_BIN, "-y", "-loglevel", "error", "-nostdin",
 			   "-i", source]
@@ -381,7 +408,7 @@ def video_encode_command(source, args, fps, destination):
 		if chain:
 			command += ["-vf", chain]
 	if fps is None:
-		command += ["-fps_mode", "vfr"]
+		command += vfr_options()
 	return command + encoder_options(args) + [destination]
 
 
