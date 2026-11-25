@@ -23,9 +23,14 @@ set "SCRIPT_DIR=%~dp0"
 :: Resolve the Python interpreter once instead of assuming "python" exists.
 :: Prefer "python", then fall back to the "py" launcher. PY_CMD is reused for
 :: every Python call below so both call sites stay in sync.
+::
+:: Detect by running the candidate, not by asking "where": where.exe lives in
+:: C:\Windows\System32, so a host whose PATH omits System32 makes the lookup
+:: fail silently even though "python" itself resolves and runs fine. A probe
+:: also rejects a Windows Store stub that exits non-zero without a real Python.
 set "PY_CMD="
-where python >nul 2>nul && set "PY_CMD=python"
-if not defined PY_CMD where py >nul 2>nul && set "PY_CMD=py -3"
+python -c "import sys" >nul 2>nul && set "PY_CMD=python"
+if not defined PY_CMD py -3 -c "import sys" >nul 2>nul && set "PY_CMD=py -3"
 if not defined PY_CMD (
     echo %C_RED%Error: no Python interpreter found. Install Python 3.11+ and make sure either "python" or "py" is on your PATH.%C_RESET%
     exit /b 9009

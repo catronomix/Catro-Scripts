@@ -317,6 +317,36 @@ class SmokeTests(unittest.TestCase):
 				self.assertNotIn(glyph, out,
 								 "piped list output kept the box glyph {!r}".format(glyph))
 
+	@unittest.skipUnless(os.name == "nt", "the where.exe probe is Windows-only")
+	def test_wrapper_finds_python_without_system32_on_path(self):
+		"""Interpreter detection must not need where.exe to be reachable.
+
+		where.exe lives in C:\\Windows\\System32, so a host whose PATH omits
+		System32 makes the lookup fail with "not recognized" - which looks
+		exactly like "no Python" when stderr is discarded. The wrapper used to
+		probe through `where` and reported "no Python interpreter found" on a
+		machine where `python --version` ran fine. Detection now runs the
+		candidate, so a PATH holding only the interpreter must still work.
+		"""
+		interpreter = shutil.which("python")
+		if interpreter is None:
+			self.skipTest("no python on PATH to point the wrapper at")
+		system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+		cmd = str(system_root / "System32" / "cmd.exe")
+		# cmd.exe is invoked by absolute path on purpose: the whole point is a
+		# PATH that cannot resolve System32 tools. Only the interpreter's own
+		# directory remains, so `where` is unknown but `python` is not.
+		env = child_env(PATH=str(Path(interpreter).parent))
+		line = '{} /d /c ""{}" list"'.format(cmd, REPO / "catro-scripts.bat")
+		with tempfile.TemporaryDirectory() as td:
+			proc = run(line, cwd=td, env=env)
+		self.assertEqual(proc.returncode, 0,
+						 "wrapper lost the interpreter on a PATH without "
+						 "System32\n{}".format(failure_detail(proc)))
+		self.assertIn(LIST_HEADER, text(proc.stdout),
+					  "wrapper never reached list.py:\n{}".format(
+						  failure_detail(proc)))
+
 	def test_wrapper_keeps_many_and_metachar_args(self):
 		"""More than nine arguments and shell metacharacters must pass through."""
 		if os.name != "nt" and shutil.which("bash") is None:
